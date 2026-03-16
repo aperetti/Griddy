@@ -62,63 +62,75 @@ const FutureGridAnimation: React.FC = () => {
             .attr("y2", d => d.target.y)
             .attr("stroke", "var(--ifm-color-primary)")
             .attr("stroke-width", 2)
-            .attr("opacity", 0.3);
+            .attr("opacity", 0.2);
 
-        // Draw nodes
+        // Draw nodes with CSS class for animation
         svg.selectAll("circle.node")
             .data(nodes)
             .enter()
             .append("circle")
-            .attr("class", "node")
+            .attr("class", "node-pulse")
             .attr("cx", d => d.x)
             .attr("cy", d => d.y)
             .attr("r", 4)
             .attr("fill", "var(--ifm-color-primary)");
 
+        // Particle pool for better performance
+        const particles = svg.append("g").attr("class", "particles");
+
         const animateParticle = (link: any) => {
-            const particle = svg.append("circle")
-                .attr("r", 2.5)
+            const particle = particles.append("circle")
+                .attr("r", 2)
                 .attr("fill", "var(--ifm-color-primary-lightest)")
                 .attr("cx", link.source.x)
-                .attr("cy", link.source.y);
+                .attr("cy", link.source.y)
+                .attr("opacity", 0.8);
 
             particle.transition()
-                .duration(1000 + Math.random() * 1500)
+                .duration(1500 + Math.random() * 2000)
                 .ease(d3.easeLinear)
                 .attr("cx", link.target.x)
                 .attr("cy", link.target.y)
                 .on("end", () => {
                     particle.remove();
-                    animateParticle(link);
+                    // Slight delay before re-spawning to avoid visual clustering
+                    setTimeout(() => {
+                        if (svgRef.current) animateParticle(link);
+                    }, Math.random() * 1000);
                 });
         };
 
-        links.forEach(link => animateParticle(link));
-
-        // Node pulse
-        const pulse = () => {
-            svg.selectAll("circle.node")
-                .transition()
-                .duration(1500)
-                .attr("r", 5)
-                .transition()
-                .duration(1500)
-                .attr("r", 4)
-                .on("end", pulse);
-        };
-        pulse();
+        links.forEach(link => {
+            // Start particles at different times
+            setTimeout(() => animateParticle(link), Math.random() * 2000);
+        });
 
     }, []);
 
     return (
-        <svg
-            ref={svgRef}
-            width="200"
-            height="200"
-            viewBox="0 0 200 200"
-            style={{ display: 'block', margin: '0 auto' }}
-        />
+        <Box style={{ position: 'relative', height: 200, width: 200, margin: '0 auto' }}>
+            <svg
+                ref={svgRef}
+                width="200"
+                height="200"
+                viewBox="0 0 200 200"
+                style={{ display: 'block' }}
+            />
+            <style>{`
+                .node-pulse {
+                    animation: grid-pulse 3s infinite ease-in-out;
+                }
+                @keyframes grid-pulse {
+                    0%, 100% { r: 3.5; opacity: 0.7; }
+                    50% { r: 5; opacity: 1; fill: var(--ifm-color-primary-light); }
+                }
+            `}</style>
+        </Box>
     );
 };
+
+// Simple Box replacement if Mantine isn't available in docs context, 
+// though index.tsx suggests it is using @theme/Heading etc.
+const Box = ({ children, style }: any) => <div style={style}>{children}</div>;
 
 export default FutureGridAnimation;

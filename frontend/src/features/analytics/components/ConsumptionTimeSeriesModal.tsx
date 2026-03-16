@@ -204,15 +204,15 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
                 const ka = d.kwh_a || 0;
                 const kb = d.kwh_b || 0;
                 const kc = d.kwh_c || 0;
-                
+
                 // Symmetrical component S2 magnitude (imbalance)
                 const real = ka - 0.5 * kb - 0.5 * kc;
                 const imag = 0.866 * (kb - kc);
                 const s2 = Math.sqrt(real * real + imag * imag) / 3;
 
                 return [
-                    new Date(d.timestamp).getTime(), 
-                    d.kwh_delivered, 
+                    new Date(d.timestamp).getTime(),
+                    d.kwh_delivered,
                     smoothedTemperatures[i],
                     ka,
                     kb,
@@ -256,7 +256,7 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
                     const avgKc = curKc.length > 0 ? curKc.reduce((a, b) => a + b, 0) / curKc.length : 0;
                     const avgKwhRcv = curKwhRcv.length > 0 ? curKwhRcv.reduce((a, b) => a + b, 0) / curKwhRcv.length : null;
                     const avgNet = curNet.length > 0 ? curNet.reduce((a, b) => a + b, 0) / curNet.length : null;
-                    
+
                     const real = avgKa - 0.5 * avgKb - 0.5 * avgKc;
                     const imag = 0.866 * (avgKb - avgKc);
                     const s2 = Math.sqrt(real * real + imag * imag) / 3;
@@ -422,7 +422,7 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
                                     backgroundColor: 'rgba(26, 27, 30, 0.3)'
                                 }}
                             />
-                            
+
                             <Stack p="xl" align="center" gap="md" style={{ position: 'relative' }}>
                                 <Group gap="xs">
                                     <AlertTriangle size={18} color="#fab005" />
@@ -430,7 +430,7 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
                                         DATASET_CAPACITY_WARNING
                                     </Text>
                                 </Group>
-                                
+
                                 <Stack gap={4} align="center">
                                     <Text size="xs" ff="monospace" c="dimmed">ANALYSIS SCOPE</Text>
                                     <Text size="xl" ff="monospace" fw={700} c="white">
@@ -449,7 +449,7 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
 
                                 <Box mt="xs">
                                     <Text size="xs" c="dimmed" ff="monospace" ta="center" style={{ maxWidth: 350, lineHeight: 1.4 }}>
-                                        SYSTEM IMPACT: MODERATE<br/>
+                                        SYSTEM IMPACT: MODERATE<br />
                                         LARGE QUERIES MAY TEMPORARILY AFFECT CONCURRENT ANALYTICS PERFORMANCE.
                                     </Text>
                                 </Box>
@@ -458,10 +458,10 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
                                     <Button variant="subtle" size="xs" color="gray" onClick={onClose} ff="monospace">
                                         [ ABORT_ADJUST ]
                                     </Button>
-                                    <Button 
-                                        color="blue" 
-                                        size="sm" 
-                                        onClick={onConfirm} 
+                                    <Button
+                                        color="blue"
+                                        size="sm"
+                                        onClick={onConfirm}
                                         leftSection={<Activity size={16} />}
                                         ff="monospace"
                                         variant="light"
@@ -503,14 +503,14 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
                                     grid: { left: 40, right: 40, bottom: 35, top: 45, containLabel: true },
                                     dataZoom: [
                                         { type: 'inside', start: 0, end: 100, xAxisIndex: 0 },
-                                        { 
-                                            type: 'slider', 
-                                            start: 0, 
-                                            end: 100, 
-                                            height: 15, 
-                                            bottom: 10, 
-                                            textStyle: { color: '#A6A7AB' }, 
-                                            borderColor: '#373A40', 
+                                        {
+                                            type: 'slider',
+                                            start: 0,
+                                            end: 100,
+                                            height: 15,
+                                            bottom: 10,
+                                            textStyle: { color: '#A6A7AB' },
+                                            borderColor: '#373A40',
                                             fillerColor: 'rgba(51, 154, 240, 0.2)',
                                             xAxisIndex: 0
                                         }
@@ -646,14 +646,14 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
                                     },
                                     dataZoom: [
                                         { type: 'inside', start: 0, end: 100, xAxisIndex: 0 },
-                                        { 
-                                            type: 'slider', 
-                                            start: 0, 
-                                            end: 100, 
-                                            height: 15, 
-                                            bottom: 10, 
-                                            textStyle: { color: '#A6A7AB' }, 
-                                            borderColor: '#373A40', 
+                                        {
+                                            type: 'slider',
+                                            start: 0,
+                                            end: 100,
+                                            height: 15,
+                                            bottom: 10,
+                                            textStyle: { color: '#A6A7AB' },
+                                            borderColor: '#373A40',
                                             fillerColor: 'rgba(51, 154, 240, 0.2)',
                                             xAxisIndex: 0
                                         }
@@ -667,24 +667,24 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
                                         zeroGuideline: { show: true, lineStyle: { color: '#A6A7AB', type: 'solid', width: 1 } }
                                     },
                                     series: [
-                                        { 
-                                            name: 'Phase A', type: 'line', data: timeSeriesData.map(d => [d[0], d[3]]), 
-                                            smooth: true, showSymbol: false, itemStyle: { color: '#fa5252' }, lineStyle: { width: 1.5 } 
+                                        {
+                                            name: 'Phase A', type: 'line', data: timeSeriesData.map(d => [d[0], d[3]]),
+                                            smooth: true, showSymbol: false, itemStyle: { color: '#fa5252' }, lineStyle: { width: 1.5 }
                                         },
-                                        { 
-                                            name: 'Phase B', type: 'line', data: timeSeriesData.map(d => [d[0], d[4]]), 
-                                            smooth: true, showSymbol: false, itemStyle: { color: '#40c057' }, lineStyle: { width: 1.5 } 
+                                        {
+                                            name: 'Phase B', type: 'line', data: timeSeriesData.map(d => [d[0], d[4]]),
+                                            smooth: true, showSymbol: false, itemStyle: { color: '#40c057' }, lineStyle: { width: 1.5 }
                                         },
-                                        { 
-                                            name: 'Phase C', type: 'line', data: timeSeriesData.map(d => [d[0], d[5]]), 
-                                            smooth: true, showSymbol: false, itemStyle: { color: '#339af0' }, lineStyle: { width: 1.5 } 
+                                        {
+                                            name: 'Phase C', type: 'line', data: timeSeriesData.map(d => [d[0], d[5]]),
+                                            smooth: true, showSymbol: false, itemStyle: { color: '#339af0' }, lineStyle: { width: 1.5 }
                                         },
-                                        { 
-                                            name: 'Imbalance (|S₂|)', 
-                                            type: 'line', 
-                                            data: timeSeriesData.map(d => [d[0], -(d[6] || 0)]), 
-                                            smooth: true, 
-                                            showSymbol: false, 
+                                        {
+                                            name: 'Imbalance (|S₂|)',
+                                            type: 'line',
+                                            data: timeSeriesData.map(d => [d[0], -(d[6] || 0)]),
+                                            smooth: true,
+                                            showSymbol: false,
                                             itemStyle: { color: '#ffd43b' },
                                             lineStyle: { width: 2 },
                                             areaStyle: {

@@ -1,68 +1,63 @@
-import React, { useEffect, useRef } from 'react';
-import * as d3 from 'd3';
+import React from 'react';
 
 const AmiInsightsAnimation: React.FC = () => {
-    const svgRef = useRef<SVGSVGElement>(null);
-
-    useEffect(() => {
-        if (!svgRef.current) return;
-
-        const svg = d3.select(svgRef.current);
-        const width = 200;
-        const height = 200;
-        const centerX = width / 2;
-        const centerY = height / 2;
-
-        svg.selectAll("*").remove();
-
-        // Meter body
-        svg.append("circle")
-            .attr("cx", centerX)
-            .attr("cy", centerY)
-            .attr("r", 40)
-            .attr("fill", "none")
-            .attr("stroke", "var(--ifm-color-primary)")
-            .attr("stroke-width", 3);
-
-        // Meter inner glow
-        svg.append("circle")
-            .attr("cx", centerX)
-            .attr("cy", centerY)
-            .attr("r", 35)
-            .attr("fill", "var(--ifm-color-primary)")
-            .attr("opacity", 0.2);
-
-        const createPing = () => {
-            const ping = svg.append("circle")
-                .attr("cx", centerX)
-                .attr("cy", centerY)
-                .attr("r", 40)
-                .attr("fill", "none")
-                .attr("stroke", "var(--ifm-color-primary)")
-                .attr("stroke-width", 2)
-                .attr("opacity", 0.8);
-
-            ping.transition()
-                .duration(2000)
-                .ease(d3.easeCubicOut)
-                .attr("r", 100)
-                .attr("opacity", 0)
-                .on("end", () => ping.remove());
-        };
-
-        const interval = setInterval(createPing, 800);
-
-        return () => clearInterval(interval);
-    }, []);
-
     return (
-        <svg
-            ref={svgRef}
-            width="200"
-            height="200"
-            viewBox="0 0 200 200"
-            style={{ display: 'block', margin: '0 auto' }}
-        />
+        <div style={{ position: 'relative', height: 200, width: 200, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg
+                width="200"
+                height="200"
+                viewBox="0 0 200 200"
+                style={{ display: 'block', position: 'absolute' }}
+            >
+                {/* Meter body */}
+                <circle
+                    cx="100"
+                    cy="100"
+                    r="40"
+                    fill="none"
+                    stroke="var(--ifm-color-primary)"
+                    strokeWidth="3"
+                />
+
+                {/* Meter inner glow */}
+                <circle
+                    cx="100"
+                    cy="100"
+                    r="35"
+                    fill="var(--ifm-color-primary)"
+                    opacity="0.2"
+                />
+
+                {/* Pinging circles with different delays */}
+                <circle className="ping ping-1" cx="100" cy="100" r="40" fill="none" stroke="var(--ifm-color-primary)" strokeWidth="2" />
+                <circle className="ping ping-2" cx="100" cy="100" r="40" fill="none" stroke="var(--ifm-color-primary)" strokeWidth="2" />
+                <circle className="ping ping-3" cx="100" cy="100" r="40" fill="none" stroke="var(--ifm-color-primary)" strokeWidth="2" />
+            </svg>
+
+            <style>{`
+                .ping {
+                    opacity: 0;
+                    transform-origin: center;
+                    animation: ping-wave 3s infinite cubic-bezier(0, 0, 0.2, 1);
+                }
+                .ping-1 { animation-delay: 0s; }
+                .ping-2 { animation-delay: 1s; }
+                .ping-3 { animation-delay: 2s; }
+
+                @keyframes ping-wave {
+                    0% {
+                        r: 40;
+                        opacity: 0.8;
+                        stroke-width: 2;
+                    }
+                    100% {
+                        r: 100;
+                        opacity: 0;
+                        stroke-width: 1;
+                    }
+                }
+            `}</style>
+        </div>
     );
 };
 

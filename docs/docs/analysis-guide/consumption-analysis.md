@@ -14,7 +14,7 @@ The Consumption Time Series analysis provides a comprehensive view of energy del
 
 ## Understanding the Charts
 
-![Consumption analysis window showing all three charts](/img/guide/consumption-analysis.png)
+![Consumption analysis window showing net and generation data](/img/features/consumption-chart.png)
 
 The window contains three charts, each providing a different analytical perspective:
 
@@ -25,9 +25,16 @@ The window contains three charts, each providing a different analytical perspect
 **What it shows:** Daily aggregate energy delivery (kWh) across the selected time range, overlaid with a 24-hour rolling average ambient temperature curve.
 
 **How to read it:**
-- **Blue bars** represent the total kWh delivered each interval (typically daily)
-- **Red line** shows the ambient temperature (°C) on the right Y-axis
-- A **zoom slider** at the bottom lets you focus on any sub-range without re-querying
+- **Blue bars/lines** represent the total kWh delivered (*Delivered*) each interval (typically daily).
+- **Green lines** (when present) represent energy received from distributed generation (*Received*).
+- **Orange dash/line** represents the **Net Consumption** (Delivered - Received).
+- **Red line** shows the ambient temperature (°C) on the right Y-axis.
+- A **zoom slider** at the bottom lets you focus on any sub-range without re-querying.
+
+### Bidirectional Flow & Generation
+This chart supports bidirectional energy flow analysis. For assets connected to distributed energy resources (DER) or microturbines, the chart will automatically visualize the interplay between grid supply and local generation.
+- **High "Received" values**: Indicate periods of significant local generation (solar, wind, turbines).
+- **Negative "Net" values**: Occur when local generation exceeds local load, resulting in backfeeding into the upstream grid.
 
 **Value it provides:**
 - Spot **demand spikes** that may indicate equipment stress or new large loads

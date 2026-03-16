@@ -13,6 +13,7 @@ The toolbar provides:
 - **Date range** — the time window used for all analyses (configurable via the settings panel)
 - **Consumption icon** (bar chart) — opens the Consumption Time Series analysis
 - **Voltage icon** (√x) — opens the Voltage Distribution analysis
+- **Diagnostic icon** (🗄️) — opens the CIM Diagnostic View & Topology Explorer
 - **Clear selection** (✕) — deselects all nodes
 
 ## Available Analysis Types
@@ -20,6 +21,8 @@ The toolbar provides:
 1. [**Consumption Time Series**](./consumption-analysis) — Energy delivery patterns, daily load profiles, and weather correlation
 2. [**Voltage Distribution**](./voltage-analysis) — Statistical voltage behavior, daily stability trends, and load-voltage relationships
 3. [**Voltage Map (Heatmap)**](./voltage-map) — System-wide visualization of voltage health across the network
+4. [**Diagnostic View**](./diagnostic-view) — CIM attribute explorer and Neighborhood Topology tree
+5. [**Data Export**](./data-export) — Direct download of analytical data in CSV or JSON formats
 
 ## Multi-Window Support
 

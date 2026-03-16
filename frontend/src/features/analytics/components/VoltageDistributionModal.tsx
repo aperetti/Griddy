@@ -96,7 +96,7 @@ export const VoltageDistributionModal = memo(function VoltageDistributionModal({
                                     backgroundColor: 'rgba(26, 27, 30, 0.3)'
                                 }}
                             />
-                            
+
                             <Stack p="xl" align="center" gap="md" style={{ position: 'relative' }}>
                                 <Group gap="xs">
                                     <AlertTriangle size={18} color="#fab005" />
@@ -104,7 +104,7 @@ export const VoltageDistributionModal = memo(function VoltageDistributionModal({
                                         DATASET_CAPACITY_WARNING
                                     </Text>
                                 </Group>
-                                
+
                                 <Stack gap={4} align="center">
                                     <Text size="xs" ff="monospace" c="dimmed">ANALYSIS SCOPE</Text>
                                     <Text size="xl" ff="monospace" fw={700} c="white">
@@ -123,7 +123,7 @@ export const VoltageDistributionModal = memo(function VoltageDistributionModal({
 
                                 <Box mt="xs">
                                     <Text size="xs" c="dimmed" ff="monospace" ta="center" style={{ maxWidth: 350, lineHeight: 1.4 }}>
-                                        SYSTEM IMPACT: MODERATE<br/>
+                                        SYSTEM IMPACT: MODERATE<br />
                                         LARGE QUERIES MAY TEMPORARILY AFFECT CONCURRENT ANALYTICS PERFORMANCE.
                                     </Text>
                                 </Box>
@@ -132,10 +132,10 @@ export const VoltageDistributionModal = memo(function VoltageDistributionModal({
                                     <Button variant="subtle" size="xs" color="gray" onClick={onClose} ff="monospace">
                                         [ ABORT_ADJUST ]
                                     </Button>
-                                    <Button 
-                                        color="blue" 
-                                        size="sm" 
-                                        onClick={onConfirm} 
+                                    <Button
+                                        color="blue"
+                                        size="sm"
+                                        onClick={onConfirm}
                                         leftSection={<Activity size={16} />}
                                         ff="monospace"
                                         variant="light"
