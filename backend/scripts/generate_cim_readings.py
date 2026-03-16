@@ -95,6 +95,15 @@ def main():
 
     print("Loading topology from CIM model into DuckDB analytics engine...")
     with duckdb.connect(DB_PATH) as conn:
+        # ── DuckDB Resource Management ────────────────────────────────────
+        # Limit memory usage and enable spilling to disk for large sorts/joins
+        conn.execute("SET memory_limit = '2GB'")
+        # Ensure temp directory exists for spilling
+        temp_dir = Path("/data/tmp") if os.path.exists("/data") else WORKSPACE_ROOT / "tmp_duckdb"
+        os.makedirs(temp_dir, exist_ok=True)
+        conn.execute(f"SET temp_directory = '{temp_dir}'")
+        # ──────────────────────────────────────────────────────────────────
+
         nodes_raw, edge_rows, sub_rows, all_node_ids = _load_topology_into_duckdb(conn)
 
         n = len(nodes_raw)
@@ -363,7 +372,6 @@ def main():
                         FROM final_load
                     )
                     SELECT * FROM combined
-                    ORDER BY node_id, timestamp
                 ) TO '{out_file}' (FORMAT PARQUET, CODEC 'ZSTD', ROW_GROUP_SIZE 100000);
             """
 
