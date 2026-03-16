@@ -25,9 +25,7 @@ WORKSPACE_ROOT = SCRIPT_PATH.parents[2]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-SQLITE_PATH = os.getenv(
-    "TOPOLOGY_DB_PATH", str(WORKSPACE_ROOT / "grid_topology.sqlite")
-)
+from src.shared.database_setup import SQLITE_PATH
 
 
 # ---------------------------------------------------------------------------

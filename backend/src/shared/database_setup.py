@@ -5,18 +5,29 @@ DuckDB is kept purely as an analytics engine for parquet / weather queries.
 """
 import os
 import sqlite3
+from pathlib import Path
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+# Robust project root detection (works if run from /app, /app/src, or locally)
+_THIS_DIR = Path(__file__).resolve().parent
+if _THIS_DIR.name == "shared" and _THIS_DIR.parent.name == "src":
+    BASE_DIR = _THIS_DIR.parents[2] # backend/
+else:
+    BASE_DIR = Path.cwd()
 
 # ── SQLite: topology database (grid_nodes, grid_edges, alarms) ────
-SQLITE_PATH = os.getenv("TOPOLOGY_DB_PATH", os.path.join(BASE_DIR, "grid_topology.sqlite"))
+# In Docker, we typically mount /data to a volume
+DEFAULT_SQLITE = BASE_DIR / "grid_topology.sqlite"
+if os.path.exists("/data") and os.access("/data", os.W_OK):
+    DEFAULT_SQLITE = Path("/data/grid_topology.sqlite")
+
+SQLITE_PATH = os.getenv("TOPOLOGY_DB_PATH", str(DEFAULT_SQLITE))
 
 # ── DuckDB: analytics engine (weather_recordings + parquet reads) ─
-DB_PATH = os.getenv("DB_PATH", os.path.join(BASE_DIR, "grid_data_cim.duckdb"))
+DB_PATH = os.getenv("DB_PATH", str(BASE_DIR / "grid_data_cim.duckdb"))
 
 # ── Parquet directories ───────────────────────────────────────────
-PARQUET_DIR = os.getenv("PARQUET_DIR", os.path.join(BASE_DIR, "cim_readings"))
-PARQUET_ALARMS_DIR = os.getenv("PARQUET_ALARMS_DIR", os.path.join(BASE_DIR, "cim_alarms"))
+PARQUET_DIR = os.getenv("PARQUET_DIR", str(BASE_DIR / "cim_readings"))
+PARQUET_ALARMS_DIR = os.getenv("PARQUET_ALARMS_DIR", str(BASE_DIR / "cim_alarms"))
 
 
 def init_db():

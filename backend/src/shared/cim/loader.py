@@ -7,12 +7,14 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Path constants
-# ---------------------------------------------------------------------------
-_SHARED_DIR = Path(__file__).resolve().parents[1]   # backend/src/shared/
-_BACKEND_DIR = _SHARED_DIR.parents[1]               # backend/
-_WORKSPACE_ROOT = _BACKEND_DIR.parent               # project root
+# ── Path constants (Robust detected root) ─────────────────────────
+_THIS_DIR = Path(__file__).resolve().parent
+if _THIS_DIR.name == "cim" and _THIS_DIR.parent.name == "shared":
+    _BACKEND_DIR = _THIS_DIR.parents[2] # backend/
+else:
+    _BACKEND_DIR = Path.cwd()
+
+_WORKSPACE_ROOT = _BACKEND_DIR.parent
 
 # CIM-Graph environment vars (must be set before importing cimgraph)
 os.environ.setdefault("CIMG_CIM_PROFILE", "rc4_2021")
@@ -21,33 +23,39 @@ os.environ.setdefault("CIMG_IEC61970_301", "8")
 
 def _resolve_xml_path(xml_path: Optional[str] = None) -> Path:
     """Resolve CIM XML file path from an explicit path, env var, or known project locations."""
+    
+    # 1. Explicit path (highest priority)
     if xml_path:
         p = Path(xml_path)
+        if p.is_absolute() and p.is_file():
+            return p
+        if (_BACKEND_DIR / p).is_file():
+            return _BACKEND_DIR / p
         if p.is_file():
             return p
-        cwd_resolved = (Path.cwd() / p).resolve()
-        if cwd_resolved.is_file():
-            return cwd_resolved
 
+    # 2. Environment variable
     env_xml = os.getenv("CIM_MODEL_PATH")
     if env_xml:
         p = Path(env_xml)
+        if p.is_absolute() and p.is_file():
+            return p
+        if (_BACKEND_DIR / p).is_file():
+            return _BACKEND_DIR / p
         if p.is_file():
             return p
-        cwd_resolved = (Path.cwd() / p).resolve()
-        if cwd_resolved.is_file():
-            return cwd_resolved
 
+    # 3. Known candidates
     candidates = [
         _BACKEND_DIR / "sample_data" / "IEEE8500_3subs.xml",
         _BACKEND_DIR / "sample_data" / "IEEE8500.xml",
-        _WORKSPACE_ROOT / "backend" / "sample_data" / "IEEE8500.xml",
+        Path("/app/sample_data/IEEE8500.xml"), # Docker location
+        Path("/app/IEEE8500.xml"),             # Alternative Docker location
     ]
     for c in candidates:
         if c.is_file():
             return c
 
-    return _BACKEND_DIR / "sample_data" / "IEEE8500.xml"
 
 
 def _manual_xml_catalog_scan(path: Path) -> tuple[dict, dict]:
