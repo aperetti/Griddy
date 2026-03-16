@@ -5,10 +5,13 @@ import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts';
 import { ScadaLoadingAnimation } from '../../../components/ScadaLoadingAnimation';
 import { AnalysisWindow } from './AnalysisWindow';
+import { autoExport } from '../../../shared/utils/exportUtils';
 
 interface ReadingData {
     timestamp: string;
     kwh_delivered: number | null;
+    kwh_received: number | null;
+    net_consumption: number | null;
     kwh_a: number | null;
     kwh_b: number | null;
     kwh_c: number | null;
@@ -66,6 +69,11 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
     const [endMonth, setEndMonth] = useState<string>('11');
     const [winterTarget, setWinterTarget] = useState<number>(-5);
     const [summerTarget, setSummerTarget] = useState<number>(30);
+
+    const handleExport = () => {
+        if (!data || data.length === 0) return;
+        autoExport(data, `consumption_${nodeName?.replace(/\s+/g, '_')}`);
+    };
 
     useEffect(() => {
         if (isOpen && data && data.length > 0) {
@@ -209,19 +217,23 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
                     ka,
                     kb,
                     kc,
-                    s2
+                    s2,
+                    d.kwh_received,
+                    d.net_consumption
                 ];
             });
         }
 
         const bucketHours = spanDays > 365 ? 3 : 1;
         const bucketMs = bucketHours * 60 * 60 * 1000;
-        const aggregated: [number, number | null, number | null, number, number, number, number][] = [];
+        const aggregated: [number, number | null, number | null, number, number, number, number, number | null, number | null][] = [];
         let curKwh: number[] = [];
         let curTemp: number[] = [];
         let curKa: number[] = [];
         let curKb: number[] = [];
         let curKc: number[] = [];
+        let curKwhRcv: number[] = [];
+        let curNet: number[] = [];
         let bucketStartTime = Math.floor(first / bucketMs) * bucketMs;
 
         data.forEach((d, i) => {
@@ -233,6 +245,8 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
                 if (d.kwh_a != null) curKa.push(d.kwh_a);
                 if (d.kwh_b != null) curKb.push(d.kwh_b);
                 if (d.kwh_c != null) curKc.push(d.kwh_c);
+                if (d.kwh_received != null) curKwhRcv.push(d.kwh_received);
+                if (d.net_consumption != null) curNet.push(d.net_consumption);
             } else {
                 if (curKwh.length > 0 || curTemp.length > 0 || curKa.length > 0) {
                     const avgKwh = curKwh.length > 0 ? curKwh.reduce((a, b) => a + b, 0) / curKwh.length : null;
@@ -240,12 +254,14 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
                     const avgKa = curKa.length > 0 ? curKa.reduce((a, b) => a + b, 0) / curKa.length : 0;
                     const avgKb = curKb.length > 0 ? curKb.reduce((a, b) => a + b, 0) / curKb.length : 0;
                     const avgKc = curKc.length > 0 ? curKc.reduce((a, b) => a + b, 0) / curKc.length : 0;
+                    const avgKwhRcv = curKwhRcv.length > 0 ? curKwhRcv.reduce((a, b) => a + b, 0) / curKwhRcv.length : null;
+                    const avgNet = curNet.length > 0 ? curNet.reduce((a, b) => a + b, 0) / curNet.length : null;
                     
                     const real = avgKa - 0.5 * avgKb - 0.5 * avgKc;
                     const imag = 0.866 * (avgKb - avgKc);
                     const s2 = Math.sqrt(real * real + imag * imag) / 3;
 
-                    aggregated.push([bucketStartTime, avgKwh, avgTemp, avgKa, avgKb, avgKc, s2]);
+                    aggregated.push([bucketStartTime, avgKwh, avgTemp, avgKa, avgKb, avgKc, s2, avgKwhRcv, avgNet]);
                 }
                 bucketStartTime = Math.floor(time / bucketMs) * bucketMs;
                 curKwh = d.kwh_delivered != null ? [d.kwh_delivered] : [];
@@ -253,6 +269,8 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
                 curKa = d.kwh_a != null ? [d.kwh_a] : [];
                 curKb = d.kwh_b != null ? [d.kwh_b] : [];
                 curKc = d.kwh_c != null ? [d.kwh_c] : [];
+                curKwhRcv = d.kwh_received != null ? [d.kwh_received] : [];
+                curNet = d.net_consumption != null ? [d.net_consumption] : [];
             }
         });
 
@@ -262,12 +280,14 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
             const avgKa = curKa.length > 0 ? curKa.reduce((a, b) => a + b, 0) / curKa.length : 0;
             const avgKb = curKb.length > 0 ? curKb.reduce((a, b) => a + b, 0) / curKb.length : 0;
             const avgKc = curKc.length > 0 ? curKc.reduce((a, b) => a + b, 0) / curKc.length : 0;
+            const avgKwhRcv = curKwhRcv.length > 0 ? curKwhRcv.reduce((a, b) => a + b, 0) / curKwhRcv.length : null;
+            const avgNet = curNet.length > 0 ? curNet.reduce((a, b) => a + b, 0) / curNet.length : null;
 
             const real = avgKa - 0.5 * avgKb - 0.5 * avgKc;
             const imag = 0.866 * (avgKb - avgKc);
             const s2 = Math.sqrt(real * real + imag * imag) / 3;
 
-            aggregated.push([bucketStartTime, avgKwh, avgTemp, avgKa, avgKb, avgKc, s2]);
+            aggregated.push([bucketStartTime, avgKwh, avgTemp, avgKa, avgKb, avgKc, s2, avgKwhRcv, avgNet]);
         }
 
         return aggregated;
@@ -385,6 +405,7 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
             storageKey="consumptionWindowPos"
             zIndex={1000}
             filterContent={filterContent}
+            onExport={handleExport}
         >
             {isPaused ? (
                 <Box style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '20px' }}>
@@ -475,7 +496,7 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
                                     },
                                     useUTC: true,
                                     legend: {
-                                        data: ['kWh Delivered', 'Temp (24h Avg)'],
+                                        data: ['kWh Delivered', 'kWh Received', 'Net Consumption', 'Temp (24h Avg)'],
                                         textStyle: { color: '#A6A7AB', fontSize: 10 },
                                         top: 0
                                     },
@@ -544,6 +565,31 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
                                                 silent: true,
                                                 data: markLines
                                             }
+                                        },
+                                        {
+                                            name: 'kWh Received',
+                                            type: 'line',
+                                            data: timeSeriesData.map(d => [d[0], d[7]]),
+                                            smooth: true,
+                                            showSymbol: false,
+                                            itemStyle: { color: '#40c057' },
+                                            areaStyle: {
+                                                opacity: 0.1,
+                                                color: {
+                                                    type: 'linear',
+                                                    x: 0, y: 0, x2: 0, y2: 1,
+                                                    colorStops: [{ offset: 0, color: '#40c057' }, { offset: 1, color: 'rgba(64, 192, 87, 0)' }]
+                                                }
+                                            }
+                                        },
+                                        {
+                                            name: 'Net Consumption',
+                                            type: 'line',
+                                            data: timeSeriesData.map(d => [d[0], d[8]]),
+                                            smooth: true,
+                                            showSymbol: false,
+                                            itemStyle: { color: '#ffd43b' },
+                                            lineStyle: { width: 2, type: 'dashed' }
                                         },
                                         {
                                             name: 'Temp (24h Avg)',

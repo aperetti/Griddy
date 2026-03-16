@@ -45,6 +45,7 @@ export interface VoltageDistributionResponse {
 
 export interface MapVoltageResponse {
     node_voltages: Record<string, number>;
+    node_currents?: Record<string, { a: number, b: number, c: number }>;
     estimated_rows: number;
 }
 
@@ -203,6 +204,32 @@ export const unloadModel = async (modelId: string): Promise<{ status: string }> 
     const res = await fetch(`${API_BASE}/models/${modelId}/unload`, { method: 'POST' });
     if (!res.ok) {
         throw new Error(`Failed to unload model ${modelId}`);
+    }
+    return res.json();
+};
+
+// --- CIM Diagnostics ---
+
+export const fetchCimEquipment = async (mrid: string): Promise<any> => {
+    const res = await fetch(`${API_BASE}/cim/equipment/${mrid}`);
+    if (!res.ok) {
+        throw new Error(`Failed to fetch CIM equipment detail for ${mrid}`);
+    }
+    return res.json();
+};
+
+export const fetchCimNode = async (nodeId: string): Promise<any> => {
+    const res = await fetch(`${API_BASE}/cim/node/${nodeId}`);
+    if (!res.ok) {
+        throw new Error(`Failed to fetch CIM node detail for ${nodeId}`);
+    }
+    return res.json();
+};
+
+export const fetchCimNeighbors = async (id: string): Promise<any> => {
+    const res = await fetch(`${API_BASE}/cim/neighbors/${id}`);
+    if (!res.ok) {
+        throw new Error(`Failed to fetch CIM neighbors for ${id}`);
     }
     return res.json();
 };

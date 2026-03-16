@@ -1,5 +1,5 @@
 import { Paper, Group, ActionIcon, Tooltip, Badge, Text, Divider, Transition, Stack } from '@mantine/core';
-import { BarChart3, Activity, X } from 'lucide-react';
+import { BarChart3, Activity, X, Database } from 'lucide-react';
 import type { Node } from '../../../shared/types';
 
 interface AnalysisToolbarProps {
@@ -7,6 +7,7 @@ interface AnalysisToolbarProps {
     onClearSelection: () => void;
     onViewConsumption: () => void;
     onViewVoltage: () => void;
+    onViewDiagnostic: () => void;
     visible: boolean;
     dateRange: { start: string, end: string };
     configLabel: string;
@@ -18,6 +19,7 @@ export function AnalysisToolbar({
     onClearSelection,
     onViewConsumption,
     onViewVoltage,
+    onViewDiagnostic,
     visible,
     dateRange,
     configLabel,
@@ -87,6 +89,19 @@ export function AnalysisToolbar({
                                 data-testid="btn-voltage"
                             >
                                 <Activity size={18} />
+                            </ActionIcon>
+                        </Tooltip>
+
+                        <Tooltip label="CIM Diagnostic View" position="bottom" withArrow>
+                            <ActionIcon
+                                variant="light"
+                                color="teal"
+                                size="lg"
+                                onClick={onViewDiagnostic}
+                                radius="md"
+                                data-testid="btn-diagnostic"
+                            >
+                                <Database size={18} />
                             </ActionIcon>
                         </Tooltip>
 

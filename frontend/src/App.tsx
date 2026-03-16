@@ -12,6 +12,7 @@ import { ConsumptionTimeSeriesModal } from './features/analytics/components/Cons
 import { VoltageDistributionModal } from './features/analytics/components/VoltageDistributionModal';
 import { VoltageScalePanel } from './features/analytics/components/VoltageScalePanel';
 import { GlobalSettingsModal, type GlobalConfig } from './features/analytics/components/GlobalSettingsModal';
+import { DiagnosticModal } from './features/analytics/components/DiagnosticModal';
 import { GlobalSearch } from './features/grid/components/GlobalSearch';
 import { ModelSwitcher } from './features/grid/components/ModelSwitcher';
 import {
@@ -32,7 +33,7 @@ const DEFAULT_CONFIG: GlobalConfig = {
   fixedEndDate: new Date().toISOString()
 };
 
-type AnalysisType = 'consumption' | 'voltage';
+type AnalysisType = 'consumption' | 'voltage' | 'diagnostic';
 
 interface AnalysisInstance {
   id: string;
@@ -134,6 +135,7 @@ export default function App() {
   const [highlightedEdges, setHighlightedEdges] = useState<Set<string>>(new Set());
   const [fitBoundsTrigger, setFitBoundsTrigger] = useState(0);
   const [nodeAverages, setNodeAverages] = useState<Record<string, number> | null>(null);
+  const [nodeCurrents, setNodeCurrents] = useState<Record<string, { a: number, b: number, c: number }> | null>(null);
 
   const [voltageScale, setVoltageScale] = useState(() => {
     const saved = localStorage.getItem('voltageScale');
@@ -237,8 +239,43 @@ export default function App() {
       })
       .catch(err => console.error('[App] Failed to fetch topology:', err));
   }, [activeModelIds]);
+  
+  const handleShowDiagnostic = async (targetId?: string, targetType?: 'Node' | 'Edge') => {
+    // If no specific ID provided, use the last selected node or the first selected node
+    const id = targetId || selectedNodes[selectedNodes.length - 1]?.id;
+    if (!id) return;
+    
+    // Default to Node if not specified
+    const windowId = `diagnostic-${id}`;
+    
+    const nodeLabel = targetId 
+        ? `${targetType} ${targetId}` 
+        : (selectedNodes[selectedNodes.length - 1]?.name || id);
 
+    setAnalysisWindows(prev => prev.map(w =>
+      (w.id !== windowId)
+        ? { ...w, isMinimized: true }
+        : w
+    ));
 
+    const existing = analysisWindows.find(w => w.id === windowId);
+    if (existing) {
+      updateWindow(windowId, { isOpen: true, isMinimized: false });
+      return;
+    }
+
+    const newWindow: AnalysisInstance = {
+      id: windowId,
+      type: 'diagnostic',
+      nodeIds: [id],
+      nodeName: nodeLabel,
+      isOpen: true,
+      isMinimized: false,
+      loading: false, // DiagnosticModal handles its own loading
+      data: [],
+    };
+    setAnalysisWindows(prev => [...prev, newWindow]);
+  };
 
   const handleRunVoltageMap = async (agg: string) => {
     setLoading(true);
@@ -260,6 +297,7 @@ export default function App() {
 
       if (res.node_voltages) {
         setNodeAverages(res.node_voltages);
+        setNodeCurrents(res.node_currents || null);
         // We highlight the area if a specific node was queried
         if (firstNodeId) {
           const keys = Object.keys(res.node_voltages);
@@ -572,6 +610,7 @@ export default function App() {
               highlightedEdges={highlightedEdges}
               selectedNodeIds={selectedNodes.map(n => n.id)}
               nodeAverages={nodeAverages}
+              nodeCurrents={nodeCurrents}
               onMapClick={handleClearSelection}
               voltageScale={voltageScale}
               fitHighlightedNodesTrigger={fitBoundsTrigger}
@@ -681,6 +720,7 @@ export default function App() {
                 onClearSelection={handleClearSelection}
                 onViewConsumption={() => handleShowConsumption()}
                 onViewVoltage={() => handleShowVoltageDistribution()}
+                onViewDiagnostic={() => handleShowDiagnostic()}
                 visible={selectedNodes.length > 0}
                 dateRange={dateRange}
                 configLabel={globalConfig.defaultDuration === 'custom' ? `${globalConfig.customDays} Days` : globalConfig.defaultDuration}
@@ -727,7 +767,7 @@ export default function App() {
                 isPaused={win.isPaused ?? false}
                 onConfirm={() => handleConfirmConsumption(win.id)}
               />
-            ) : (
+            ) : win.type === 'voltage' ? (
               <VoltageDistributionModal
                 key={win.id}
                 isOpen={win.isOpen}
@@ -745,7 +785,16 @@ export default function App() {
                 isPaused={win.isPaused ?? false}
                 onConfirm={() => handleConfirmVoltage(win.id)}
               />
-            )
+            ) : win.type === 'diagnostic' ? (
+              <DiagnosticModal
+                key={win.id}
+                isOpen={win.isOpen}
+                onClose={() => removeWindow(win.id)}
+                id={win.nodeIds[0]}
+                type={win.nodeIds[0].includes('_') || win.nodeIds[0].length > 20 ? 'Edge' : 'Node'}
+                title={win.nodeName}
+              />
+            ) : null
           ))}
 
           {/* Minimized Modal Tabs */}
@@ -773,7 +822,13 @@ export default function App() {
                 }}
               >
                 <Group gap="xs" wrap="nowrap">
-                  {win.type === 'consumption' ? <Zap size={14} color="#339af0" /> : <Activity size={14} color="#fab005" />}
+                  {win.type === 'consumption' ? (
+                    <Zap size={14} color="#339af0" />
+                  ) : win.type === 'voltage' ? (
+                    <Activity size={14} color="#fab005" />
+                  ) : (
+                    <Search size={14} color="#20c997" />
+                  )}
                   <Box style={{ fontSize: '12px', fontWeight: 500 }}>
                     {win.nodeName} ({win.type.charAt(0).toUpperCase() + win.type.slice(1)})
                   </Box>

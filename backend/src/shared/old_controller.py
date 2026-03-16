@@ -76,9 +76,8 @@ def _ensure_graph_built(model_ids: list[str] | None = None):
             phases=n.get("phases_present") or ["A", "B", "C"],
             latitude=n["latitude"],
             longitude=n["longitude"],
-            connected_equipment=n.get("connected_equipment", []),
+            attached_equipment=n.get("attached_equipment", []),
             base_voltage_kv=n.get("base_voltage_kv"),
-            transformer_kva=n.get("transformer_kva"),
         )
         for n in nodes_raw
     ]
@@ -256,11 +255,9 @@ async def get_topology(
                 "name": n['name'],
                 "position": [n['longitude'], n['latitude']],
                 "circuit_id": node_to_circuit.get(n['node_id'], "unknown"),
-                "is_open": n.get('is_open', False),
                 "phases": n.get('phases_present', ['A', 'B', 'C']),
                 "base_voltage_kv": n.get('base_voltage_kv'),
-                "transformer_kva": n.get('transformer_kva'),
-                "connected_equipment": n.get('connected_equipment', []),
+                "attached_equipment": n.get('attached_equipment', []),
                 "model_id": n.get('model_id', 'unknown'),
             })
 
@@ -277,7 +274,11 @@ async def get_topology(
                 "targetPosition": node_coords[tgt],
                 "circuit_id": node_to_circuit.get(src, "unknown"),
                 "phases": e.get('phases'),
-                "conductor_type": e.get('conductor_type'),
+                "edge_type": e.get('edge_type'),
+                "name": e.get('name', ''),
+                "is_open": e.get('is_open', False),
+                "transformer_kva": e.get('transformer_kva'),
+                "is_regulator": e.get('is_regulator', False),
                 "model_id": e.get('model_id', 'unknown'),
             })
 
@@ -388,6 +389,17 @@ async def get_node_cim_details(node_id: str):
     if detail is None:
         raise HTTPException(status_code=404, detail=f"Connectivity node not found: {node_id}")
     return detail
+
+
+@router.get("/api/cim/neighbors/{target_id}")
+async def get_cim_neighbors(target_id: str):
+    """Returns immediate graph neighbors for any CIM entity."""
+    for mid, mgr in registry.get_managers():
+        neighbors = mgr.get_neighbors(target_id)
+        if neighbors:
+            neighbors["model_id"] = mid
+            return neighbors
+    raise HTTPException(status_code=404, detail=f"CIM entity not found: {target_id}")
 
 
 @router.get("/discovery/alarms/{node_id}")

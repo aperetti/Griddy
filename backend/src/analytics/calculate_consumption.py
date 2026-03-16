@@ -95,11 +95,12 @@ class CalculateAggregateConsumptionUseCase:
             SELECT 
                 r.timestamp,
                 SUM(COALESCE(r.kwh_dlv, 0)) as total_kwh_dlv,
+                SUM(COALESCE(r.kwh_rcv, 0)) as total_kwh_rcv,
                 SUM(COALESCE(r.kwh_dlv, 0) * pw.wa) as kwh_a,
                 SUM(COALESCE(r.kwh_dlv, 0) * pw.wb) as kwh_b,
                 SUM(COALESCE(r.kwh_dlv, 0) * pw.wc) as kwh_c,
                 MAX(w.temperature) as temperature
-            FROM read_parquet('{self.parquet_dir}/*.parquet') r
+            FROM read_parquet('{self.parquet_dir.replace("\\", "/")}/*.parquet') r
             JOIN phase_weights pw ON r.node_id = pw.node_id
             LEFT JOIN weather_recordings w 
                 ON w.month = EXTRACT(month FROM r.timestamp)
@@ -113,16 +114,19 @@ class CalculateAggregateConsumptionUseCase:
         
         try:
             with duckdb.connect(self.db_path, read_only=True) as conn:
+                print(f"DEBUG: SQL: {query}")
                 results = conn.execute(query, [start_time, end_time]).fetchall()
                 
             time_series = [
                 {
                     "timestamp": row[0].isoformat() + "Z",
                     "kwh_delivered": float(row[1]),
-                    "kwh_a": float(row[2]),
-                    "kwh_b": float(row[3]),
-                    "kwh_c": float(row[4]),
-                    "temperature": float(row[5]) if row[5] else 0
+                    "kwh_received": float(row[2]),
+                    "net_consumption": float(row[1]) - float(row[2]),
+                    "kwh_a": float(row[3]),
+                    "kwh_b": float(row[4]),
+                    "kwh_c": float(row[5]),
+                    "temperature": float(row[6]) if row[6] else 0
                 }
                 for row in results
             ]

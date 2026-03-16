@@ -26,6 +26,7 @@
 * **Voltage Distribution**: Calculate the mean, median, and standard deviation of voltage for all meters downstream of a selected device over a user-defined time range.
 * **Phase Balancing**: Aggregate total kWh or instantaneous I across phases A, B, and C at any node in the graph to identify neutral loading or phase imbalance.
 * **Aggregation Logic**: The agent must translate natural language (e.g., "What was the peak load on Phase B of Transformer X last Tuesday?") into a SQL query.
+* **Data Export**: Support exporting any analysis result to tabular (Excel/CSV) or non-tabular (JSON) formats for external reporting.
 
 ## 3. User Interface & Visualization
 * **Interactive Graph View**: A map or schematic-based view to select devices for analysis.

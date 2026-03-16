@@ -14,6 +14,7 @@ interface GridMapProps {
     highlightedEdges?: Set<string>;
     selectedNodeIds?: string[];
     nodeAverages?: Record<string, number> | null;
+    nodeCurrents?: Record<string, { a: number, b: number, c: number }> | null;
     onMapClick?: () => void;
     voltageScale?: {
         criticalHigh: number;
@@ -42,26 +43,45 @@ const stringToColor = (str: string): [number, number, number] => {
     return [r, g, b];
 };
 
-const getNodeColor = (type: string, isHighlighted: boolean, isSelected: boolean, circuitId?: string): [number, number, number] => {
-    if (isSelected) return [255, 200, 50]; // Distinct gold/amber for the specifically selected node
-    if (isHighlighted) return [60, 160, 240]; // Softer blue for downstream highlighted nodes
+// Switch and breaker edge_type values
+const SWITCH_EDGE_TYPES = new Set(['Breaker', 'LoadBreakSwitch', 'Fuse', 'Disconnector', 'Recloser']);
+
+// Derive a visual category from node.type and attached_equipment.
+// After the CIM refactor, node.type is only "Bus" | "Substation"; richer
+// categories come from what equipment is attached at the node.
+const getVisualType = (node: Node): string => {
+    if (node.type === 'Substation') return 'Substation';
+    const attached = node.attached_equipment ?? [];
+    if (attached.some(eq => eq.type === 'EnergySource')) return 'Substation';
+    if (attached.some(eq => eq.type === 'EnergyConsumer')) return 'Meter';
+    if (attached.some(eq => eq.type === 'Capacitor')) return 'Capacitor';
+    return 'Bus';
+};
+
+const getNodeColor = (visualType: string, isHighlighted: boolean, isSelected: boolean, circuitId?: string): [number, number, number] => {
+    if (isSelected) return [255, 200, 50];
+    if (isHighlighted) return [60, 160, 240];
 
     if (circuitId && circuitId !== 'unknown') {
         return stringToColor(circuitId);
     }
 
-    switch (type) {
-        case 'SubstationBreaker':
+    switch (visualType) {
         case 'Substation':
-            return [255, 50, 50]; // Bright Red for Feeder Breaker
-        case 'Transformer':
-            return [100, 200, 255];
+            return [255, 50, 50];
         case 'Meter':
             return [100, 255, 100];
+        case 'Capacitor':
+            return [255, 210, 80];
         default:
             return [200, 200, 200];
     }
 };
+
+const edgeMidpoint = (d: Edge): [number, number] => [
+    (d.sourcePosition[0] + d.targetPosition[0]) / 2,
+    (d.sourcePosition[1] + d.targetPosition[1]) / 2,
+];
 
 export const GridMap = React.memo<GridMapProps>(({
     nodes,
@@ -72,6 +92,7 @@ export const GridMap = React.memo<GridMapProps>(({
     highlightedEdges = new Set(),
     selectedNodeIds = [],
     nodeAverages = null,
+    nodeCurrents = null,
     onMapClick,
     voltageScale,
     fitHighlightedNodesTrigger = 0
@@ -189,26 +210,34 @@ export const GridMap = React.memo<GridMapProps>(({
         return () => window.removeEventListener('resize', updateSize);
     }, []);
 
-    // Extract exactly where switches/breakers are so we can hide base nodes underneath them
-    const switchPositions = useMemo(() => {
-        const positions = new Set<string>();
-        for (const n of nodes) {
-            if (n.type === 'Switch' || n.type === 'Breaker') {
-                positions.add(`${n.position[0].toFixed(6)},${n.position[1].toFixed(6)}`);
-            }
-        }
-        return positions;
-    }, [nodes]);
+    // Edges that carry switch/breaker equipment (for icon rendering)
+    const switchEdgesOpen = useMemo(
+        () => edges.filter(e => SWITCH_EDGE_TYPES.has(e.edge_type ?? '') && e.is_open),
+        [edges]
+    );
+    const switchEdgesClosed = useMemo(
+        () => edges.filter(e => SWITCH_EDGE_TYPES.has(e.edge_type ?? '') && !e.is_open),
+        [edges]
+    );
+    const transformerEdges = useMemo(
+        () => edges.filter(e => e.edge_type === 'PowerTransformer' && !e.is_regulator),
+        [edges]
+    );
+    const regulatorEdges = useMemo(
+        () => edges.filter(e => e.edge_type === 'PowerTransformer' && e.is_regulator),
+        [edges]
+    );
 
     const layers = useMemo(() => [
         new ScatterplotLayer({
             id: 'selection-halo',
             data: nodes.filter(n => selectedNodeIdsSet.has(n.id)),
             getPosition: (d: Node) => d.position,
-            getFillColor: [255, 255, 255, 80], // Subtle soft white/gray halo
+            getFillColor: [255, 255, 255, 80],
             getRadius: (d: Node) => {
-                const baseRadius = d.type === 'Transformer' ? 6 : (d.type === 'Meter' || d.type === 'Bus' ? 5 : 10);
-                return baseRadius * 1.1; // Slightly bigger (1.1x)
+                const vt = getVisualType(d);
+                const baseRadius = vt === 'Meter' || vt === 'Bus' ? 5 : 10;
+                return baseRadius * 1.1;
             },
             radiusUnits: 'pixels',
             radiusScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
@@ -276,13 +305,7 @@ export const GridMap = React.memo<GridMapProps>(({
         }),
         new ScatterplotLayer({
             id: 'grid-nodes',
-            data: nodes.filter(n => {
-                if (n.type === 'Switch' || n.type === 'Breaker' || n.type === 'Transformer' || n.type === 'Bus') return false;
-                // Hide buses that overlap completely with switches/breakers
-                const posKey = `${n.position[0].toFixed(6)},${n.position[1].toFixed(6)}`;
-                if (switchPositions.has(posKey)) return false;
-                return true;
-            }),
+            data: nodes.filter(n => getVisualType(n) !== 'Bus'),
             getPosition: (d: Node) => d.position,
             getFillColor: (d: Node) => {
                 if (selectedNodeIdsSet.has(d.id)) return [255, 200, 50, 255];
@@ -290,30 +313,26 @@ export const GridMap = React.memo<GridMapProps>(({
                 if (nodeAverages && nodeAverages[d.id] !== undefined && voltageScale) {
                     const voltage = nodeAverages[d.id];
                     const pu = voltage / (voltageScale.baseVoltage || 120);
-                    // Soft coral for critical high
                     if (pu > voltageScale.criticalHigh) return [255, 107, 107, 200];
-                    // Muted orange for high warning
                     if (pu >= voltageScale.highWarning) return [250, 150, 80, 200];
-                    // Emerald green for low warning (since it's inverted from normal logic, this is 'in band' here)
                     if (pu >= voltageScale.lowWarning) return [46, 204, 113, 200];
-                    // Soft gold for critical low (since it's warning)
                     if (pu >= voltageScale.criticalLow) return [241, 196, 15, 200];
-                    // Periwinkle/Indigo for extreme low
                     return [142, 68, 173, 200];
                 }
 
-                const color = getNodeColor(d.type, highlightedNodes.has(d.id), false, d.circuit_id);
+                const vt = getVisualType(d);
+                const color = getNodeColor(vt, highlightedNodes.has(d.id), false, d.circuit_id);
                 return [color[0], color[1], color[2], 255];
             },
             getRadius: (d: Node) => {
                 const isHovered = hoveredNodeId === d.id;
                 const isHighlighted = highlightedNodes.has(d.id);
                 const isSelected = selectedNodeIdsSet.has(d.id);
-                // Transformer takes old Bus size (4). Bus takes Meter size (3).
-                const baseRadius = d.type === 'Transformer' ? 4 : (d.type === 'Meter' || d.type === 'Bus' ? 3 : 8);
+                const vt = getVisualType(d);
+                const baseRadius = vt === 'Meter' ? 3 : 8;
                 let radius = isHovered ? baseRadius * 2.5 : baseRadius;
-                if (isHighlighted) radius = radius * 1.5;
-                if (isSelected) radius = radius * 1.1; // Make the specifically selected node slightly larger
+                if (isHighlighted) radius *= 1.5;
+                if (isSelected) radius *= 1.1;
                 return radius;
             },
             updateTriggers: {
@@ -339,98 +358,130 @@ export const GridMap = React.memo<GridMapProps>(({
         }),
         new IconLayer({
             id: 'grid-switches-open',
-            data: nodes.filter(n => (n.type === 'Switch' || n.type === 'Breaker') && n.is_open),
-            getPosition: (d: Node) => d.position,
+            data: switchEdgesOpen,
+            getPosition: (d: Edge) => edgeMidpoint(d),
             iconAtlas: '/open-switch.svg',
             iconMapping: {
                 marker: { x: 0, y: 0, width: 100, height: 100, anchorY: 50, mask: false }
             },
             getIcon: () => 'marker',
-            getSize: (d: Node) => {
-                const isSelected = selectedNodeIdsSet.has(d.id);
-                return isSelected ? 36 : 24;
-            },
+            getSize: (d: Edge) => highlightedEdges.has(d.id ?? '') ? 36 : 24,
             sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
             sizeMinPixels: 1,
-            updateTriggers: {
-                getSize: [selectedNodeIdsSet]
-            },
+            updateTriggers: { getSize: [highlightedEdges] },
             pickable: true,
             autoHighlight: false,
             onHover: (info) => {
-                setHoveredNodeId(info.object ? info.object.id : null);
+                setHoveredEdgeId(info.object ? (info.object.id ?? null) : null);
             },
             onClick: (info, event) => {
                 const srcEvent = (event as any).srcEvent as MouseEvent;
-                console.log('[GridMap] Interaction:', info.object?.id, 'Shift:', srcEvent?.shiftKey);
-                if (info.object && srcEvent) {
-                    onNodeClick(info.object, srcEvent.shiftKey || srcEvent.ctrlKey);
+                if (info.object && srcEvent && onEdgeClick) {
+                    onEdgeClick(info.object as Edge, srcEvent.shiftKey || srcEvent.ctrlKey);
                 }
             }
         }),
         new IconLayer({
             id: 'grid-switches-closed',
-            data: nodes.filter(n => (n.type === 'Switch' || n.type === 'Breaker') && !n.is_open),
-            getPosition: (d: Node) => d.position,
+            data: switchEdgesClosed,
+            getPosition: (d: Edge) => edgeMidpoint(d),
             iconAtlas: '/close-switch.svg',
             iconMapping: {
                 marker: { x: 0, y: 0, width: 100, height: 100, anchorY: 50, mask: false }
             },
             getIcon: () => 'marker',
-            getSize: (d: Node) => {
-                const isSelected = selectedNodeIdsSet.has(d.id);
-                return isSelected ? 36 : 24;
-            },
+            getSize: (d: Edge) => highlightedEdges.has(d.id ?? '') ? 36 : 24,
             sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
             sizeMinPixels: 1,
-            updateTriggers: {
-                getSize: [selectedNodeIdsSet]
-            },
+            updateTriggers: { getSize: [highlightedEdges] },
             pickable: true,
             autoHighlight: false,
             onHover: (info) => {
-                setHoveredNodeId(info.object ? info.object.id : null);
+                setHoveredEdgeId(info.object ? (info.object.id ?? null) : null);
             },
             onClick: (info, event) => {
                 const srcEvent = (event as any).srcEvent as MouseEvent;
-                console.log('[GridMap] Interaction:', info.object?.id, 'Shift:', srcEvent?.shiftKey);
-                if (info.object && srcEvent) {
-                    onNodeClick(info.object, srcEvent.shiftKey || srcEvent.ctrlKey);
+                if (info.object && srcEvent && onEdgeClick) {
+                    onEdgeClick(info.object as Edge, srcEvent.shiftKey || srcEvent.ctrlKey);
                 }
             }
         }),
         new IconLayer({
             id: 'grid-transformers',
-            data: nodes.filter(n => n.type === 'Transformer'),
-            getPosition: (d: Node) => d.position,
+            data: transformerEdges,
+            getPosition: (d: Edge) => edgeMidpoint(d),
             iconAtlas: '/transformer.svg',
             iconMapping: {
                 marker: { x: 0, y: 0, width: 100, height: 100, anchorY: 50, mask: false }
             },
             getIcon: () => 'marker',
-            getSize: (d: Node) => {
-                const isSelected = selectedNodeIdsSet.has(d.id);
-                return isSelected ? 20 : 16;
-            },
+            getSize: (d: Edge) => highlightedEdges.has(d.id ?? '') ? 20 : 16,
             sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
             sizeMinPixels: 1,
-            updateTriggers: {
-                getSize: [selectedNodeIdsSet]
-            },
+            updateTriggers: { getSize: [highlightedEdges] },
             pickable: true,
             autoHighlight: false,
             onHover: (info) => {
-                setHoveredNodeId(info.object ? info.object.id : null);
+                setHoveredEdgeId(info.object ? (info.object.id ?? null) : null);
             },
             onClick: (info, event) => {
                 const srcEvent = (event as any).srcEvent as MouseEvent;
-                console.log('[GridMap] Interaction:', info.object?.id, 'Shift:', srcEvent?.shiftKey);
+                if (info.object && srcEvent && onEdgeClick) {
+                    onEdgeClick(info.object as Edge, srcEvent.shiftKey || srcEvent.ctrlKey);
+                }
+            }
+        }),
+        new IconLayer({
+            id: 'grid-regulators',
+            data: regulatorEdges,
+            getPosition: (d: Edge) => edgeMidpoint(d),
+            iconAtlas: '/regulator.svg',
+            iconMapping: {
+                marker: { x: 0, y: 0, width: 100, height: 100, anchorY: 50, mask: false }
+            },
+            getIcon: () => 'marker',
+            getSize: (d: Edge) => highlightedEdges.has(d.id ?? '') ? 50 : 30,
+            sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
+            sizeMinPixels: 1,
+            updateTriggers: { getSize: [highlightedEdges] },
+            pickable: true,
+            autoHighlight: false,
+            onHover: (info) => {
+                setHoveredEdgeId(info.object ? (info.object.id ?? null) : null);
+            },
+            onClick: (info, event) => {
+                const srcEvent = (event as any).srcEvent as MouseEvent;
+                if (info.object && srcEvent && onEdgeClick) {
+                    onEdgeClick(info.object as Edge, srcEvent.shiftKey || srcEvent.ctrlKey);
+                }
+            }
+        }),
+        new IconLayer({
+            id: 'grid-capacitors',
+            data: nodes.filter(n => getVisualType(n) === 'Capacitor'),
+            getPosition: (d: Node) => d.position,
+            iconAtlas: '/capacitor.svg',
+            iconMapping: {
+                marker: { x: 0, y: 0, width: 100, height: 100, anchorY: 50, mask: false }
+            },
+            getIcon: () => 'marker',
+            getSize: (d: Node) => hoveredNodeId === d.id ? 50 : 30,
+            sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
+            sizeMinPixels: 1,
+            updateTriggers: { getSize: [hoveredNodeId] },
+            pickable: true,
+            autoHighlight: false,
+            onHover: (info) => {
+                setHoveredNodeId(info.object ? (info.object.id ?? null) : null);
+            },
+            onClick: (info, event) => {
+                const srcEvent = (event as any).srcEvent as MouseEvent;
                 if (info.object && srcEvent) {
                     onNodeClick(info.object, srcEvent.shiftKey || srcEvent.ctrlKey);
                 }
             }
         })
-    ], [nodes, edges, hoveredNodeId, hoveredEdgeId, highlightedNodes, highlightedEdges, selectedNodeIdsSet, switchPositions, nodeAverages, voltageScale, onNodeClick, onEdgeClick, viewState.zoom]);
+    ], [nodes, edges, hoveredNodeId, hoveredEdgeId, highlightedNodes, highlightedEdges, selectedNodeIdsSet, switchEdgesOpen, switchEdgesClosed, transformerEdges, regulatorEdges, nodeAverages, voltageScale, onNodeClick, onEdgeClick, viewState.zoom]);
 
     return (
         <div
@@ -472,18 +523,38 @@ export const GridMap = React.memo<GridMapProps>(({
                                 <div style="padding: 10px; background: #25262b; border: 1px solid #373A40; border-radius: 8px; color: #fff;">
                                 <strong>ID:</strong> ${object.id}<br/>
                                 <strong>Type:</strong> ${object.type}<br/>
-                                <strong>Name:</strong> ${object.name}${object.transformer_kva ? `<br/><strong>Transformer Size:</strong> ${typeof object.transformer_kva === 'number' ? object.transformer_kva.toFixed(1) : object.transformer_kva} kVA` : ''}
+                                <strong>Name:</strong> ${object.name}
                                 </div>
                             `,
                                 style: { backgroundColor: 'transparent', fontSize: '13px' }
                             };
                         } else {
+                            const edgeObj = object as Edge;
+                            const extraLine = edgeObj.transformer_kva
+                                ? `<br/><strong>Size:</strong> ${edgeObj.transformer_kva.toFixed(1)} kVA`
+                                : edgeObj.is_open !== undefined && edgeObj.edge_type && SWITCH_EDGE_TYPES.has(edgeObj.edge_type)
+                                    ? `<br/><strong>State:</strong> ${edgeObj.is_open ? 'Open' : 'Closed'}`
+                                    : edgeObj.length_m
+                                        ? `<br/><strong>Length:</strong> ${edgeObj.length_m.toFixed(1)} m`
+                                        : '';
+
+                            // Calculate apparent power for transformers if we have currents
+                            let powerLine = '';
+                            if (edgeObj.edge_type === 'PowerTransformer' && nodeCurrents && nodeCurrents[edgeObj.target] && nodeAverages && nodeAverages[edgeObj.target]) {
+                                const currents = nodeCurrents[edgeObj.target];
+                                const voltage = nodeAverages[edgeObj.target];
+                                // S = V * (Ia + Ib + Ic) for balanced or single-phase voltage assumption
+                                // If we only have one voltage reading (voltage_a average), we use it for all phases
+                                const totalS = (voltage * (currents.a + currents.b + currents.c)) / 1000.0;
+                                powerLine = `<br/><strong>Apparent Power:</strong> ${totalS.toFixed(1)} kVA`;
+                            }
+
                             return {
                                 html: `
                                 <div style="padding: 10px; background: #25262b; border: 1px solid #373A40; border-radius: 8px; color: #fff;">
-                                <strong>ID:</strong> ${object.id || `${object.source}-${object.target}`}<br/>
-                                <strong>Type:</strong> Edge<br/>
-                                <strong>Phases:</strong> ${object.phases ? object.phases.join('') : 'ABC'}
+                                <strong>ID:</strong> ${edgeObj.id || `${edgeObj.source}-${edgeObj.target}`}<br/>
+                                <strong>Type:</strong> ${edgeObj.edge_type ?? 'Edge'}<br/>
+                                <strong>Phases:</strong> ${edgeObj.phases ? edgeObj.phases.join('') : 'ABC'}${extraLine}${powerLine}
                                 </div>
                             `,
                                 style: { backgroundColor: 'transparent', fontSize: '13px' }

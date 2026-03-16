@@ -1,0 +1,358 @@
+"""IndexBuilder — builds all lookup indexes from a loaded FeederModel."""
+
+import logging
+from collections import defaultdict
+from pathlib import Path
+from typing import Any
+
+from src.shared.cim.helpers import _mrid_str, _safe_float, _parse_phase_code
+from src.shared.cim.loader import _manual_xml_catalog_scan
+
+logger = logging.getLogger(__name__)
+
+
+class IndexBuilder:
+    """Builds and holds all lookup indexes derived from a CIM FeederModel graph.
+
+    After ``build()`` is called the public index dicts are ready for use by
+    ``TopologyBuilder`` and ``CimModelManager``.
+    """
+
+    def __init__(self, cim, graph, xml_path: Path | None = None):
+        self.cim = cim
+        self.graph = graph
+        self._xml_path = xml_path
+
+        # Public indexes
+        self.equipment_index: dict[str, tuple[str, Any]] = {}     # mRID → (cls_name, obj)
+        self.equipment_types: dict[str, str] = {}                  # mRID → type label
+        self.equipment_open: dict[str, bool] = {}                  # mRID → open state
+        self.eq_coords: dict[str, tuple[float, float]] = {}        # mRID → (lat, lon)
+        self.location_coords: dict[str, tuple[float, float]] = {}  # loc mRID → (lat, lon)
+        self.eq_terminals: dict[str, list] = defaultdict(list)     # eq mRID → [(term, cn_mRID)]
+        self.cn_equipment: dict[str, list] = defaultdict(list)     # cn mRID → [eq mRID]
+        self.eq_phases: dict[str, list[str]] = {}                  # eq mRID → ["A","B",…]
+        self.transformer_kva: dict[str, float] = {}                # PT/Tank mRID → kVA
+        self.transformer_primary_cn: dict[str, str] = {}           # PT mRID → primary CN mRID
+        self.transformer_has_tap_changer: dict[str, bool] = {}     # PT/Tank mRID → bool
+        self.manual_tank_to_info: dict[str, str] = {}              # tank mRID → tankInfo mRID
+        self.manual_info_to_kva: dict[str, float] = {}             # tankInfo mRID → VA
+
+    # ------------------------------------------------------------------
+    # Public entry point
+    # ------------------------------------------------------------------
+
+    def build(self):
+        """Orchestrate all index construction."""
+        self._index_equipment()
+        self._build_coordinate_index()
+        self._build_terminal_index()
+        self._classify_equipment()
+        self._build_phase_index()
+        if self._xml_path is not None:
+            self.manual_tank_to_info, self.manual_info_to_kva = _manual_xml_catalog_scan(
+                self._xml_path
+            )
+        self._build_transformer_index()
+
+    # ------------------------------------------------------------------
+    # Private builders
+    # ------------------------------------------------------------------
+
+    def _index_equipment(self):
+        """Populate equipment_index: mRID → (cls_name, obj) for every CIM object."""
+        for cim_cls, objs in self.graph.items():
+            cls_name = cim_cls.__name__
+            for _eid, obj in objs.items():
+                m = _mrid_str(obj)
+                if m:
+                    self.equipment_index[m] = (cls_name, obj)
+
+    def _build_coordinate_index(self):
+        cim = self.cim
+        graph = self.graph
+
+        position_points = graph.get(cim.PositionPoint, {})
+        raw_points: list[tuple[float, float]] = []
+
+        for _pp_id, pp in position_points.items():
+            x = _safe_float(getattr(pp, "xPosition", None))
+            y = _safe_float(getattr(pp, "yPosition", None))
+            if x is not None and y is not None:
+                raw_points.append((x, y))
+
+        # Normalise into ~0.1° box centred on Los Angeles
+        if raw_points:
+            min_x = min(p[0] for p in raw_points)
+            max_x = max(p[0] for p in raw_points)
+            min_y = min(p[1] for p in raw_points)
+            max_y = max(p[1] for p in raw_points)
+            span_x = (max_x - min_x) or 1.0
+            span_y = (max_y - min_y) or 1.0
+
+            def _normalize(x, y):
+                lon = (x - min_x) / span_x * 0.1 - 118.2437
+                lat = (y - min_y) / span_y * 0.1 + 34.0522
+                return lat, lon
+        else:
+            def _normalize(x, y):
+                return 34.0522, -118.2437
+
+        # Location mRID → (lat, lon)
+        for _pp_id, pp in position_points.items():
+            loc = getattr(pp, "Location", None)
+            loc_id = _mrid_str(loc)
+            x = _safe_float(getattr(pp, "xPosition", None))
+            y = _safe_float(getattr(pp, "yPosition", None))
+            if loc_id and x is not None and y is not None:
+                if loc_id not in self.location_coords:
+                    self.location_coords[loc_id] = _normalize(x, y)
+
+        # Equipment mRID → (lat, lon)
+        eq_cls_with_location = [
+            cim.ACLineSegment, cim.PowerTransformer, cim.Breaker,
+            cim.LoadBreakSwitch, cim.EnergyConsumer, cim.EnergySource,
+        ]
+        for opt in ("Fuse", "Disconnector", "Recloser", "Substation",
+                    "LinearShuntCompensator", "TransformerTank"):
+            cls = getattr(cim, opt, None)
+            if cls:
+                eq_cls_with_location.append(cls)
+
+        for eq_cls in eq_cls_with_location:
+            for _eid, eq in graph.get(eq_cls, {}).items():
+                eq_m = _mrid_str(eq)
+                loc = getattr(eq, "Location", None)
+                loc_id = _mrid_str(loc)
+                if eq_m and loc_id and loc_id in self.location_coords:
+                    self.eq_coords[eq_m] = self.location_coords[loc_id]
+
+        logger.info(
+            "  %d position points → %d locations → %d equipment geocoded",
+            len(raw_points),
+            len(self.location_coords),
+            len(self.eq_coords),
+        )
+
+    def _build_terminal_index(self):
+        cim = self.cim
+        terminals = self.graph.get(cim.Terminal, {})
+        for _tid, term in terminals.items():
+            ce = getattr(term, "ConductingEquipment", None)
+            cn = getattr(term, "ConnectivityNode", None)
+            ce_m = _mrid_str(ce) if ce else None
+            cn_m = _mrid_str(cn) if cn else None
+            if ce_m and cn_m:
+                self.eq_terminals[ce_m].append((term, cn_m))
+                self.cn_equipment[cn_m].append(ce_m)
+
+        logger.info(
+            "  %d terminals → %d equipment → %d connectivity nodes",
+            len(terminals),
+            len(self.eq_terminals),
+            len(self.cn_equipment),
+        )
+
+    def _classify_equipment(self):
+        cim = self.cim
+        graph = self.graph
+
+        type_map: dict = {
+            cim.ACLineSegment: "ACLineSegment",
+            cim.PowerTransformer: "PowerTransformer",
+            cim.Breaker: "Breaker",
+            cim.LoadBreakSwitch: "LoadBreakSwitch",
+            cim.EnergyConsumer: "EnergyConsumer",
+            cim.EnergySource: "EnergySource",
+        }
+        tt_cls = getattr(cim, "TransformerTank", None)
+        if tt_cls:
+            type_map[tt_cls] = "PowerTransformer"
+
+        for opt_name, type_str in [
+            ("Fuse", "Fuse"),
+            ("Disconnector", "Disconnector"),
+            ("Recloser", "Recloser"),
+            ("LinearShuntCompensator", "Capacitor"),
+        ]:
+            cls = getattr(cim, opt_name, None)
+            if cls:
+                type_map[cls] = type_str
+
+        for eq_cls, type_name in type_map.items():
+            for _eid, eq in graph.get(eq_cls, {}).items():
+                m = _mrid_str(eq)
+                if m:
+                    self.equipment_types[m] = type_name
+                    if type_name in ("Breaker", "LoadBreakSwitch", "Fuse",
+                                     "Disconnector", "Recloser"):
+                        is_open = getattr(eq, "normalOpen", None) or getattr(eq, "open", None)
+                        self.equipment_open[m] = bool(is_open) if is_open is not None else False
+
+        for _sid, sub in graph.get(cim.Substation, {}).items():
+            m = _mrid_str(sub)
+            if m:
+                self.equipment_types[m] = "Substation"
+
+    def _build_phase_index(self):
+        """Build eq_phases: mRID → phase list from per-phase CIM objects.
+
+        CIM stores phases on dedicated association objects rather than on
+        Terminal.phases (which is often unpopulated). We scan:
+        * ACLineSegmentPhase    → ACLineSegment
+        * EnergyConsumerPhase   → EnergyConsumer
+        * SwitchPhase           → Switch (Breaker / LoadBreakSwitch etc.)
+        * ShuntCompensatorPhase → ShuntCompensator
+        """
+        cim = self.cim
+        graph = self.graph
+
+        phase_class_map: list[tuple] = []
+        for cls_name, parent_attr in [
+            ("ACLineSegmentPhase",    "ACLineSegment"),
+            ("EnergyConsumerPhase",   "EnergyConsumer"),
+            ("SwitchPhase",           "Switch"),
+            ("ShuntCompensatorPhase", "ShuntCompensator"),
+        ]:
+            cls = getattr(cim, cls_name, None)
+            if cls and graph.get(cls):
+                phase_class_map.append((cls, parent_attr))
+
+        for phase_cls, parent_attr in phase_class_map:
+            for _pid, ph_obj in graph.get(phase_cls, {}).items():
+                parent = getattr(ph_obj, parent_attr, None)
+                parent_id = _mrid_str(parent)
+                if not parent_id:
+                    continue
+                pc = getattr(ph_obj, "phase", None)
+                if pc is None:
+                    continue
+                parsed = _parse_phase_code(pc)
+                if parsed:
+                    existing = self.eq_phases.setdefault(parent_id, [])
+                    for p in parsed:
+                        if p not in existing:
+                            existing.append(p)
+
+        _phase_order = {"A": 0, "B": 1, "C": 2, "N": 3, "S1": 4, "S2": 5}
+        for phases in self.eq_phases.values():
+            phases.sort(key=lambda p: _phase_order.get(p, 9))
+
+        logger.info(
+            "  Equipment phase index: %d equipment with per-phase data",
+            len(self.eq_phases),
+        )
+
+    def _build_transformer_index(self):
+        """Build transformer_kva and transformer_primary_cn indexes with robust fallbacks."""
+        cim = self.cim
+        graph = self.graph
+
+        # ── 1. PowerTransformerEnd (Transmission/Substation level) ──
+        pte_cls = getattr(cim, "PowerTransformerEnd", None)
+        if pte_cls:
+            for _eid, pte in graph.get(pte_cls, {}).items():
+                pt = getattr(pte, "PowerTransformer", None)
+                pt_mrid = _mrid_str(pt)
+                if pt_mrid:
+                    va = _safe_float(getattr(pte, "ratedS", None))
+                    if va:
+                        current = self.transformer_kva.get(pt_mrid, 0.0)
+                        self.transformer_kva[pt_mrid] = max(current, va / 1000.0)
+
+                    if getattr(pte, "endNumber", None) == 1:
+                        term = getattr(pte, "Terminal", None)
+                        if term:
+                            cn = getattr(term, "ConnectivityNode", None)
+                            cn_m = _mrid_str(cn)
+                            if cn_m:
+                                self.transformer_primary_cn[pt_mrid] = cn_m
+
+        # ── 2. TransformerTankEnd (Distribution level) ──
+        tte_cls = getattr(cim, "TransformerTankEnd", None)
+        if tte_cls:
+            for _eid, tte in graph.get(tte_cls, {}).items():
+                tank = getattr(tte, "TransformerTank", None)
+                tank_id = _mrid_str(tank)
+                if tank_id:
+                    ei = getattr(tte, "TransformerEndInfo", None)
+                    if ei:
+                        va = _safe_float(getattr(ei, "ratedS", None))
+                        if va:
+                            current = self.transformer_kva.get(tank_id, 0.0)
+                            self.transformer_kva[tank_id] = max(current, va / 1000.0)
+
+                    if getattr(tte, "endNumber", None) == 1:
+                        term = getattr(tte, "Terminal", None)
+                        if term:
+                            cn = getattr(term, "ConnectivityNode", None)
+                            cn_m = _mrid_str(cn)
+                            if cn_m:
+                                self.transformer_primary_cn[tank_id] = cn_m
+                                pt = getattr(tank, "PowerTransformer", None)
+                                pt_id = _mrid_str(pt)
+                                if pt_id:
+                                    self.transformer_primary_cn[pt_id] = cn_m
+
+        # ── 3. Propagate Tank ratings to parent PowerTransformer ──
+        tt_cls = getattr(cim, "TransformerTank", None)
+        if tt_cls:
+            for _id, t in graph.get(tt_cls, {}).items():
+                t_id = _mrid_str(t)
+                kva = self.transformer_kva.get(t_id)
+                if kva:
+                    pt = getattr(t, "PowerTransformer", None)
+                    pt_id = _mrid_str(pt)
+                    if pt_id:
+                        current = self.transformer_kva.get(pt_id, 0.0)
+                        self.transformer_kva[pt_id] = max(current, kva)
+
+        # ── 3b. Tap Changer identification (Regulators) ──
+        rtc_cls = getattr(cim, "RatioTapChanger", None)
+        if rtc_cls:
+            for _eid, rtc in graph.get(rtc_cls, {}).items():
+                # RatioTapChanger can be linked to PowerTransformerEnd or TransformerTankEnd
+                pte = getattr(rtc, "TransformerEnd", None) # Often just "TransformerEnd" in CIM
+                if pte:
+                    # PowerTransformerEnd -> PowerTransformer
+                    pt = getattr(pte, "PowerTransformer", None)
+                    pt_id = _mrid_str(pt)
+                    if pt_id:
+                        self.transformer_has_tap_changer[pt_id] = True
+                    
+                    # TransformerTankEnd -> TransformerTank
+                    tank = getattr(pte, "TransformerTank", None)
+                    tank_id = _mrid_str(tank)
+                    if tank_id:
+                        self.transformer_has_tap_changer[tank_id] = True
+                        # Also flag the parent transformer if it's a tank
+                        pt_from_tank = getattr(tank, "PowerTransformer", None)
+                        pt_from_tank_id = _mrid_str(pt_from_tank)
+                        if pt_from_tank_id:
+                            self.transformer_has_tap_changer[pt_from_tank_id] = True
+
+        # ── 4. Fallback: Manual XML Scan results ──
+        tank_count = 0
+        for tank_mrid, info_mrid in self.manual_tank_to_info.items():
+            if self.transformer_kva.get(tank_mrid, 0.0) == 0.0:
+                kva = self.manual_info_to_kva.get(info_mrid)
+                if kva:
+                    val = kva / 1000.0 if kva >= 500 else kva
+                    self.transformer_kva[tank_mrid] = val
+                    tank_count += 1
+
+                    tank_obj_tuple = self.equipment_index.get(tank_mrid)
+                    if tank_obj_tuple:
+                        tank_obj = tank_obj_tuple[1]
+                        pt = getattr(tank_obj, "PowerTransformer", None)
+                        pt_id = _mrid_str(pt)
+                        if pt_id:
+                            self.transformer_kva[pt_id] = max(
+                                self.transformer_kva.get(pt_id, 0.0), val
+                            )
+
+        logger.info(
+            "  Transformer KVA index: %d transformers rated (%d from manual scan fallback)",
+            len(self.transformer_kva),
+            tank_count,
+        )

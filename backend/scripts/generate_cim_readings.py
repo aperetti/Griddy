@@ -209,6 +209,8 @@ def main():
                             -- Split-phase flags (map S1→A slot, S2→B slot)
                             list_contains(n.phases_present, 'S1') AS has_s1,
                             list_contains(n.phases_present, 'S2') AS has_s2,
+                            -- 10% of residential nodes have PV (simplification)
+                            (abs(hash(n.node_id)) % 10 = 3) AND (abs(hash(n.node_id)) % 10 < 6) AS has_pv,
                             -- Count of active power-carrying phases (for current splitting)
                             (CASE WHEN list_contains(n.phases_present, 'A') THEN 1 ELSE 0 END
                            + CASE WHEN list_contains(n.phases_present, 'B') THEN 1 ELSE 0 END
@@ -242,6 +244,7 @@ def main():
                             n.node_id,
                             n.has_a, n.has_b, n.has_c,
                             n.has_s1, n.has_s2,
+                            n.has_pv,
                             n.phase_count,
                             n.distance_pct,
                             w.ts AS timestamp,
@@ -269,6 +272,12 @@ def main():
                                 WHEN w.hr BETWEEN 0 AND 6 THEN 0.4
                                 ELSE 1.0
                             END as heat_sensitivity,
+                            -- Solar radiance factor: simple cosine bell for daylight hours (approx 7 AM to 7 PM)
+                            CASE 
+                                WHEN w.hr BETWEEN 7 AND 18 
+                                THEN SIN(PI() * (w.hr - 7 + w.ts.minute() / 60.0) / 12.0)
+                                ELSE 0.0 
+                            END as solar_factor,
                             w.temp
                         FROM nodes n
                         CROSS JOIN weather_series w
@@ -278,6 +287,7 @@ def main():
                             node_id,
                             has_a, has_b, has_c,
                             has_s1, has_s2,
+                            has_pv,
                             phase_count,
                             distance_pct,
                             timestamp,
@@ -290,16 +300,22 @@ def main():
                                 * base_lf
                                 * (1.0 + (0.15 * heat_sensitivity * GREATEST(0, 18 - temp)) + (0.25 * GREATEST(0, temp - 24)))
                                 * (0.7 + 0.6 * random())
-                            ) AS lf
+                            ) AS lf,
+                            solar_factor
                         FROM combined_load
                     ),
                     combined AS (
                         SELECT
                             node_id,
                             timestamp,
-
-                            -- kWh delivered: total load (same regardless of phase count)
+                            -- kWh delivered: total consumption load
                             ROUND(0.20 * lf, 6) AS kwh_dlv,
+                            -- kWh received: solar generation (if has_pv is true)
+                            CASE 
+                                WHEN has_pv 
+                                THEN ROUND(0.5 * solar_factor * (0.8 + 0.4 * random()), 6)
+                                ELSE 0.0 
+                            END AS kwh_rcv,
 
                             -- ── Voltages ──
                             -- Phase A: present if has_a OR split-phase S1 (S1 maps to A slot)

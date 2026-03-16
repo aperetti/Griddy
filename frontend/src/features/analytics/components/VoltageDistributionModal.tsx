@@ -4,6 +4,7 @@ import { AlertTriangle, Clock, Activity } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { ScadaLoadingAnimation } from '../../../components/ScadaLoadingAnimation';
 import { AnalysisWindow } from './AnalysisWindow';
+import { autoExport } from '../../../shared/utils/exportUtils';
 
 interface Props {
     isOpen: boolean;
@@ -38,6 +39,11 @@ export const VoltageDistributionModal = memo(function VoltageDistributionModal({
     isPaused,
     onConfirm,
 }: Props) {
+    const handleExport = () => {
+        if (!data || data.length === 0) return;
+        autoExport(data, `voltage_${nodeName?.replace(/\s+/g, '_')}`);
+    };
+
     const filterContent = (
         <Group gap="xs" wrap="wrap">
             <Text size="xs" c="dimmed">Search Depth:</Text>
@@ -73,6 +79,7 @@ export const VoltageDistributionModal = memo(function VoltageDistributionModal({
             storageKey="voltageWindowPos"
             zIndex={20}
             filterContent={filterContent}
+            onExport={handleExport}
         >
             {isPaused ? (
                 <Box style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '20px' }}>

@@ -73,7 +73,12 @@ class MapVoltageUseCase:
             agg_func = "MEDIAN"
             
         node_avg_query = f"""
-            SELECT node_id, {agg_func}(voltage_a) as v
+            SELECT 
+                node_id, 
+                {agg_func}(voltage_a) as v,
+                AVG(current_a) as ia,
+                AVG(current_b) as ib,
+                AVG(current_c) as ic
             FROM read_parquet('{self.parquet_dir}/*.parquet')
             WHERE timestamp >= '{start_time}'
               AND timestamp <= '{end_time}'
@@ -97,12 +102,21 @@ class MapVoltageUseCase:
                 node_avg_results = conn.execute(node_avg_query).fetchall()
                 
             node_voltages = {row[0]: float(row[1]) for row in node_avg_results if row[1] is not None}
+            node_currents = {
+                row[0]: {
+                    "a": float(row[2]) if row[2] is not None else 0,
+                    "b": float(row[3]) if row[3] is not None else 0,
+                    "c": float(row[4]) if row[4] is not None else 0
+                } 
+                for row in node_avg_results if row[1] is not None
+            }
             estimated_rows = prefetch_results[0] if prefetch_results else 0
                 
             return {
                 "start_node_id": start_node_id,
                 "node_count": len(node_voltages),
                 "node_voltages": node_voltages,
+                "node_currents": node_currents,
                 "estimated_rows": estimated_rows,
                 "agg": agg
             }

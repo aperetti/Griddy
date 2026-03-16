@@ -1,6 +1,6 @@
 import { useState, type ReactNode, useEffect, useCallback } from 'react';
 import { Paper, Group, Title, ActionIcon, Box, Button, Collapse } from '@mantine/core';
-import { X, Filter, ChevronDown, ChevronUp, Maximize2 } from 'lucide-react';
+import { X, Filter, ChevronDown, ChevronUp, Maximize2, Download } from 'lucide-react';
 import { Rnd } from 'react-rnd';
 import { useWindowEvent, useDebouncedCallback } from '@mantine/hooks';
 
@@ -13,6 +13,7 @@ interface AnalysisWindowProps {
     storageKey: string;
     zIndex?: number;
     filterContent?: ReactNode;
+    onExport?: () => void;
     children: ReactNode;
 }
 
@@ -35,6 +36,7 @@ export function AnalysisWindow({
     storageKey,
     zIndex = 1000,
     filterContent,
+    onExport,
     children,
 }: AnalysisWindowProps) {
     const [showFilters, setShowFilters] = useState<boolean>(false);
@@ -173,6 +175,11 @@ export function AnalysisWindow({
                                     color={showFilters ? 'blue' : 'gray'}
                                 >
                                     <Filter size={16} />
+                                </ActionIcon>
+                            )}
+                            {onExport && (
+                                <ActionIcon variant="subtle" onClick={onExport} title="Export Data">
+                                    <Download size={16} />
                                 </ActionIcon>
                             )}
                             {onMinimize && (

@@ -2,22 +2,34 @@ const API_BASE = "/api";
 
 export interface Node {
     id: string;
-    type: string;
+    type: string;  // "Bus" | "Substation"
     name: string;
     position: [number, number];
     circuit_id?: string;
-    is_open?: boolean; // Used by switches and breakers
-    transformer_kva?: number;
+    phases?: string[];
+    base_voltage_kv?: number;
+    attached_equipment?: Array<{
+        mrid: string;
+        type: 'EnergyConsumer' | 'EnergySource' | 'Capacitor';
+        name: string;
+        phases?: string[];
+        [key: string]: unknown;
+    }>;
 }
 
 export interface Edge {
     id?: string;
+    name?: string;
     source: string;
     target: string;
     sourcePosition: [number, number];
     targetPosition: [number, number];
     circuit_id?: string;
     phases?: string[];
+    edge_type?: string;
+    is_open?: boolean;
+    transformer_kva?: number;
+    length_m?: number;
 }
 
 export interface Topology {
