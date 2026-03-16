@@ -23,7 +23,12 @@
     *   **Phase Aggregation Logic**: Multi-phase loads are assumed to be balanced. Aggregation must use a weight-based join: `SUM(kwh_dlv * weight_p)` where `weight_p` is `1.0 / count(display_phases)` for each phase present on the node (where display_phases are A, B, or C). If no A, B, or C phases are present, split equally across all three.
     *   **Imbalance Calculation**: Calculate the Negative Sequence Component magnitude ($|S_2|$) using: $|S_2| = \frac{1}{3} \sqrt{(kwh_a - 0.5 \cdot kwh_b - 0.5 \cdot kwh_c)^2 + (0.866 \cdot (kwh_b - kwh_c))^2}$.
     *   Existing Endpoints: Re-use `/api/analytics/phase-balance/{node_id}` to calculate the downstream aggregations upon node click.
-    *   **Synthetic AMI Generation:** Generate synthetic AMI time-series metrics traversing from 2025 through 2027.
+    *   **Analytical Data Export**:
+        *   **Client-Side Processing**: Large datasets must be transformed and downloaded directly from the browser to minimize server overhead.
+        *   **Format Support**: 
+            - Automated format selection (CSV for tabular/flat data, JSON for nested diagnostic data).
+            - Filename generation must include standardized ISO timestamps.
+    *   **Synthetic AMI Generation**: Generate synthetic AMI time-series metrics traversing from 2025 through 2027.
     *   **Alarms Dataset Integration**:
         *   **Relational Storage**: Active alarms and metadata stored in a dedicated `alarms` table in DuckDB.
         *   **Log Storage**: Historical alarm logs should be stored in Parquet format in `cim_alarms/` directory for high-performance temporal queries.
