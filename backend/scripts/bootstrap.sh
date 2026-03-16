@@ -9,6 +9,12 @@ echo "Starting dedicated data generation..."
 # Ensure PYTHONPATH is set so scripts can find src if needed
 export PYTHONPATH=$PYTHONPATH:/app
 
+echo "--- Debug Environment ---"
+python --version
+pip --version
+pip list | grep cim
+echo "-------------------------"
+
 echo "1. Ingesting CIM model with CIM-Graph into SQLite..."
 python /app/scripts/ingest_cim_graph.py
 

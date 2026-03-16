@@ -45,7 +45,8 @@ def _load_topology_into_duckdb(conn):
     nodes_raw = manager.get_topology_nodes()
     edges_raw = manager.get_topology_edges()
 
-    # Create grid_nodes in DuckDB with proper VARCHAR[] array type
+    # Drop tables in correct order to avoid foreign key constraint violations
+    conn.execute("DROP TABLE IF EXISTS grid_edges")
     conn.execute("DROP TABLE IF EXISTS grid_nodes")
     conn.execute(
         "CREATE TABLE grid_nodes "
