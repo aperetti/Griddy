@@ -76,6 +76,7 @@ export function ModelSwitcher({ onModelsChange }: ModelSwitcherProps) {
               boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
               border: '1px solid rgba(255,255,255,0.1)',
               position: 'relative',
+              overflow: 'visible',
             }}
           >
             <Layers size={20} />
@@ -87,12 +88,12 @@ export function ModelSwitcher({ onModelsChange }: ModelSwitcherProps) {
                 variant="filled"
                 style={{
                   position: 'absolute',
-                  top: -4,
-                  right: -4,
+                  top: -7,
+                  right: -7,
                   padding: 0,
-                  width: 18,
-                  height: 18,
-                  fontSize: 10,
+                  width: 16,
+                  height: 16,
+                  fontSize: 9,
                 }}
               >
                 {loadedCount}

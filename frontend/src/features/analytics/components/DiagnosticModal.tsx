@@ -110,6 +110,7 @@ export function DiagnosticModal({ isOpen, onClose, id: initialId, type: initialT
             title={data?.name ? `Diagnostic: ${data.name}` : initialTitle}
             storageKey={`diagnostic-${initialId}`}
             onExport={handleExport}
+            loading={loading}
         >
             <Stack gap={0} h="100%">
                 <Box p="xs" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>

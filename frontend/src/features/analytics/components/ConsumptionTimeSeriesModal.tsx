@@ -406,6 +406,7 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
             zIndex={1000}
             filterContent={filterContent}
             onExport={handleExport}
+            loading={loading}
         >
             {isPaused ? (
                 <Box style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '20px' }}>

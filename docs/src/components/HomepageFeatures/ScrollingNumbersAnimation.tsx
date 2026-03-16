@@ -1,16 +1,15 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 
 const ScrollingNumbersAnimation: React.FC = () => {
     const containerRef = useRef<HTMLDivElement>(null);
-    const [dataSize, setDataSize] = useState("0 MB");
 
     useEffect(() => {
         if (!containerRef.current) return;
 
         const container = d3.select(containerRef.current);
-        const width = 200;
-        const height = 200; // Match sibling components exactly
+        const width = 260; // Wide canvas
+        const height = 200;
 
         container.selectAll("*").remove();
 
@@ -25,15 +24,13 @@ const ScrollingNumbersAnimation: React.FC = () => {
         const curveGroup = svg.append("g").attr("class", "curve");
         const labelGroup = svg.append("g").attr("class", "label");
 
-        const driftSpeed = 1.0; 
-        let points: { x: number, y: number, value: number, elapsed: number }[] = [];
-
         const names = [
             "Million", "Billion", "Trillion", "Quadrillion", "Quintillion", 
             "Sextillion", "Septillion", "Octillion", "Nonillion", "Decillion"
         ];
 
         const formatSize = (mb: number) => {
+            if (mb < 0.1) return "0.00 MB";
             const si = ["MB", "GB", "TB", "PB", "EB", "ZB", "YB", "RB", "QB"];
             let unitIndex = 0;
             let val = mb;
@@ -50,131 +47,106 @@ const ScrollingNumbersAnimation: React.FC = () => {
                     return `${(mb / divisor).toFixed(2)} ${names[nameIndex]} MB`;
                 }
             }
-
             return `${val.toFixed(unitIndex === 0 ? 0 : 2)} ${si[unitIndex]}`;
         };
 
         const timer = d3.timer((elapsed) => {
-            // ULTRA extreme growth rate
-            // Starts near zero for a long time then explodes vertically
-            const growthRate = 0.0008; 
+            // 1. DYNAMIC GROWTH RATE
+            // Slower controlled growth as requested
+            const growthRate = 0.0011; 
             const currentMB = Math.exp(elapsed * growthRate) - 1;
-            const displayMB = Math.max(0, currentMB);
-            setDataSize(formatSize(displayMB));
+            const displayMB = Math.max(0.1, currentMB);
 
-            // Viewport rescales: Linear Y logic for "zoom out" effect
-            // Tight viewMax for extreme verticality at the right
-            const viewMax = displayMB * 1.015;
+            // 2. DYNAMIC Y-SCALE (The "Zoom Out" engine)
+            // As displayMB grows, the top of the domain increases, 
+            // causing existing power-of-10 values to move downwards.
+            const viewMax = displayMB * 1.05;
+            const yPaddingTop = 30;
+            const yPaddingBottom = 15;
             const yScale = d3.scaleLinear()
                 .domain([0, viewMax])
-                .range([height - 20, 10]);
+                .range([height - yPaddingBottom, yPaddingTop]);
 
-            // Vertical Drift
-            points.push({ x: width, y: 0, value: displayMB, elapsed });
-            points = points.map(p => ({
-                ...p,
-                x: p.x - driftSpeed,
-                y: yScale(p.value)
-            }));
-            points = points.filter(p => p.x > -100);
+            // 3. FULL CURVE REDRAW
+            // To prevent a "stuttered" look, we redraw the entire span [0, width]
+            // every frame, matching the growth seen on the leading edge.
+            const pointsCount = 40;
+            const curvePoints = d3.range(pointsCount).map(i => {
+                const fraction = i / (pointsCount - 1);
+                // Map the full elapsed growth across the current viewport width
+                const localVal = Math.exp((fraction * elapsed) * growthRate) - 1;
+                return {
+                    x: fraction * width,
+                    y: yScale(localVal)
+                };
+            });
 
+            // --- GRID UPDATE ---
             gridGroup.selectAll("*").remove();
-
-            // 1. Horizontal Zooming Grid (Y) - Extend fully to the left
+            
+            // Horizontal GRID (Power-of-10 Zooming)
             const minPower = Math.floor(Math.log10(Math.max(1, displayMB / 10000)));
             const maxPower = Math.ceil(Math.log10(viewMax));
 
             for (let p = minPower; p <= maxPower; p++) {
                 const baseVal = Math.pow(10, p);
-                const pixelsPerStep = Math.abs(yScale(0) - yScale(baseVal));
-                const opacity = Math.max(0, Math.min(0.6, (pixelsPerStep - 4) / 40));
-                
+                const stepPx = Math.abs(yScale(0) - yScale(baseVal));
+                const opacity = Math.max(0, Math.min(0.5, (stepPx - 5) / 30));
                 if (opacity <= 0 && p < maxPower) continue;
 
                 for (let i = 1; i < 10; i++) {
                     const val = i * baseVal;
                     const gy = yScale(val);
-                    if (gy < -20 || gy > height + 20) continue;
-
+                    if (gy < 0 || gy > height) continue;
                     const isMajor = i === 1;
                     gridGroup.append("line")
-                        .attr("x1", -150) // Extend far left to cover the line's start
-                        .attr("x2", width + 20)
-                        .attr("y1", gy)
-                        .attr("y2", gy)
+                        .attr("x1", 0).attr("x2", width).attr("y1", gy).attr("y2", gy)
                         .attr("stroke", "var(--ifm-color-emphasis-300)")
-                        .attr("stroke-width", isMajor ? 1.5 : 0.8) // Higher opacity/thickness
-                        .attr("opacity", isMajor ? Math.min(0.7, opacity * 2) : opacity);
+                        .attr("stroke-width", isMajor ? 1.5 : 0.8)
+                        .attr("opacity", isMajor ? Math.min(0.6, opacity * 2.5) : opacity);
                 }
             }
 
-            // 2. Vertical Zooming Grid (X) - Also extend
-            const vPixelsPerMs = driftSpeed / (1000/60); 
-            const timePower = Math.floor(Math.log10(Math.max(1, elapsed / 2000)));
-            const tScale = Math.pow(10, timePower) * 300; 
-            const vGap = tScale * vPixelsPerMs;
-            const vOpacity = Math.max(0, Math.min(0.5, (vGap - 10) / 40));
-
-            for (let t = Math.floor((elapsed - (width+150)/vPixelsPerMs)/tScale)*tScale; t <= elapsed; t += tScale) {
-                if (t < 0) continue;
-                const actualX = width - (elapsed - t) * vPixelsPerMs;
-                if (actualX < -150 || actualX > width + 20) continue;
-
+            // Vertical GRID (Scrolling for activity)
+            const vGap = 40;
+            const scrollOffset = (elapsed * 0.05) % vGap;
+            for (let x = width + vGap - scrollOffset; x >= -vGap; x -= vGap) {
+                if (x < 0 || x > width) continue;
                 gridGroup.append("line")
-                    .attr("x1", actualX)
-                    .attr("x2", actualX)
-                    .attr("y1", -20)
-                    .attr("y2", height + 20)
+                    .attr("x1", x).attr("x2", x).attr("y1", 0).attr("y2", height)
                     .attr("stroke", "var(--ifm-color-emphasis-300)")
-                    .attr("stroke-width", 1.0)
-                    .attr("opacity", vOpacity);
+                    .attr("stroke-width", 0.8)
+                    .attr("opacity", 0.15);
             }
 
-            // Path & Area
+            // --- ARC UPDATE ---
             areaGroup.selectAll("*").remove();
             curveGroup.selectAll("*").remove();
             labelGroup.selectAll("*").remove();
 
-            const lineGen = d3.line<{x:number, y:number}>().x(d=>d.x).y(d=>d.y).curve(d3.curveMonotoneX);
-            const areaGen = d3.area<{x:number, y:number}>().x(d=>d.x).y0(height-20).y1(d=>d.y).curve(d3.curveMonotoneX);
+            const line = d3.line<{x:number, y:number}>().x(d=>d.x).y(d=>d.y).curve(d3.curveMonotoneX);
+            const area = d3.area<{x:number, y:number}>().x(d=>d.x).y0(height - yPaddingBottom).y1(d=>d.y).curve(d3.curveMonotoneX);
 
-            areaGroup.append("path")
-                .datum(points)
-                .attr("fill", "#888")
-                .attr("opacity", 0.2)
-                .attr("d", areaGen);
+            areaGroup.append("path").datum(curvePoints).attr("fill", "var(--ifm-color-emphasis-400)").attr("opacity", 0.12).attr("d", area);
+            curveGroup.append("path").datum(curvePoints).attr("fill", "none").attr("stroke", "var(--ifm-color-emphasis-400)").attr("stroke-width", 2).attr("opacity", 0.6).attr("d", line);
 
-            curveGroup.append("path")
-                .datum(points)
-                .attr("fill", "none")
-                .attr("stroke", "#888")
-                .attr("stroke-width", 2.2)
-                .attr("opacity", 0.7)
-                .attr("d", lineGen);
+            if (curvePoints.length > 0) {
+                const lead = curvePoints[curvePoints.length - 1];
+                curveGroup.append("circle").attr("cx", lead.x).attr("cy", lead.y).attr("r", 4.5).attr("fill", "var(--ifm-color-primary)").attr("filter", "drop-shadow(0 0 10px var(--ifm-color-primary))");
 
-            // Lead point & Floating label
-            if (points.length > 0) {
-                const lead = points[points.length - 1];
-                
-                // Glow Dot
-                curveGroup.append("circle")
-                    .attr("cx", lead.x)
-                    .attr("cy", lead.y)
-                    .attr("r", 4.5)
-                    .attr("fill", "var(--ifm-color-primary)")
-                    .attr("filter", "drop-shadow(0 0 10px var(--ifm-color-primary))");
+                const textX = Math.min(width - 5, lead.x - 12);
+                const textY = Math.max(15, lead.y - 12);
 
-                // Label follows dot, smaller and closer
                 labelGroup.append("text")
-                    .attr("x", lead.x - 8)
-                    .attr("y", lead.y - 8)
+                    .attr("x", textX)
+                    .attr("y", textY)
                     .attr("text-anchor", "end")
                     .attr("fill", "var(--ifm-color-primary)")
                     .style("font-family", "monospace")
-                    .style("font-size", "10px") // Smaller font
-                    .style("font-weight", "bold")
-                    .style("text-shadow", "0 0 4px rgba(0,0,0,0.8)")
-                    .text(dataSize);
+                    .style("font-size", "12px")
+                    .style("font-weight", "900")
+                    .style("text-shadow", "0 0 8px rgba(0,0,0,1)")
+                    .text(formatSize(displayMB)); // DYNAMIC NUMBER CLIMBING
             }
         });
 
@@ -182,10 +154,10 @@ const ScrollingNumbersAnimation: React.FC = () => {
     }, []);
 
     return (
-        <div style={{ position: 'relative', height: 200, width: 200, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ position: 'relative', height: 200, width: 260, margin: '0 auto', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', background: 'rgba(255,255,255,0.01)' }}>
             <div
                 ref={containerRef}
-                style={{ width: '200px', height: '200px', overflow: 'visible' }}
+                style={{ width: '260px', height: '200px', overflow: 'hidden' }}
             />
         </div>
     );
