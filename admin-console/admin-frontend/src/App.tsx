@@ -1,8 +1,7 @@
 import '@mantine/core/styles.css';
 import { MantineProvider, AppShell, Group, Title, Stack, Container, Tabs, Text } from '@mantine/core';
-import { Settings, Database, Activity, Map as MapIcon } from 'lucide-react';
+import { Settings, Database, Map as MapIcon } from 'lucide-react';
 import { theme } from './theme';
-import { DockerPanel } from './features/docker/DockerPanel';
 import { DataPanel } from './features/data/DataPanel';
 import { ConfigPanel } from './features/config/ConfigPanel';
 
@@ -29,16 +28,15 @@ export default function App() {
 
         <AppShell.Main>
           <Container size="xl">
-            <Tabs defaultValue="docker" variant="pills" radius="md">
+            <Tabs defaultValue="data" variant="pills" radius="md">
               <Tabs.List mb="xl">
-                <Tabs.Tab value="docker" leftSection={<Activity size={16} />}>Docker Services</Tabs.Tab>
                 <Tabs.Tab value="data" leftSection={<Database size={16} />}>Data Lifecycle</Tabs.Tab>
                 <Tabs.Tab value="config" leftSection={<Settings size={16} />}>System Config</Tabs.Tab>
                 <Tabs.Tab value="mapping" leftSection={<MapIcon size={16} />}>Schema Mapping</Tabs.Tab>
               </Tabs.List>
 
-              <Tabs.Panel value="docker">
-                <DockerPanel />
+              <Tabs.Panel value="data">
+                <DataPanel />
               </Tabs.Panel>
 
               <Tabs.Panel value="data">

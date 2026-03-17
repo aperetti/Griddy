@@ -31,10 +31,12 @@
 
 ## 4. Admin Console Service (Node.js/Fastify)
 * **Core**: Use Fastify for high-performance Node.js service implementation.
-* **Docker Integration**: Interface with Docker via `child_process` (Docker Compose) or API to manage grid services.
-* **System Integration**: Call Python-based data generation and ingestion scripts.
-* **State Persistence**: Use SQLite for internal admin console state (logs, job history, and configuration overrides) as per rule #4.
-* **Architecture**: Follow Vertical Slice Architecture, organizing by feature (docker, data, config, mapping).
+* **Architecture**: Follow Vertical Slice Architecture.
+* **Shared Configuration**:
+    * **Storage**: SQLite database in a shared Docker volume (`grid_config`).
+    * **Access**: Admin Console has read-write access; Analytical Backend has read-only access.
+    * **Configuration Sync**: Analytical Backend must poll/watch the shared database for changes and reload its internal state accordingly.
+* **State Persistence**: Use SQLite for internal admin console state as per rule #4.
 
 ## 5. Advanced Backend Capabilities
 * **Synthetic AMI Generation**: Generate synthetic AMI time-series metrics traversing from 2025 through 2027.

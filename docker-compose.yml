@@ -5,12 +5,14 @@ services:
     container_name: grid-backend
     volumes:
       - grid_data:/data
+      - grid_config:/data/config:ro
       - ./backend:/app
       - ./backend/sample_data:/app/sample_data
     environment:
       - BOOTSTRAP_DATA=${BOOTSTRAP_DATA:-true}
       - DB_PATH=/data/grid_data_cim.duckdb
       - PARQUET_DIR=/data/cim_readings
+      - CONFIG_DB_PATH=/data/config/admin_config.db
       - CIM_MODEL_PATH=/app/sample_data/IEEE8500.xml
       - WEATHER_DATA_PATH=/app/sample_data/weather.epw
     ports:
@@ -45,11 +47,13 @@ services:
     container_name: grid-generator
     volumes:
       - grid_data:/data
+      - grid_config:/data/config:ro
       - ./backend:/app
       - ./backend/sample_data:/app/sample_data
     environment:
       - DB_PATH=/data/grid_data_cim.duckdb
       - PARQUET_DIR=/data/cim_readings
+      - CONFIG_DB_PATH=/data/config/admin_config.db
       - CIM_MODEL_PATH=/app/sample_data/IEEE8500.xml
       - WEATHER_DATA_PATH=/app/sample_data/weather.epw
     entrypoint: [ "sh", "./scripts/bootstrap.sh" ]
@@ -65,10 +69,11 @@ services:
       context: ./admin-console/admin-backend
     container_name: grid-admin-backend
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - grid_config:/data/config
       - .:/app/host-root
     environment:
       - ADMIN_CONSOLE_PORT=8090
+      - DB_PATH=/data/config/admin_config.db
     ports:
       - "${ADMIN_BACKEND_PORT:-8090}:8090"
     restart: unless-stopped
@@ -87,3 +92,4 @@ services:
 
 volumes:
   grid_data:
+  grid_config:

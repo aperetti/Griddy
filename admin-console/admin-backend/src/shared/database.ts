@@ -7,11 +7,11 @@ let db: Database | null = null;
 export async function getDb(): Promise<Database> {
   if (db) return db;
 
-  const dbPath = path.join(process.cwd(), 'admin.sqlite');
+  const dbPath = process.env.DB_PATH || path.join(process.cwd(), 'admin.sqlite');
   
   db = await open({
     filename: dbPath,
-    driver: sqlite3.Database
+    driver: sqlite3.Database as any
   });
 
   await db.exec(`
