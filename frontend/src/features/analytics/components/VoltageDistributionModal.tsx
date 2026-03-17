@@ -219,7 +219,36 @@ export const VoltageDistributionModal = memo(function VoltageDistributionModal({
                             <ReactECharts
                                 style={{ height: '100%', width: '100%' }}
                                 option={{
-                                    tooltip: { trigger: 'axis' },
+                                    tooltip: { 
+                                        trigger: 'axis',
+                                        formatter: (params: any) => {
+                                            const date = params[0].axisValue;
+                                            const p10 = params.find((p: any) => p.seriesName === 'P10');
+                                            const p90_delta = params.find((p: any) => p.seriesName === 'P90');
+                                            const median = params.find((p: any) => p.seriesName === 'Median');
+                                            
+                                            // Since it's stacked, the absolute p90 is p10 + delta
+                                            const p90_val = (p10 && p90_delta) ? (p10.value + p90_delta.value).toFixed(2) : 'N/A';
+                                            
+                                            return `
+                                                <div style="font-family: monospace; font-size: 11px;">
+                                                    <div style="margin-bottom: 4px; border-bottom: 1px solid #333; padding-bottom: 2px;">${date}</div>
+                                                    <div style="display: flex; justify-content: space-between; gap: 20px;">
+                                                        <span style="color: #A6A7AB">90p:</span>
+                                                        <span style="color: #fff; font-weight: bold;">${p90_val}V</span>
+                                                    </div>
+                                                    <div style="display: flex; justify-content: space-between; gap: 20px;">
+                                                        <span style="color: #fab005">Median:</span>
+                                                        <span style="color: #fff; font-weight: bold;">${median?.value.toFixed(2)}V</span>
+                                                    </div>
+                                                    <div style="display: flex; justify-content: space-between; gap: 20px;">
+                                                        <span style="color: #A6A7AB">10p:</span>
+                                                        <span style="color: #fff; font-weight: bold;">${p10?.value.toFixed(2)}V</span>
+                                                    </div>
+                                                </div>
+                                            `;
+                                        }
+                                    },
                                     grid: { left: 40, right: 20, bottom: 20, top: 30, containLabel: true },
                                     xAxis: {
                                         type: 'category',
@@ -235,12 +264,21 @@ export const VoltageDistributionModal = memo(function VoltageDistributionModal({
                                     },
                                     series: [
                                         {
+                                            name: 'P10',
+                                            type: 'line',
+                                            data: timeSeriesData.map(d => parseFloat(d.p10.toFixed(2))),
+                                            lineStyle: { opacity: 0 },
+                                            stack: 'confidence-band',
+                                            symbol: 'none'
+                                        },
+                                        {
                                             name: 'P90',
                                             type: 'line',
-                                            data: timeSeriesData.map(d => parseFloat(d.p90.toFixed(2))),
-                                            itemStyle: { color: '#fa5252' },
-                                            showSymbol: false,
-                                            smooth: true
+                                            data: timeSeriesData.map(d => parseFloat((d.p90 - d.p10).toFixed(2))),
+                                            lineStyle: { opacity: 0 },
+                                            stack: 'confidence-band',
+                                            areaStyle: { color: 'rgba(200, 200, 200, 0.2)' },
+                                            symbol: 'none'
                                         },
                                         {
                                             name: 'Median',
@@ -248,15 +286,8 @@ export const VoltageDistributionModal = memo(function VoltageDistributionModal({
                                             data: timeSeriesData.map(d => parseFloat(d.p50.toFixed(2))),
                                             itemStyle: { color: '#fab005' },
                                             showSymbol: false,
-                                            smooth: true
-                                        },
-                                        {
-                                            name: 'P10',
-                                            type: 'line',
-                                            data: timeSeriesData.map(d => parseFloat(d.p10.toFixed(2))),
-                                            itemStyle: { color: '#228be6' },
-                                            showSymbol: false,
-                                            smooth: true
+                                            smooth: true,
+                                            zIndex: 10
                                         }
                                     ]
                                 }}

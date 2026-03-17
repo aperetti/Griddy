@@ -110,17 +110,51 @@ export const GridMap = React.memo<GridMapProps>(({
     });
     const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
     const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
-    const [centered, setCentered] = useState(false);
-    const lastHandledTrigger = useRef(0);
+    const lastFittedNodes = useRef<Node[] | null>(null);
 
     useEffect(() => {
-        if (!centered && nodes.length > 0) {
-            const avgLon = nodes.reduce((sum, n) => sum + n.position[0], 0) / nodes.length;
-            const avgLat = nodes.reduce((sum, n) => sum + n.position[1], 0) / nodes.length;
-            setViewState((prev: any) => ({ ...prev, longitude: avgLon, latitude: avgLat }));
-            setCentered(true);
+        if (nodes.length > 0 && dimensions.width > 0 && nodes !== lastFittedNodes.current) {
+            console.log('[GridMap] Fitting to extent of', nodes.length, 'nodes');
+            lastFittedNodes.current = nodes;
+            
+            let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
+            nodes.forEach(n => {
+                const [lon, lat] = n.position;
+                if (!isNaN(lon) && !isNaN(lat)) {
+                    minLon = Math.min(minLon, lon);
+                    maxLon = Math.max(maxLon, lon);
+                    minLat = Math.min(minLat, lat);
+                    maxLat = Math.max(maxLat, lat);
+                }
+            });
+
+            if (minLon === Infinity) return;
+
+            const viewport = new WebMercatorViewport({
+                width: dimensions.width,
+                height: dimensions.height,
+                ...viewState
+            });
+
+            const bounds = viewport.fitBounds(
+                [[minLon, minLat], [maxLon, maxLat]],
+                {
+                    padding: Math.min(dimensions.width, dimensions.height) * 0.1,
+                    maxZoom: 18
+                }
+            );
+
+            setViewState((prev: any) => ({
+                ...prev,
+                longitude: bounds.longitude,
+                latitude: bounds.latitude,
+                zoom: bounds.zoom,
+                transitionDuration: 1000
+            }));
         }
-    }, [nodes, centered]);
+    }, [nodes, dimensions.width, dimensions.height]);
+
+    const lastHandledTrigger = useRef(0);
 
     useEffect(() => {
         if (fitHighlightedNodesTrigger > 0 && 
