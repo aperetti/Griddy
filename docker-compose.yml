@@ -60,5 +60,30 @@ services:
           cpus: '2.0'
           memory: 4G
 
+  admin-backend:
+    build:
+      context: ./admin-console/admin-backend
+    container_name: grid-admin-backend
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/app/host-root
+    environment:
+      - ADMIN_CONSOLE_PORT=8090
+    ports:
+      - "${ADMIN_BACKEND_PORT:-8090}:8090"
+    restart: unless-stopped
+
+  admin-frontend:
+    build:
+      context: ./admin-console/admin-frontend
+    container_name: grid-admin-frontend
+    ports:
+      - "${ADMIN_FRONTEND_PORT:-8091}:80"
+    environment:
+      - VITE_ADMIN_API_URL=http://localhost:8090/api
+    depends_on:
+      - admin-backend
+    restart: unless-stopped
+
 volumes:
   grid_data:

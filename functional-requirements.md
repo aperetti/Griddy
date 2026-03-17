@@ -37,3 +37,12 @@
   * Must support filtering by predefined time ranges: Last Week (1W), Last Month (1M), and Last Year (1Y).
   * The consumption view must be split vertically: one graph for total kWh, one for Phase Loading (A, B, C) and Energy Imbalance (|S₂|), and another for Voltage, while maintaining the same total panel height.
   * The Energy Imbalance (|S₂|) must be calculated using symmetrical components based on phase-weighted consumption and plotted on a negative y-axis for visual contrast.
+
+## 4. System Administration & DevOps
+### 4.1 System Management Console
+* **Docker Operations**: Ability to monitor container health, pull new images, and restart critical services (Backend, Frontend, Documentation).
+* **Data Lifecycle Management**: 
+  * Trigger synthetic data generation tasks.
+  * Trigger CIM graph ingestion manually.
+* **Environment Overrides**: Persistently override system configuration settings (e.g., API URLs, data paths) via an integrated SQLite-backed key-value store.
+* **Schema Mapping**: Manage and visualize the mapping between CIM classes and the internal graph representation.

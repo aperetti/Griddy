@@ -28,22 +28,32 @@
         *   **Format Support**: 
             - Automated format selection (CSV for tabular/flat data, JSON for nested diagnostic data).
             - Filename generation must include standardized ISO timestamps.
-    *   **Synthetic AMI Generation**: Generate synthetic AMI time-series metrics traversing from 2025 through 2027.
-    *   **Alarms Dataset Integration**:
-        *   **Relational Storage**: Active alarms and metadata stored in a dedicated `alarms` table in DuckDB.
-        *   **Log Storage**: Historical alarm logs should be stored in Parquet format in `cim_alarms/` directory for high-performance temporal queries.
 
-## 4. Technology Stack
-* **Language**: Python
+## 4. Admin Console Service (Node.js/Fastify)
+* **Core**: Use Fastify for high-performance Node.js service implementation.
+* **Docker Integration**: Interface with Docker via `child_process` (Docker Compose) or API to manage grid services.
+* **System Integration**: Call Python-based data generation and ingestion scripts.
+* **State Persistence**: Use SQLite for internal admin console state (logs, job history, and configuration overrides) as per rule #4.
+* **Architecture**: Follow Vertical Slice Architecture, organizing by feature (docker, data, config, mapping).
+
+## 5. Advanced Backend Capabilities
+* **Synthetic AMI Generation**: Generate synthetic AMI time-series metrics traversing from 2025 through 2027.
+* **Alarms Dataset Integration**:
+    * **Relational Storage**: Active alarms and metadata stored in a dedicated `alarms` table in DuckDB.
+    * **Log Storage**: Historical alarm logs should be stored in Parquet format in `cim_alarms/` directory for high-performance temporal queries.
+
+## 6. Technology Stack
+* **Language**: Python (Backend), TypeScript/JavaScript (Frontend & Admin Console).
 * **Environment**: Developed and deployed via Anti-gravity IDE.
 * **Libraries**: Minimize the number of external libraries. Use only well-established libraries that will be supported long-term.
 
-## 4. Environment Configuration
+## 7. Environment Configuration
 * **Port Mapping**: Docker Compose services must use environment variables for host port mapping with sensible defaults:
     * `BACKEND_PORT`: Default `8000`
     * `FRONTEND_PORT`: Default `8080`
     * `WEBSITE_PORT`: Default `3000`
+    * `ADMIN_CONSOLE_PORT`: Default `8090`
 
-## 5. Testing & Quality Assurance
+## 8. Testing & Quality Assurance
 * **Test-Driven Development (TDD)**: Always follow TDD best practices.
 * **Unit/Functional Tests**: Always create and memorialize functionality in unit or functional tests.
