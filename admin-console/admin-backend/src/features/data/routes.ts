@@ -4,7 +4,7 @@ import path from 'path';
 
 export async function dataRoutes(fastify: FastifyInstance) {
   fastify.post('/generate', async (request, reply) => {
-    const scriptPath = path.join(process.cwd(), '..', '..', 'backend', 'scripts', 'generate_synthetic_data.py');
+    const scriptPath = path.join(process.cwd(), '..', '..', 'backend', 'scripts', 'generate_all.py');
     // We execute in background and return job ID?
     // For now, simple execution
     const result = await runCommand(`python ${scriptPath}`);

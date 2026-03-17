@@ -39,10 +39,6 @@ export default function App() {
                 <DataPanel />
               </Tabs.Panel>
 
-              <Tabs.Panel value="data">
-                <DataPanel />
-              </Tabs.Panel>
-
               <Tabs.Panel value="config">
                 <ConfigPanel />
               </Tabs.Panel>
