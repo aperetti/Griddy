@@ -226,6 +226,16 @@ export default function App() {
     setActiveModelIds(modelIds);
   }, []);
 
+  const handleZoomToModel = useCallback((modelId: string) => {
+    const modelNodes = nodes.filter(n => n.model_id === modelId);
+    if (modelNodes.length === 0) {
+      console.warn('[App] No nodes found for model:', modelId);
+      return;
+    }
+    setHighlightedNodes(new Set(modelNodes.map(n => n.id)));
+    setFitBoundsTrigger(prev => prev + 1);
+  }, [nodes]);
+
   useEffect(() => {
     // Only fetch once we know which models are active (initial load or model toggle)
     const modelsParam = activeModelIds.length > 0 ? activeModelIds : undefined;
@@ -631,7 +641,10 @@ export default function App() {
               <Group gap="xs" wrap="nowrap" justify="flex-end" style={{ pointerEvents: 'auto' }}>
                 <GlobalSearch nodes={nodes} edges={edges} onSearchSelect={handleSearchSelect} isMobile={isMobile} />
 
-                <ModelSwitcher onModelsChange={handleModelsChange} />
+                <ModelSwitcher 
+                  onModelsChange={handleModelsChange} 
+                  onZoomToModel={handleZoomToModel}
+                />
 
                 <Tooltip label="Global Settings" position="bottom" withArrow>
                   <ActionIcon

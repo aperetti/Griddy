@@ -1,16 +1,17 @@
-import { useState, useEffect } from 'react';
-import { Popover, ActionIcon, Tooltip, Stack, Group, Text, Switch, Badge, Box, Loader } from '@mantine/core';
-import { Layers } from 'lucide-react';
+import { Popover, ActionIcon, Tooltip, Stack, Group, Text, Switch, Badge, Box, Loader, TextInput } from '@mantine/core';
+import { Layers, Search, Maximize } from 'lucide-react';
 import { fetchModels, loadModel, unloadModel, type ModelInfo } from '../../../shared/api';
 
 interface ModelSwitcherProps {
   onModelsChange: (activeModelIds: string[]) => void;
+  onZoomToModel?: (modelId: string) => void;
 }
 
-export function ModelSwitcher({ onModelsChange }: ModelSwitcherProps) {
+export function ModelSwitcher({ onModelsChange, onZoomToModel }: ModelSwitcherProps) {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [opened, setOpened] = useState(false);
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   const refreshModels = async () => {
     try {
@@ -116,6 +117,15 @@ export function ModelSwitcher({ onModelsChange }: ModelSwitcherProps) {
             CIM Models
           </Text>
 
+          <TextInput
+            placeholder="Search models..."
+            size="xs"
+            leftSection={<Search size={14} />}
+            value={search}
+            onChange={(e) => setSearch(e.currentTarget.value)}
+            mb="xs"
+          />
+
           {models.length === 0 && (
             <Group justify="center" py="md">
               <Loader size="sm" />
@@ -123,7 +133,9 @@ export function ModelSwitcher({ onModelsChange }: ModelSwitcherProps) {
             </Group>
           )}
 
-          {models.map(model => {
+          {models
+            .filter(m => m.model_id.toLowerCase().includes(search.toLowerCase()))
+            .map(model => {
             const isLoading = loadingId === model.model_id;
             const isLastLoaded = model.loaded && loadedCount <= 1;
 
@@ -164,22 +176,37 @@ export function ModelSwitcher({ onModelsChange }: ModelSwitcherProps) {
                     </Group>
                   </Box>
 
-                  {isLoading ? (
-                    <Loader size="sm" />
-                  ) : (
-                    <Tooltip
-                      label={isLastLoaded ? 'At least one model must be loaded' : ''}
-                      disabled={!isLastLoaded}
-                    >
-                      <Switch
-                        checked={model.loaded}
-                        onChange={() => handleToggle(model)}
-                        disabled={isLastLoaded}
-                        size="sm"
-                        color="teal"
-                      />
-                    </Tooltip>
-                  )}
+                  <Group gap="xs" wrap="nowrap">
+                    {onZoomToModel && (
+                      <Tooltip label="Zoom to Extent" position="left" withArrow>
+                        <ActionIcon
+                          variant="subtle"
+                          color="gray"
+                          size="sm"
+                          onClick={() => onZoomToModel(model.model_id)}
+                        >
+                          <Maximize size={14} />
+                        </ActionIcon>
+                      </Tooltip>
+                    )}
+
+                    {isLoading ? (
+                      <Loader size="sm" />
+                    ) : (
+                      <Tooltip
+                        label={isLastLoaded ? 'At least one model must be loaded' : ''}
+                        disabled={!isLastLoaded}
+                      >
+                        <Switch
+                          checked={model.loaded}
+                          onChange={() => handleToggle(model)}
+                          disabled={isLastLoaded}
+                          size="sm"
+                          color="teal"
+                        />
+                      </Tooltip>
+                    )}
+                  </Group>
                 </Group>
               </Box>
             );
