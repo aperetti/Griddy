@@ -15,25 +15,28 @@ class MapVoltageUseCase:
         """Returns the estimated number of rows to be processed for the map."""
         nodes_list_filter = ""
         nodes_count = 0
+        query_params = [start_time, end_time]
+
         if start_node_id:
             downstream_nodes, _ = self.graph_engine.find_downstream(start_node_id)
             nodes_to_query = downstream_nodes if downstream_nodes else [start_node_id]
             nodes_count = len(nodes_to_query)
-            nodes_list_str = "'" + "','".join(nodes_to_query) + "'"
-            nodes_list_filter = f"AND node_id IN ({nodes_list_str})"
+            placeholders = ",".join(["?"] * nodes_count)
+            nodes_list_filter = f"AND node_id IN ({placeholders})"
+            query_params.extend(nodes_to_query)
 
         prefetch_query = f"""
             SELECT COUNT(*) as estimated_rows
             FROM read_parquet('{self.parquet_dir}/*.parquet')
-            WHERE timestamp >= '{start_time}'
-              AND timestamp <= '{end_time}'
+            WHERE timestamp >= CAST(? AS TIMESTAMP)
+              AND timestamp <= CAST(? AS TIMESTAMP)
               AND voltage_a IS NOT NULL
               {nodes_list_filter}
         """
         
         try:
             with duckdb.connect(self.db_path, read_only=True) as conn:
-                prefetch_results = conn.execute(prefetch_query).fetchone()
+                prefetch_results = conn.execute(prefetch_query, query_params).fetchone()
             
             return {
                 "estimated_rows": prefetch_results[0] if prefetch_results else 0,
@@ -57,11 +60,14 @@ class MapVoltageUseCase:
         """
         nodes_list_filter = ""
         nodes_to_query = []
+        query_params = [start_time, end_time]
+
         if start_node_id:
             downstream_nodes, _ = self.graph_engine.find_downstream(start_node_id)
             nodes_to_query = downstream_nodes if downstream_nodes else [start_node_id]
-            nodes_list_str = "'" + "','".join(nodes_to_query) + "'"
-            nodes_list_filter = f"AND node_id IN ({nodes_list_str})"
+            placeholders = ",".join(["?"] * len(nodes_to_query))
+            nodes_list_filter = f"AND node_id IN ({placeholders})"
+            query_params.extend(nodes_to_query)
 
         agg_func = "AVG"
         if agg == "min":
@@ -80,8 +86,8 @@ class MapVoltageUseCase:
                 AVG(current_b) as ib,
                 AVG(current_c) as ic
             FROM read_parquet('{self.parquet_dir}/*.parquet')
-            WHERE timestamp >= '{start_time}'
-              AND timestamp <= '{end_time}'
+            WHERE timestamp >= CAST(? AS TIMESTAMP)
+              AND timestamp <= CAST(? AS TIMESTAMP)
               AND voltage_a IS NOT NULL
               {nodes_list_filter}
             GROUP BY node_id
@@ -90,16 +96,16 @@ class MapVoltageUseCase:
         prefetch_query = f"""
             SELECT COUNT(*) as estimated_rows
             FROM read_parquet('{self.parquet_dir}/*.parquet')
-            WHERE timestamp >= '{start_time}'
-              AND timestamp <= '{end_time}'
+            WHERE timestamp >= CAST(? AS TIMESTAMP)
+              AND timestamp <= CAST(? AS TIMESTAMP)
               AND voltage_a IS NOT NULL
               {nodes_list_filter}
         """
         
         try:
             with duckdb.connect(self.db_path, read_only=True) as conn:
-                prefetch_results = conn.execute(prefetch_query).fetchone()
-                node_avg_results = conn.execute(node_avg_query).fetchall()
+                prefetch_results = conn.execute(prefetch_query, query_params).fetchone()
+                node_avg_results = conn.execute(node_avg_query, query_params).fetchall()
                 
             node_voltages = {row[0]: float(row[1]) for row in node_avg_results if row[1] is not None}
             node_currents = {

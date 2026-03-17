@@ -7,3 +7,8 @@
 **Vulnerability:** CRITICAL: SQL Injection vulnerability in `calculate_consumption.py` where user inputs (`node_ids`, `start_time`, `end_time`) were unsafely injected into DuckDB SQL queries via f-strings. This could allow arbitrary SQL execution or data exfiltration.
 **Learning:** This repo's analytics modules have historical vulnerabilities where string concatenation and f-strings are used for SQL queries rather than parameterized queries. Specifically, array parameters like `IN (list)` have been formatted manually.
 **Prevention:** Always use `?` placeholders for parameterized queries in DuckDB Python. For list arguments within an `IN` clause, dynamically create placeholders `,`.join([`?`] * len(list)) and pass the variables as a flat array in `conn.execute(query, params)`. Ensure timestamps use `CAST(? AS TIMESTAMP)`.
+
+## 2024-03-15 - [Fix SQL Injection in Voltage Analytics]
+**Vulnerability:** SQL Injection in DuckDB queries within `calculate_voltage.py` and `map_voltage.py`. User input (node IDs and timestamps) was directly concatenated into f-strings for DuckDB queries, allowing potential injection of malicious SQL.
+**Learning:** Analytics modules using DuckDB can easily fall into the pattern of using f-string string interpolation to pass parameters, leading to critical SQL Injection vulnerabilities. The pattern is specific to how node lists (`IN (...)`) and timestamps were handled.
+**Prevention:** Always use parameterized queries (`?` placeholders) when interacting with DuckDB in Python. Ensure that timestamp parameters are explicitly cast (e.g., `CAST(? AS TIMESTAMP)`) and generate dynamic placeholders for `IN` clauses based on the length of input lists.

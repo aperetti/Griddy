@@ -19,19 +19,20 @@ class CalculateVoltageDistributionUseCase:
             all_downstream_nodes.update(nodes)
         
         nodes_to_query = list(all_downstream_nodes) if all_downstream_nodes else start_node_ids
-        nodes_list = "'" + "','".join(nodes_to_query) + "'"
+        placeholders = ",".join(["?"] * len(nodes_to_query))
+        query_params = nodes_to_query + [start_time, end_time]
         
         prefetch_query = f"""
             SELECT COUNT(*) as estimated_rows
             FROM read_parquet('{self.parquet_dir}/*.parquet')
-            WHERE node_id IN ({nodes_list})
-              AND timestamp >= '{start_time}' 
-              AND timestamp <= '{end_time}'
+            WHERE node_id IN ({placeholders})
+              AND timestamp >= CAST(? AS TIMESTAMP)
+              AND timestamp <= CAST(? AS TIMESTAMP)
         """
         
         try:
             with duckdb.connect(self.db_path, read_only=True) as conn:
-                prefetch_results = conn.execute(prefetch_query).fetchone()
+                prefetch_results = conn.execute(prefetch_query, query_params).fetchone()
             
             return {
                 "estimated_rows": prefetch_results[0] if prefetch_results else 0,
@@ -52,33 +53,39 @@ class CalculateVoltageDistributionUseCase:
             all_downstream_edges.update(edges)
             
         nodes_to_query = list(all_downstream_nodes) if all_downstream_nodes else start_node_ids
-        nodes_list = "'" + "','".join(nodes_to_query) + "'"
+        placeholders = ",".join(["?"] * len(nodes_to_query))
+        # Each subquery uses the nodes list + start_time, end_time
+        base_params = nodes_to_query + [start_time, end_time]
+        # query needs 3 sets of base_params
+        query_params = base_params * 3
+        # heatmap_query needs 2 sets
+        heatmap_params = base_params * 2
         
         query = f"""
             WITH a_bins AS (
                 SELECT ROUND(voltage_a * 2) / 2.0 as v_bin, COUNT(*) as cnt_a
                 FROM read_parquet('{self.parquet_dir}/*.parquet')
-                WHERE node_id IN ({nodes_list})
-                  AND timestamp >= '{start_time}' 
-                  AND timestamp <= '{end_time}'
+                WHERE node_id IN ({placeholders})
+                  AND timestamp >= CAST(? AS TIMESTAMP)
+                  AND timestamp <= CAST(? AS TIMESTAMP)
                   AND voltage_a IS NOT NULL
                 GROUP BY 1
             ),
             b_bins AS (
                 SELECT ROUND(voltage_b * 2) / 2.0 as v_bin, COUNT(*) as cnt_b
                 FROM read_parquet('{self.parquet_dir}/*.parquet')
-                WHERE node_id IN ({nodes_list})
-                  AND timestamp >= '{start_time}' 
-                  AND timestamp <= '{end_time}'
+                WHERE node_id IN ({placeholders})
+                  AND timestamp >= CAST(? AS TIMESTAMP)
+                  AND timestamp <= CAST(? AS TIMESTAMP)
                   AND voltage_b IS NOT NULL
                 GROUP BY 1
             ),
             c_bins AS (
                 SELECT ROUND(voltage_c * 2) / 2.0 as v_bin, COUNT(*) as cnt_c
                 FROM read_parquet('{self.parquet_dir}/*.parquet')
-                WHERE node_id IN ({nodes_list})
-                  AND timestamp >= '{start_time}' 
-                  AND timestamp <= '{end_time}'
+                WHERE node_id IN ({placeholders})
+                  AND timestamp >= CAST(? AS TIMESTAMP)
+                  AND timestamp <= CAST(? AS TIMESTAMP)
                   AND voltage_c IS NOT NULL
                 GROUP BY 1
             ),
@@ -105,9 +112,9 @@ class CalculateVoltageDistributionUseCase:
                 WITH total_loading AS (
                     SELECT timestamp, SUM(kwh_dlv) as total_kwh
                     FROM read_parquet('{self.parquet_dir}/*.parquet')
-                    WHERE node_id IN ({nodes_list})
-                      AND timestamp >= '{start_time}'
-                      AND timestamp <= '{end_time}'
+                    WHERE node_id IN ({placeholders})
+                      AND timestamp >= CAST(? AS TIMESTAMP)
+                      AND timestamp <= CAST(? AS TIMESTAMP)
                     GROUP BY timestamp
                 )
                 SELECT 
@@ -116,9 +123,9 @@ class CalculateVoltageDistributionUseCase:
                     CAST(COUNT(*) AS INTEGER) as cnt
                 FROM read_parquet('{self.parquet_dir}/*.parquet') r
                 JOIN total_loading t ON r.timestamp = t.timestamp
-                WHERE r.node_id IN ({nodes_list})
-                  AND r.timestamp >= '{start_time}' 
-                  AND r.timestamp <= '{end_time}'
+                WHERE r.node_id IN ({placeholders})
+                  AND r.timestamp >= CAST(? AS TIMESTAMP)
+                  AND r.timestamp <= CAST(? AS TIMESTAMP)
                   AND r.voltage_a IS NOT NULL
                   AND t.total_kwh IS NOT NULL
                 GROUP BY 1, 2
@@ -132,9 +139,9 @@ class CalculateVoltageDistributionUseCase:
                 QUANTILE_CONT(voltage_a, 0.1) as p10,
                 QUANTILE_CONT(voltage_a, 0.9) as p90
             FROM read_parquet('{self.parquet_dir}/*.parquet')
-            WHERE node_id IN ({nodes_list})
-              AND timestamp >= '{start_time}' 
-              AND timestamp <= '{end_time}'
+            WHERE node_id IN ({placeholders})
+              AND timestamp >= CAST(? AS TIMESTAMP)
+              AND timestamp <= CAST(? AS TIMESTAMP)
               AND voltage_a IS NOT NULL
             GROUP BY 1
             ORDER BY 1
@@ -143,18 +150,18 @@ class CalculateVoltageDistributionUseCase:
         stats_query = f"""
             SELECT AVG(voltage_a), MEDIAN(voltage_a)
             FROM read_parquet('{self.parquet_dir}/*.parquet')
-            WHERE node_id IN ({nodes_list})
-              AND timestamp >= '{start_time}' 
-              AND timestamp <= '{end_time}'
+            WHERE node_id IN ({placeholders})
+              AND timestamp >= CAST(? AS TIMESTAMP)
+              AND timestamp <= CAST(? AS TIMESTAMP)
               AND voltage_a IS NOT NULL
         """
 
         try:
             with duckdb.connect(self.db_path, read_only=True) as conn:
-                results = conn.execute(query).fetchall()
-                heat_results = conn.execute(heatmap_query).fetchall()
-                ts_results = conn.execute(timeseries_query).fetchall()
-                overall_stats = conn.execute(stats_query).fetchone()
+                results = conn.execute(query, query_params).fetchall()
+                heat_results = conn.execute(heatmap_query, heatmap_params).fetchall()
+                ts_results = conn.execute(timeseries_query, base_params).fetchall()
+                overall_stats = conn.execute(stats_query, base_params).fetchone()
                 
             distribution = []
             for row in results:
