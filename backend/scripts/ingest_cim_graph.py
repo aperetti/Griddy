@@ -44,6 +44,7 @@ def setup_sqlite(db_path: str) -> sqlite3.Connection:
     conn.execute("""
         CREATE TABLE grid_nodes (
             node_id   TEXT PRIMARY KEY,
+            model_id  TEXT NOT NULL,
             node_type TEXT NOT NULL,
             name      TEXT,
             phases_present TEXT DEFAULT '["A","B","C"]',
@@ -55,6 +56,7 @@ def setup_sqlite(db_path: str) -> sqlite3.Connection:
     conn.execute("""
         CREATE TABLE grid_edges (
             edge_id      TEXT PRIMARY KEY,
+            model_id     TEXT NOT NULL,
             from_node_id TEXT NOT NULL REFERENCES grid_nodes(node_id),
             to_node_id   TEXT NOT NULL REFERENCES grid_nodes(node_id),
             conductor_type TEXT,
@@ -81,61 +83,76 @@ def setup_sqlite(db_path: str) -> sqlite3.Connection:
 # ---------------------------------------------------------------------------
 
 def main():
-    from src.shared.cim_model import CimModelManager
+    from src.shared.cim_registry import CimModelRegistry
 
     print(f"SQLite DB : {SQLITE_PATH}")
 
-    # ── 1. Load CIM model via shared manager ──────────────────────
-    print("\nLoading CIM model via CimModelManager...")
-    manager = CimModelManager.get_instance()
-    manager.load()
+    # ── 1. Discover and Load ALL models ───────────────────────────
+    registry = CimModelRegistry.get_instance()
+    registry.discover()
+    
+    available = registry.list_models()
+    print(f"\nDiscovered {len(available)} models to ingest.")
+    
+    for meta in available:
+        print(f"  Loading {meta['model_id']}...")
+        registry.load_model(meta["model_id"])
 
-    nodes_raw = manager.get_topology_nodes()
-    edges_raw = manager.get_topology_edges()
-
-    print(f"  {len(nodes_raw)} nodes, {len(edges_raw)} edges from CIM model")
-
-    # ── 2. Convert to SQLite rows ─────────────────────────────────
-    nodes_to_insert = []
-    for n in nodes_raw:
-        nodes_to_insert.append((
-            n["node_id"],
-            n["node_type"],
-            n.get("name", ""),
-            json.dumps(n.get("phases_present", ["A", "B", "C"])),
-            n.get("latitude", 0.0),
-            n.get("longitude", 0.0),
-            int(n.get("is_open", False)),
-        ))
-
-    edges_to_insert = []
-    for e in edges_raw:
-        edges_to_insert.append((
-            e["edge_id"],
-            e["from_node_id"],
-            e["to_node_id"],
-            e.get("conductor_type", "Unknown"),
-            json.dumps(e.get("phases", ["A", "B", "C"])),
-        ))
-
-    # ── 3. Write to SQLite ────────────────────────────────────────
-    print(f"\nWriting {len(nodes_to_insert)} nodes and "
-          f"{len(edges_to_insert)} edges to SQLite...")
-
+    # ── 2. Create schema with model_id ───────────────────────────
     conn = setup_sqlite(SQLITE_PATH)
 
-    conn.executemany(
-        "INSERT INTO grid_nodes "
-        "(node_id, node_type, name, phases_present, latitude, longitude, is_open) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        nodes_to_insert
-    )
-    conn.executemany(
-        "INSERT INTO grid_edges "
-        "(edge_id, from_node_id, to_node_id, conductor_type, phases) "
-        "VALUES (?, ?, ?, ?, ?)",
-        edges_to_insert
-    )
+    total_nodes = 0
+    total_edges = 0
+
+    # ── 3. Process each manager ──────────────────────────────────
+    for model_id, manager in registry.get_managers():
+        print(f"\nProcessing model: {model_id}")
+        nodes_raw = manager.get_topology_nodes()
+        edges_raw = manager.get_topology_edges()
+
+        # Apply coordinate offsets from registry
+        lat_off, lon_off = registry._coordinate_offsets.get(model_id, (0.0, 0.0))
+
+        nodes_to_insert = []
+        for n in nodes_raw:
+            nodes_to_insert.append((
+                n["node_id"],
+                model_id,
+                n["node_type"],
+                n.get("name", ""),
+                json.dumps(n.get("phases_present", ["A", "B", "C"])),
+                n.get("latitude", 0.0) + lat_off,
+                n.get("longitude", 0.0) + lon_off,
+                int(n.get("is_open", False)),
+            ))
+
+        edges_to_insert = []
+        for e in edges_raw:
+            edges_to_insert.append((
+                e["edge_id"],
+                model_id,
+                e["from_node_id"],
+                e["to_node_id"],
+                e.get("conductor_type", "Unknown"),
+                json.dumps(e.get("phases", ["A", "B", "C"])),
+            ))
+
+        conn.executemany(
+            "INSERT INTO grid_nodes "
+            "(node_id, model_id, node_type, name, phases_present, latitude, longitude, is_open) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            nodes_to_insert
+        )
+        conn.executemany(
+            "INSERT INTO grid_edges "
+            "(edge_id, model_id, from_node_id, to_node_id, conductor_type, phases) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            edges_to_insert
+        )
+        
+        total_nodes += len(nodes_to_insert)
+        total_edges += len(edges_to_insert)
+        print(f"  Ingested {len(nodes_to_insert)} nodes and {len(edges_to_insert)} edges.")
 
     conn.commit()
 

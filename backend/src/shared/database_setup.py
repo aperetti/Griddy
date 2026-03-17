@@ -37,6 +37,7 @@ def init_db():
     conn.execute("""
         CREATE TABLE IF NOT EXISTS grid_nodes (
             node_id   TEXT PRIMARY KEY,
+            model_id  TEXT NOT NULL,
             node_type TEXT NOT NULL,
             name      TEXT,
             phases_present TEXT DEFAULT '["A","B","C"]',
@@ -48,6 +49,7 @@ def init_db():
     conn.execute("""
         CREATE TABLE IF NOT EXISTS grid_edges (
             edge_id      TEXT PRIMARY KEY,
+            model_id     TEXT NOT NULL,
             from_node_id TEXT NOT NULL,
             to_node_id   TEXT NOT NULL,
             conductor_type TEXT,
