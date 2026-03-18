@@ -1,6 +1,7 @@
 import { memo, useState, useEffect } from 'react';
-import { Paper, Title, Text, Group, Badge, ActionIcon, Button, Divider, Loader, Center } from '@mantine/core';
-import { BarChart3, X, BookOpen, Activity } from 'lucide-react';
+import { Paper, Title, Text, Group, Badge, ActionIcon, Button, Divider, Loader, Center, Box, Tooltip } from '@mantine/core';
+import { BarChart3, X, BookOpen, Activity, Copy, Check } from 'lucide-react';
+import { copyToClipboard } from '../../../shared/utils/exportUtils';
 import type { Node } from '../../../shared/types';
 import { fetchAlarms, type Alarm } from '../../../shared/api';
 import { AlarmsList } from '../../analytics/components/AlarmsList';
@@ -22,6 +23,7 @@ export const GridExplorerPanel = memo(function GridExplorerPanel({
 }: Props) {
     const [alarms, setAlarms] = useState<Alarm[]>([]);
     const [loadingAlarms, setLoadingAlarms] = useState(false);
+    const [copied, setCopied] = useState(false);
 
     const primaryNode = selectedNodes.length > 0 ? selectedNodes[0] : null;
 
@@ -39,6 +41,16 @@ export const GridExplorerPanel = memo(function GridExplorerPanel({
 
     const hasSelection = selectedNodes.length > 0;
     const isMultiSelect = selectedNodes.length > 1;
+
+    const handleCopyDetails = async () => {
+        if (!primaryNode) return;
+        const text = JSON.stringify(primaryNode, null, 2);
+        const success = await copyToClipboard(text);
+        if (success) {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        }
+    };
 
     return (
         <>
@@ -82,7 +94,19 @@ export const GridExplorerPanel = memo(function GridExplorerPanel({
                             <Text size="xs" c="dimmed" mt={4}>Shift+Click to add/remove more assets from the map.</Text>
                         </Paper>
                     ) : (
-                        <Paper p="xs" withBorder radius="xs" mb="md" style={{ backgroundColor: 'rgba(0,0,0,0.2)' }}>
+                        <Paper p="xs" withBorder radius="xs" mb="md" style={{ backgroundColor: 'rgba(0,0,0,0.2)', position: 'relative' }}>
+                            <Box style={{ position: 'absolute', top: 4, right: 4 }}>
+                                <Tooltip label={copied ? "Copied!" : "Copy Details"} withArrow position="left">
+                                    <ActionIcon 
+                                        variant="subtle" 
+                                        size="xs" 
+                                        onClick={handleCopyDetails}
+                                        color={copied ? "green" : "gray"}
+                                    >
+                                        {copied ? <Check size={12} /> : <Copy size={12} />}
+                                    </ActionIcon>
+                                </Tooltip>
+                            </Box>
                             <Text size="xs" ff="monospace">ID: {primaryNode?.id}</Text>
                             <Text size="xs" ff="monospace">Type: {primaryNode?.type}</Text>
                             <Text size="xs" ff="monospace">Name: {primaryNode?.name}</Text>

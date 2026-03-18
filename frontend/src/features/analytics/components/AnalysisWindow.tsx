@@ -1,6 +1,6 @@
 import { useState, type ReactNode, useEffect, useCallback, useRef } from 'react';
-import { Paper, Group, Title, ActionIcon, Box, Button, Collapse } from '@mantine/core';
-import { X, Filter, ChevronDown, ChevronUp, Maximize2, Download } from 'lucide-react';
+import { Paper, Group, Title, ActionIcon, Box, Button, Collapse, Tooltip } from '@mantine/core';
+import { X, Filter, ChevronDown, ChevronUp, Maximize2, Download, Copy, Check } from 'lucide-react';
 import { Rnd } from 'react-rnd';
 import { useWindowEvent, useDebouncedCallback } from '@mantine/hooks';
 
@@ -14,6 +14,7 @@ interface AnalysisWindowProps {
     zIndex?: number;
     filterContent?: ReactNode;
     onExport?: () => void;
+    onCopy?: () => Promise<boolean>;
     children: ReactNode;
     loading?: boolean;
 }
@@ -38,10 +39,12 @@ export function AnalysisWindow({
     zIndex = 1000,
     filterContent,
     onExport,
+    onCopy,
     children,
     loading = false,
 }: AnalysisWindowProps) {
     const [showFilters, setShowFilters] = useState<boolean>(false);
+    const [copied, setCopied] = useState(false);
 
     const [rndState, setRndState] = useState<{ x: number; y: number; width: string | number; height: string | number }>(() => {
         const saved = localStorage.getItem(storageKey);
@@ -120,6 +123,16 @@ export function AnalysisWindow({
         const newState = clampToViewport({ ...rndState, ...d });
         setRndState(newState);
         saveState(newState);
+    };
+
+    const handleCopy = async () => {
+        if (onCopy) {
+            const success = await onCopy();
+            if (success) {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+            }
+        }
     };
 
     if (!isOpen || isMinimized) return null;
@@ -226,10 +239,23 @@ export function AnalysisWindow({
                                     <Filter size={16} />
                                 </ActionIcon>
                             )}
+                            {onCopy && (
+                                <Tooltip label={copied ? "Copied!" : "Copy to Clipboard"} withArrow position="bottom">
+                                    <ActionIcon 
+                                        variant="subtle" 
+                                        onClick={handleCopy} 
+                                        color={copied ? "green" : "gray"}
+                                    >
+                                        {copied ? <Check size={16} /> : <Copy size={16} />}
+                                    </ActionIcon>
+                                </Tooltip>
+                            )}
                             {onExport && (
-                                <ActionIcon variant="subtle" onClick={onExport} title="Export Data">
-                                    <Download size={16} />
-                                </ActionIcon>
+                                <Tooltip label="Download JSON/CSV" withArrow position="bottom">
+                                    <ActionIcon variant="subtle" onClick={onExport}>
+                                        <Download size={16} />
+                                    </ActionIcon>
+                                </Tooltip>
                             )}
                             {onMinimize && (
                                 <ActionIcon variant="subtle" onClick={onMinimize} title="Minimize">

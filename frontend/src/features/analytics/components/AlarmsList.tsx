@@ -1,6 +1,8 @@
-import React from 'react';
-import { Table, Badge, ScrollArea, Text, Stack, Card } from '@mantine/core';
+import React, { useState } from 'react';
+import { Copy, Check } from 'lucide-react';
+import { Card, Text, Stack, Group, Tooltip, ActionIcon, ScrollArea, Table, Badge } from '@mantine/core';
 import type { Alarm } from '../../../shared/api';
+import { copyToClipboard, getDataToCopy } from '../../../shared/utils/exportUtils';
 
 interface AlarmsListProps {
     alarms: Alarm[];
@@ -17,6 +19,18 @@ const getSeverityColor = (severity: string) => {
 };
 
 export const AlarmsList: React.FC<AlarmsListProps> = ({ alarms, title = "Active Alarms" }) => {
+    const [copied, setCopied] = useState(false);
+
+    const handleCopyAlarms = async () => {
+        if (alarms.length === 0) return;
+        const text = getDataToCopy(alarms);
+        const success = await copyToClipboard(text);
+        if (success) {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        }
+    };
+
     if (alarms.length === 0) {
         return (
             <Card withBorder padding="md">
@@ -27,7 +41,19 @@ export const AlarmsList: React.FC<AlarmsListProps> = ({ alarms, title = "Active 
 
     return (
         <Stack gap="xs">
-            <Text size="sm" fw={700}>{title} ({alarms.length})</Text>
+            <Group justify="space-between" align="center">
+                <Text size="sm" fw={700}>{title} ({alarms.length})</Text>
+                <Tooltip label={copied ? "Copied!" : "Copy Alarms"} withArrow position="left">
+                    <ActionIcon 
+                        variant="subtle" 
+                        size="sm" 
+                        onClick={handleCopyAlarms}
+                        color={copied ? "green" : "gray"}
+                    >
+                        {copied ? <Check size={14} /> : <Copy size={14} />}
+                    </ActionIcon>
+                </Tooltip>
+            </Group>
             <ScrollArea h={300} offsetScrollbars>
                 <Table striped highlightOnHover withTableBorder>
                     <Table.Thead>

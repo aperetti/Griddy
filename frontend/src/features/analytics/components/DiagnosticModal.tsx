@@ -3,7 +3,7 @@ import { Stack, Text, ScrollArea, Table, Loader, Alert, Badge, Group, Code, Tabs
 import { AlertCircle, Database, Network, List, Share2 } from 'lucide-react';
 import { AnalysisWindow } from './AnalysisWindow';
 import { fetchCimEquipment, fetchCimNode } from '../../../shared/api';
-import { autoExport } from '../../../shared/utils/exportUtils';
+import { autoExport, copyToClipboard, getDataToCopy } from '../../../shared/utils/exportUtils';
 import { TopologyTree } from './TopologyTree';
 
 interface DiagnosticModalProps {
@@ -103,6 +103,12 @@ export function DiagnosticModal({ isOpen, onClose, id: initialId, type: initialT
         autoExport(data, `diagnostic_${currentId}`);
     };
 
+    const handleCopy = async () => {
+        if (!data) return false;
+        const text = getDataToCopy(data);
+        return await copyToClipboard(text);
+    };
+
     return (
         <AnalysisWindow
             isOpen={isOpen}
@@ -110,6 +116,7 @@ export function DiagnosticModal({ isOpen, onClose, id: initialId, type: initialT
             title={data?.name ? `Diagnostic: ${data.name}` : initialTitle}
             storageKey={`diagnostic-${initialId}`}
             onExport={handleExport}
+            onCopy={handleCopy}
             loading={loading}
         >
             <Stack gap={0} h="100%">

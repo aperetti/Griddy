@@ -67,6 +67,73 @@ export function exportToJson(data: any, filename: string) {
 }
 
 /**
+ * Copies text to the clipboard with a fallback for older browsers or non-secure contexts.
+ */
+export async function copyToClipboard(text: string): Promise<boolean> {
+    // 1. Try modern API first (requires secure context)
+    if (navigator.clipboard && window.isSecureContext) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch (err) {
+            console.error('Modern clipboard API failed, trying fallback:', err);
+        }
+    }
+
+    // 2. Legacy fallback using document.execCommand('copy')
+    try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        
+        // Ensure it's not visible and doesn't scroll the page
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        textArea.style.top = '0';
+        textArea.style.opacity = '0';
+        
+        document.body.appendChild(textArea);
+        
+        // Handle iOS: need to prevent zooming and ensure selection works
+        textArea.contentEditable = 'true';
+        textArea.readOnly = false;
+        
+        const range = document.createRange();
+        range.selectNodeContents(textArea);
+        
+        const selection = window.getSelection();
+        if (selection) {
+            selection.removeAllRanges();
+            selection.addRange(range);
+            textArea.setSelectionRange(0, 999999);
+        }
+
+        const success = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        
+        return success;
+    } catch (err) {
+        console.error('Clipboard fallback failed:', err);
+        return false;
+    }
+}
+
+/**
+ * Heuristically determines the string content to copy (JSON or CSV).
+ */
+export function getDataToCopy(data: any): string {
+    if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'object' && data[0] !== null) {
+        const firstEntry = data[0];
+        const isTabular = Object.values(firstEntry).every(v => v === null || typeof v !== 'object');
+        
+        if (isTabular) {
+            return convertToCsv(data);
+        }
+    }
+    
+    return JSON.stringify(data, null, 2);
+}
+
+/**
  * Heuristically determines if data is tabular and performs the appropriate export.
  */
 export function autoExport(data: any, baseFilename: string) {
