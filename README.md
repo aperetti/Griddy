@@ -51,7 +51,7 @@ This command will:
 1. Build the **frontend** container (React → Nginx).
 2. Build the **backend** container (FastAPI/Uvicorn).
 3. Initialize the `grid_data` persistent volume.
-4. Auto-ingest the bundled `IEEE8500.xml` CIM model and generate synthetic AMI readings (controlled by `BOOTSTRAP_DATA`).
+4. Auto-ingest all CIM models in the `cim/` directory and generate synthetic AMI readings (controlled by `BOOTSTRAP_DATA`).
 
 Once running, open your browser:
 
@@ -72,8 +72,8 @@ Customize the deployment using a `.env` file in the project root or by overridin
 | `BOOTSTRAP_DATA` | `true` | Ingest the CIM model and generate synthetic readings on startup. |
 | `DB_PATH` | `/data/grid_data_cim.duckdb` | Path to the persistent DuckDB file inside the container. |
 | `PARQUET_DIR` | `/data/cim_readings` | Directory for Parquet time-series storage. |
-| `CIM_MODEL_PATH` | `/app/sample_data/IEEE8500.xml` | Path to the CIM source model file. |
-| `WEATHER_DATA_PATH` | `/app/sample_data/weather.epw` | Path to the EPW weather data file. |
+| `CIM_MODEL_PATH` | `/app/cim/IEEE8500.xml` | Path to the default CIM source model file. |
+| `WEATHER_DATA_PATH` | `/app/cim/weather.epw` | Path to the EPW weather data file. |
 | `BACKEND_PORT` | `8000` | Host port for the backend service. |
 | `FRONTEND_PORT` | `8080` | Host port for the frontend dashboard. |
 | `WEBSITE_PORT` | `3002` | Host port for the documentation site. |
@@ -139,8 +139,8 @@ pip install -r requirements.txt
 # Set required environment variables (adjust paths as needed)
 $env:DB_PATH      = "./data/grid_data_cim.duckdb"           # PowerShell
 $env:PARQUET_DIR  = "./data/cim_readings"
-$env:CIM_MODEL_PATH    = "./sample_data/IEEE8500.xml"
-$env:WEATHER_DATA_PATH = "./sample_data/weather.epw"
+$env:CIM_MODEL_PATH    = "./cim/IEEE8500.xml"
+$env:WEATHER_DATA_PATH = "./cim/weather.epw"
 $env:PYTHONPATH   = "."
 
 # Run the data pipeline
@@ -210,7 +210,7 @@ Griddy/
 │   │   ├── grid/         # Grid model and data structures
 │   │   └── shared/       # DuckDB repository, NetworkX engine
 │   ├── scripts/          # Data ingestion and generation scripts
-│   ├── sample_data/      # IEEE 8500 CIM model and weather data
+│   ├── cim/              # IEEE 8500 CIM model and weather data
 │   └── tests/            # Unit and functional tests
 ├── frontend/             # React + TypeScript + Vite dashboard
 │   └── src/

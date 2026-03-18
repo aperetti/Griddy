@@ -402,6 +402,12 @@ async def get_cim_neighbors(target_id: str):
     raise HTTPException(status_code=404, detail=f"CIM entity not found: {target_id}")
 
 
+@router.get("/api/cim/search")
+async def search_cim(query: str = Query(..., min_length=2)):
+    """Search across all loaded models for nodes matching the query."""
+    return registry.search_all_models(query)
+
+
 @router.get("/discovery/alarms/{node_id}")
 async def get_node_alarms(node_id: str, include_downstream: bool = Query(True)):
     """Fetch active alarms for a node and optionally its downstream children."""

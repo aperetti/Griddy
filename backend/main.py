@@ -19,7 +19,7 @@ async def lifespan(app: FastAPI):
     from src.shared.config_watcher import watcher
 
     registry = CimModelRegistry.get_instance()
-    registry.load_default()
+    registry.load_all()
     
     # Start the background config watcher
     await watcher.start()

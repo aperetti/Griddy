@@ -47,9 +47,9 @@ def _resolve_xml_path(xml_path: Optional[str] = None) -> Path:
 
     # 3. Known candidates
     candidates = [
-        _BACKEND_DIR / "sample_data" / "IEEE8500_3subs.xml",
-        _BACKEND_DIR / "sample_data" / "IEEE8500.xml",
-        Path("/app/sample_data/IEEE8500.xml"), # Docker location
+        _BACKEND_DIR / "cim" / "IEEE8500_3subs.xml",
+        _BACKEND_DIR / "cim" / "IEEE8500.xml",
+        Path("/app/cim/IEEE8500.xml"), # Docker location
         Path("/app/IEEE8500.xml"),             # Alternative Docker location
     ]
     for c in candidates:

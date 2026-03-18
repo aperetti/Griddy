@@ -7,14 +7,14 @@ services:
       - grid_data:/data
       - grid_config:/data/config:ro
       - ./backend:/app
-      - ./backend/sample_data:/app/sample_data
+      - ./backend/cim:/app/cim
     environment:
       - BOOTSTRAP_DATA=${BOOTSTRAP_DATA:-true}
       - DB_PATH=/data/grid_data_cim.duckdb
       - PARQUET_DIR=/data/cim_readings
       - CONFIG_DB_PATH=/data/config/admin_config.db
-      - CIM_MODEL_PATH=/app/sample_data/IEEE8500.xml
-      - WEATHER_DATA_PATH=/app/sample_data/weather.epw
+      - CIM_MODEL_PATH=/app/cim/IEEE8500.xml
+      - WEATHER_DATA_PATH=/app/cim/weather.epw
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     restart: unless-stopped
@@ -49,13 +49,13 @@ services:
       - grid_data:/data
       - grid_config:/data/config:ro
       - ./backend:/app
-      - ./backend/sample_data:/app/sample_data
+      - ./backend/cim:/app/cim
     environment:
       - DB_PATH=/data/grid_data_cim.duckdb
       - PARQUET_DIR=/data/cim_readings
       - CONFIG_DB_PATH=/data/config/admin_config.db
-      - CIM_MODEL_PATH=/app/sample_data/IEEE8500.xml
-      - WEATHER_DATA_PATH=/app/sample_data/weather.epw
+      - CIM_MODEL_PATH=/app/cim/IEEE8500.xml
+      - WEATHER_DATA_PATH=/app/cim/weather.epw
     entrypoint: [ "sh", "./scripts/bootstrap.sh" ]
     profiles: [ "tools" ]
     deploy:

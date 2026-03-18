@@ -24,6 +24,7 @@ interface GridMapProps {
         baseVoltage: number;
     };
     fitHighlightedNodesTrigger?: number;
+    skipGlobalFit?: boolean;
 }
 const stringToColor = (str: string): [number, number, number] => {
     let hash = 0;
@@ -95,7 +96,8 @@ export const GridMap = React.memo<GridMapProps>(({
     nodeCurrents = null,
     onMapClick,
     voltageScale,
-    fitHighlightedNodesTrigger = 0
+    fitHighlightedNodesTrigger = 0,
+    skipGlobalFit = false
 }) => {
     const selectedNodeIdsSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
     const [mounted, setMounted] = useState(false);
@@ -113,7 +115,7 @@ export const GridMap = React.memo<GridMapProps>(({
     const lastFittedNodes = useRef<Node[] | null>(null);
 
     useEffect(() => {
-        if (nodes.length > 0 && dimensions.width > 0 && nodes !== lastFittedNodes.current) {
+        if (nodes.length > 0 && dimensions.width > 0 && nodes !== lastFittedNodes.current && !skipGlobalFit) {
             console.log('[GridMap] Fitting to extent of', nodes.length, 'nodes');
             lastFittedNodes.current = nodes;
             

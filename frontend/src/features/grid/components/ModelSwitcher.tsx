@@ -1,17 +1,26 @@
+import { useState, useEffect } from 'react';
 import { Popover, ActionIcon, Tooltip, Stack, Group, Text, Switch, Badge, Box, Loader, TextInput } from '@mantine/core';
 import { Layers, Search, Maximize } from 'lucide-react';
-import { fetchModels, loadModel, unloadModel, type ModelInfo } from '../../../shared/api';
+import { fetchModels, type ModelInfo } from '../../../shared/api';
 
 interface ModelSwitcherProps {
+  activeModelIds: string[];
   onModelsChange: (activeModelIds: string[]) => void;
   onZoomToModel?: (modelId: string) => void;
 }
 
-export function ModelSwitcher({ onModelsChange, onZoomToModel }: ModelSwitcherProps) {
+export function ModelSwitcher({ activeModelIds, onModelsChange, onZoomToModel }: ModelSwitcherProps) {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [opened, setOpened] = useState(false);
-  const [loadingId, setLoadingId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   const refreshModels = async () => {
     try {
@@ -26,35 +35,21 @@ export function ModelSwitcher({ onModelsChange, onZoomToModel }: ModelSwitcherPr
     refreshModels();
   }, []);
 
-  // Notify parent whenever the loaded set changes
-  useEffect(() => {
-    const active = models.filter(m => m.loaded).map(m => m.model_id);
-    onModelsChange(active);
-  }, [models, onModelsChange]);
-
-  const handleToggle = async (model: ModelInfo) => {
-    setLoadingId(model.model_id);
-    try {
-      if (model.loaded) {
-        // Don't allow unloading the last model
-        const loadedCount = models.filter(m => m.loaded).length;
-        if (loadedCount <= 1) {
-          console.warn('[ModelSwitcher] Cannot unload last model');
-          return;
-        }
-        await unloadModel(model.model_id);
-      } else {
-        await loadModel(model.model_id);
-      }
-      await refreshModels();
-    } catch (err) {
-      console.error('[ModelSwitcher] Toggle failed:', err);
-    } finally {
-      setLoadingId(null);
+  const handleToggle = (modelId: string) => {
+    const newActive = activeModelIds.includes(modelId)
+      ? activeModelIds.filter(id => id !== modelId)
+      : [...activeModelIds, modelId];
+    
+    // Don't allow clearing all models
+    if (newActive.length === 0) {
+      console.warn('[ModelSwitcher] At least one model must be active');
+      return;
     }
+    
+    onModelsChange(newActive);
   };
 
-  const loadedCount = models.filter(m => m.loaded).length;
+  const activeCount = activeModelIds.length;
 
   return (
     <Popover
@@ -81,7 +76,7 @@ export function ModelSwitcher({ onModelsChange, onZoomToModel }: ModelSwitcherPr
             }}
           >
             <Layers size={20} />
-            {loadedCount > 1 && (
+            {activeCount > 1 && (
               <Badge
                 size="xs"
                 circle
@@ -97,7 +92,7 @@ export function ModelSwitcher({ onModelsChange, onZoomToModel }: ModelSwitcherPr
                   fontSize: 9,
                 }}
               >
-                {loadedCount}
+                {activeCount}
               </Badge>
             )}
           </ActionIcon>
@@ -134,10 +129,10 @@ export function ModelSwitcher({ onModelsChange, onZoomToModel }: ModelSwitcherPr
           )}
 
           {models
-            .filter(m => m.model_id.toLowerCase().includes(search.toLowerCase()))
+            .filter(m => (m.model_id || '').toLowerCase().includes((debouncedSearch || '').toLowerCase()))
             .map(model => {
-            const isLoading = loadingId === model.model_id;
-            const isLastLoaded = model.loaded && loadedCount <= 1;
+            const isActive = activeModelIds.includes(model.model_id);
+            const isLastActive = isActive && activeCount <= 1;
 
             return (
               <Box
@@ -146,7 +141,7 @@ export function ModelSwitcher({ onModelsChange, onZoomToModel }: ModelSwitcherPr
                 py="xs"
                 style={{
                   borderRadius: 6,
-                  background: model.loaded
+                  background: isActive
                     ? 'rgba(51, 154, 240, 0.08)'
                     : 'transparent',
                   transition: 'background 0.15s',
@@ -159,20 +154,12 @@ export function ModelSwitcher({ onModelsChange, onZoomToModel }: ModelSwitcherPr
                     </Text>
                     <Group gap={6} mt={2}>
                       <Text size="xs" c="dimmed">
-                        {model.size_mb.toFixed(1)} MB
+                        {typeof model.size_mb === 'number' ? model.size_mb.toFixed(1) : '0.0'} MB
                       </Text>
-                      {model.loaded && (
-                        <>
-                          <Text size="xs" c="dimmed">•</Text>
-                          <Text size="xs" c="dimmed">
-                            {model.node_count.toLocaleString()} nodes
-                          </Text>
-                          <Text size="xs" c="dimmed">•</Text>
-                          <Text size="xs" c="dimmed">
-                            {model.edge_count.toLocaleString()} edges
-                          </Text>
-                        </>
-                      )}
+                      <Text size="xs" c="dimmed">•</Text>
+                      <Text size="xs" c="dimmed">
+                        {(model.node_count || 0).toLocaleString()} nodes
+                      </Text>
                     </Group>
                   </Box>
 
@@ -190,31 +177,33 @@ export function ModelSwitcher({ onModelsChange, onZoomToModel }: ModelSwitcherPr
                       </Tooltip>
                     )}
 
-                    {isLoading ? (
-                      <Loader size="sm" />
-                    ) : (
-                      <Tooltip
-                        label={isLastLoaded ? 'At least one model must be loaded' : ''}
-                        disabled={!isLastLoaded}
-                      >
-                        <Switch
-                          checked={model.loaded}
-                          onChange={() => handleToggle(model)}
-                          disabled={isLastLoaded}
-                          size="sm"
-                          color="teal"
-                        />
-                      </Tooltip>
-                    )}
+                    <Tooltip
+                      label={isLastActive ? 'At least one model must be visible' : ''}
+                      disabled={!isLastActive}
+                    >
+                      <Switch
+                        checked={isActive}
+                        onChange={() => handleToggle(model.model_id)}
+                        disabled={isLastActive}
+                        size="sm"
+                        color="teal"
+                      />
+                    </Tooltip>
                   </Group>
                 </Group>
               </Box>
             );
           })}
 
-          {loadedCount > 1 && (
+          {models.length > 0 && models.filter(m => (m.model_id || '').toLowerCase().includes((debouncedSearch || '').toLowerCase())).length === 0 && (
+            <Text size="xs" c="dimmed" ta="center" py="sm">
+              No models match "{search}"
+            </Text>
+          )}
+
+          {activeCount > 1 && (
             <Text size="xs" c="teal" ta="center" mt={4}>
-              Combined view — {loadedCount} models loaded
+              Combined view — {activeCount} models active
             </Text>
           )}
         </Stack>

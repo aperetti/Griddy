@@ -26,13 +26,13 @@ _SHARED_DIR = Path(__file__).resolve().parent
 _BACKEND_DIR = _SHARED_DIR.parents[1]
 _WORKSPACE_ROOT = _BACKEND_DIR.parent
 
-_SAMPLE_DATA_DIR = _BACKEND_DIR / "sample_data"
+_CIM_DATA_DIR = _BACKEND_DIR / "cim"
 
 
 def _discover_xml_files() -> list[dict]:
-    """Find all CIM XML files in the sample_data directory."""
+    """Find all CIM XML files in the cim directory."""
     results: list[dict] = []
-    search_dir = os.getenv("CIM_MODELS_DIR", str(_SAMPLE_DATA_DIR))
+    search_dir = os.getenv("CIM_MODELS_DIR", str(_CIM_DATA_DIR))
 
     for xml_path in sorted(glob.glob(os.path.join(search_dir, "*.xml"))):
         p = Path(xml_path)
@@ -117,24 +117,18 @@ class CimModelRegistry:
             self._recalculate_offsets()
             logger.info("Model '%s' unloaded", model_id)
 
-    def load_default(self):
-        """Load the preferred default model (3subs first, then first available)."""
+    def load_all(self):
+        """Load all discovered CIM XML files into memory."""
         self.discover()
         if not self._available:
-            logger.warning("No CIM XML files discovered!")
+            logger.warning("No CIM XML files discovered in %s", _CIM_DATA_DIR)
             return
 
-        # Prefer 3subs, else first
-        preferred = ["IEEE8500_3subs", "IEEE8500"]
-        loaded = False
-        for pref in preferred:
-            meta = self._get_meta(pref)
-            if meta:
-                self.load_model(pref)
-                loaded = True
-                break
-        if not loaded:
-            self.load_model(self._available[0]["model_id"])
+        for meta in self._available:
+            try:
+                self.load_model(meta["model_id"])
+            except Exception as e:
+                logger.error("Failed to load model '%s': %s", meta["model_id"], e)
 
     # ── Query ─────────────────────────────────────────────────────
 
@@ -172,6 +166,31 @@ class CimModelRegistry:
                 if mid in self._managers]
 
     # ── Combined topology ─────────────────────────────────────────
+
+    def search_all_models(self, query: str) -> list[dict]:
+        """Search across all loaded models for nodes or equipment matching the query."""
+        results = []
+        lower_query = query.lower()
+        
+        for mid, mgr in self.get_managers():
+            # Search nodes
+            for node in mgr.get_topology_nodes():
+                name = (node.get("name") or "").lower()
+                node_id = node.get("node_id", "").lower()
+                if lower_query in name or lower_query in node_id:
+                    results.append({
+                        "id": node["node_id"],
+                        "name": node.get("name") or node["node_id"],
+                        "type": "node",
+                        "model_id": mid,
+                        "cim_type": node.get("node_type", "ConnectivityNode")
+                    })
+            
+            # Limit search results to avoid massive responses
+            if len(results) >= 50:
+                break
+                
+        return results
 
     def get_combined_topology(self, model_ids: list[str] | None = None) -> tuple[list[dict], list[dict]]:
         """Merge topology from requested models.

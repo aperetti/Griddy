@@ -1,18 +1,20 @@
-import { useState, useMemo, useRef } from 'react';
-import { Select, Group, Text, Box, ActionIcon, Popover, Tooltip } from '@mantine/core';
+import { useState, useRef, useEffect } from 'react';
+import { Select, Group, Text, Box, ActionIcon, Popover, Tooltip, Loader } from '@mantine/core';
 import { useHotkeys } from '@mantine/hooks';
 import { Search } from 'lucide-react';
-import type { Node, Edge } from '../../../shared/types';
+import { searchCim } from '../../../shared/api';
 
 interface GlobalSearchProps {
-  nodes: Node[];
-  edges: Edge[];
-  onSearchSelect: (item: Node | Edge) => void;
+  onSearchSelect: (item: any) => void;
   isMobile?: boolean;
+  loading?: boolean;
 }
 
-export function GlobalSearch({ nodes, edges, onSearchSelect, isMobile }: GlobalSearchProps) {
+export function GlobalSearch({ onSearchSelect, isMobile, loading: modelLoading }: GlobalSearchProps) {
   const [searchValue, setSearchValue] = useState('');
+  const [debouncedValue, setDebouncedValue] = useState('');
+  const [options, setOptions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
   const [opened, setOpened] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -28,50 +30,57 @@ export function GlobalSearch({ nodes, edges, onSearchSelect, isMobile }: GlobalS
     }]
   ]);
 
-  const searchData = useMemo(() => {
-    const nodeItems = nodes.map(node => ({
-        value: node.id,
-        label: `${node.name || node.id}`,
-        type: 'node' as const,
-        item: node
-    }));
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedValue(searchValue);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchValue]);
 
-    const edgeItems = edges.map(edge => ({
-        value: edge.id || `${edge.source}-${edge.target}`,
-        label: `${nodes.find(n => n.id === edge.source)?.name || edge.source} → ${nodes.find(n => n.id === edge.target)?.name || edge.target}`,
-        type: 'edge' as const,
-        item: edge
-    }));
+  useEffect(() => {
+    if (debouncedValue.length < 2) {
+      setOptions([]);
+      return;
+    }
 
-    return [...nodeItems, ...edgeItems];
-  }, [nodes, edges]);
+    let active = true;
+    setLoading(true);
 
-  // Simple fuzzy filter: matches if query is a substring of name or ID (case-insensitive)
-  const filteredData = useMemo(() => {
-    if (!searchValue) return searchData.slice(0, 10);
-    const lowerQuery = searchValue.toLowerCase();
-    return searchData
-      .filter(item => 
-        item.label.toLowerCase().includes(lowerQuery) || 
-        item.value.toLowerCase().includes(lowerQuery)
-      )
-      .slice(0, 20); // Limit results for performance and UI
-  }, [searchData, searchValue]);
+    searchCim(debouncedValue)
+      .then(results => {
+        if (active) {
+          setOptions(results.map(item => ({
+            value: item.id,
+            label: item.name || item.id,
+            item: item
+          })));
+        }
+      })
+      .catch(err => console.error('[GlobalSearch] Search failed:', err))
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [debouncedValue]);
 
   const selectElement = (
     <Select
       ref={searchInputRef}
       placeholder="Search nodes..."
-      leftSection={<Search size={16} />}
-      data={filteredData}
+      leftSection={modelLoading ? <Loader size={16} /> : <Search size={16} />}
+      data={options}
+      rightSection={loading ? <Loader size={14} /> : null}
       searchValue={searchValue}
       onSearchChange={setSearchValue}
       onChange={(value) => {
         if (value) {
-          const selected = searchData.find(item => item.value === value);
+          const selected = options.find(item => item.value === value);
           if (selected) onSearchSelect(selected.item);
-          setSearchValue(''); // Clear search after selection
-          setOpened(false); // Close popover on selection
+          setSearchValue('');
+          setOpened(false);
         }
       }}
       searchable
@@ -104,7 +113,6 @@ export function GlobalSearch({ nodes, edges, onSearchSelect, isMobile }: GlobalS
       }}
       renderOption={({ option }) => {
         const item = (option as any).item;
-        const type = (option as any).type;
         return (
           <Group gap="sm">
             <Box>
@@ -112,7 +120,7 @@ export function GlobalSearch({ nodes, edges, onSearchSelect, isMobile }: GlobalS
                 {option.label}
               </Text>
               <Text size="xs" c="dimmed">
-                {type === 'node' ? `ID: ${option.value} • ${item?.type}` : `ID: ${option.value} • Edge`}
+                {item.model_id} • {item.cim_type}
               </Text>
             </Box>
           </Group>

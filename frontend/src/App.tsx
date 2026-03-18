@@ -136,6 +136,8 @@ export default function App() {
   const [fitBoundsTrigger, setFitBoundsTrigger] = useState(0);
   const [nodeAverages, setNodeAverages] = useState<Record<string, number> | null>(null);
   const [nodeCurrents, setNodeCurrents] = useState<Record<string, { a: number, b: number, c: number }> | null>(null);
+  const [topologyLoading, setTopologyLoading] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
 
   const [voltageScale, setVoltageScale] = useState(() => {
     const saved = localStorage.getItem('voltageScale');
@@ -181,24 +183,33 @@ export default function App() {
 
 
   const handleClearSelection = useCallback(() => setSelectedNodes([]), []);
-  const handleSearchSelect = useCallback((item: Node | Edge) => {
-    if ('type' in item) {
+  const handleSearchSelect = useCallback(async (item: any) => {
+    // If item has a model_id that is not currently active, activate it
+    if (item.model_id && !activeModelIds.includes(item.model_id)) {
+      console.log('[App] Activating model from search result:', item.model_id);
+      setIsSearching(true);
+      setActiveModelIds(prev => [...prev, item.model_id]);
+      // The useEffect for activeModelIds will trigger topology reload
+    }
+
+    if (item.type === 'node' || !('source' in item)) {
       // Node selected
-      setSelectedNodes([item]);
+      setSelectedNodes([item as Node]);
       setHighlightedNodes(new Set([item.id]));
       setHighlightedEdges(new Set());
     } else {
       // Edge selected
-      const source = nodes.find(n => n.id === item.source);
-      const target = nodes.find(n => n.id === item.target);
+      const edge = item as Edge;
+      const source = nodes.find(n => n.id === edge.source);
+      const target = nodes.find(n => n.id === edge.target);
       if (source && target) {
         setSelectedNodes([source, target]);
         setHighlightedNodes(new Set([source.id, target.id]));
-        setHighlightedEdges(new Set([item.id || `${item.source}-${item.target}`]));
+        setHighlightedEdges(new Set([edge.id || `${edge.source}-${edge.target}`]));
       }
     }
     setFitBoundsTrigger(prev => prev + 1);
-  }, [nodes]);
+  }, [nodes, activeModelIds]);
   const isMobile = useMediaQuery('(max-width: 768px)');
 
   const onNodeClick = useCallback((node: Node, multiSelect: boolean) => {
@@ -236,10 +247,26 @@ export default function App() {
     setFitBoundsTrigger(prev => prev + 1);
   }, [nodes]);
 
+  // Initial model loading: ensure at least one model is active
+  useEffect(() => {
+    if (activeModelIds.length === 0) {
+      import('./shared/api').then(({ fetchModels }) => {
+        fetchModels().then(models => {
+          if (models.length > 0) {
+            console.log('[App] Initializing with first model:', models[0].model_id);
+            setActiveModelIds([models[0].model_id]);
+          }
+        });
+      });
+    }
+  }, []);
+
   useEffect(() => {
     // Only fetch once we know which models are active (initial load or model toggle)
-    const modelsParam = activeModelIds.length > 0 ? activeModelIds : undefined;
-    fetchTopology(modelsParam)
+    if (activeModelIds.length === 0) return;
+    
+    setTopologyLoading(true);
+    fetchTopology(activeModelIds)
       .then(data => {
         setNodes(data.nodes);
         setEdges(data.edges);
@@ -247,7 +274,12 @@ export default function App() {
           console.warn('[App] Topology returned 0 nodes');
         }
       })
-      .catch(err => console.error('[App] Failed to fetch topology:', err));
+      .catch(err => console.error('[App] Failed to fetch topology:', err))
+      .finally(() => {
+        setTopologyLoading(false);
+        // Reset searching state after topology is loaded and any potential zooms have triggered
+        setTimeout(() => setIsSearching(false), 1500);
+      });
   }, [activeModelIds]);
   
   const handleShowDiagnostic = async (targetId?: string, targetType?: 'Node' | 'Edge') => {
@@ -624,6 +656,7 @@ export default function App() {
               onMapClick={handleClearSelection}
               voltageScale={voltageScale}
               fitHighlightedNodesTrigger={fitBoundsTrigger}
+              skipGlobalFit={isSearching}
             />
           </Box>
 
@@ -639,9 +672,14 @@ export default function App() {
           <Box style={{ position: 'absolute', top: 20, right: 20, zIndex: 100, pointerEvents: 'none' }}>
             <Stack align="flex-end" gap="sm" style={{ pointerEvents: 'none' }}>
               <Group gap="xs" wrap="nowrap" justify="flex-end" style={{ pointerEvents: 'auto' }}>
-                <GlobalSearch nodes={nodes} edges={edges} onSearchSelect={handleSearchSelect} isMobile={isMobile} />
+                <GlobalSearch 
+                  onSearchSelect={handleSearchSelect} 
+                  isMobile={isMobile} 
+                  loading={topologyLoading}
+                />
 
                 <ModelSwitcher 
+                  activeModelIds={activeModelIds}
                   onModelsChange={handleModelsChange} 
                   onZoomToModel={handleZoomToModel}
                 />
