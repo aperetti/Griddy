@@ -3,6 +3,7 @@ import { Paper, Group, Title, ActionIcon, Box, Button, Collapse, Tooltip } from 
 import { X, Filter, ChevronDown, ChevronUp, Maximize2, Download, Copy, Check } from 'lucide-react';
 import { Rnd } from 'react-rnd';
 import { useWindowEvent, useDebouncedCallback } from '@mantine/hooks';
+import { copyToClipboard } from '../../../shared/utils/exportUtils';
 
 interface AnalysisWindowProps {
     isOpen: boolean;
@@ -14,7 +15,7 @@ interface AnalysisWindowProps {
     zIndex?: number;
     filterContent?: ReactNode;
     onExport?: () => void;
-    onCopy?: () => Promise<boolean>;
+    onCopy?: () => string;
     children: ReactNode;
     loading?: boolean;
 }
@@ -125,13 +126,23 @@ export function AnalysisWindow({
         saveState(newState);
     };
 
-    const handleCopy = async () => {
-        if (onCopy) {
-            const success = await onCopy();
-            if (success) {
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-            }
+    const handleCopy = () => {
+        if (!onCopy) return;
+        
+        try {
+            const text = onCopy();
+            if (!text) return;
+
+            // Call copyToClipboard. Even though it's async, 
+            // the initial part (including the sync fallback) will run synchronously.
+            copyToClipboard(text).then(success => {
+                if (success) {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                }
+            });
+        } catch (err) {
+            console.error('Failed to copy analysis data:', err);
         }
     };
 

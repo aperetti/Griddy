@@ -5,7 +5,7 @@ import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts';
 import { ScadaLoadingAnimation } from '../../../components/ScadaLoadingAnimation';
 import { AnalysisWindow } from './AnalysisWindow';
-import { autoExport, copyToClipboard, getDataToCopy } from '../../../shared/utils/exportUtils';
+import { autoExport, getDataToCopy } from '../../../shared/utils/exportUtils';
 
 interface ReadingData {
     timestamp: string;
@@ -75,10 +75,9 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
         autoExport(data, `consumption_${nodeName?.replace(/\s+/g, '_')}`);
     };
 
-    const handleCopy = async () => {
-        if (!data || data.length === 0) return false;
-        const text = getDataToCopy(data);
-        return await copyToClipboard(text);
+    const handleCopy = () => {
+        if (!data || data.length === 0) return "";
+        return getDataToCopy(data);
     };
 
     useEffect(() => {

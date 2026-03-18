@@ -67,54 +67,64 @@ export function exportToJson(data: any, filename: string) {
 }
 
 /**
- * Copies text to the clipboard with a fallback for older browsers or non-secure contexts.
+ * Internal helper to copy text using the legacy execCommand API.
+ * This MUST be called synchronously within a user interaction handler.
+ */
+function copyToClipboardLegacy(text: string): boolean {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    
+    // Ensure it's not visible and doesn't scroll the page
+    // Using a more "compatible" set of styles for mobile
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-9999px';
+    textArea.style.top = '0';
+    textArea.style.width = '2em';
+    textArea.style.height = '2em';
+    textArea.style.padding = '0';
+    textArea.style.border = 'none';
+    textArea.style.outline = 'none';
+    textArea.style.boxShadow = 'none';
+    textArea.style.background = 'transparent';
+    textArea.style.fontSize = '16px'; // Prevent zoom on iOS
+    
+    document.body.appendChild(textArea);
+    
+    // Handle iOS/Android selection quirks
+    textArea.focus();
+    textArea.select();
+    
+    try {
+        const success = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        return success;
+    } catch (err) {
+        console.error('execCommand copy failed:', err);
+        try {
+            document.body.removeChild(textArea);
+        } catch (e) {}
+        return false;
+    }
+}
+
+/**
+ * Copies text to the clipboard with a robust fallback.
+ * For mobile compatibility, ensure this is called as directly as possible 
+ * from a user click handler.
  */
 export async function copyToClipboard(text: string): Promise<boolean> {
-    // 1. Try modern API first (requires secure context)
+    // 1. Try modern API if available and in secure context
     if (navigator.clipboard && window.isSecureContext) {
         try {
             await navigator.clipboard.writeText(text);
             return true;
         } catch (err) {
-            console.error('Modern clipboard API failed, trying fallback:', err);
+            console.warn('Modern clipboard API failed, falling back to legacy method.', err);
         }
     }
 
-    // 2. Legacy fallback using document.execCommand('copy')
-    try {
-        const textArea = document.createElement('textarea');
-        textArea.value = text;
-        
-        // Ensure it's not visible and doesn't scroll the page
-        textArea.style.position = 'fixed';
-        textArea.style.left = '-9999px';
-        textArea.style.top = '0';
-        textArea.style.opacity = '0';
-        
-        document.body.appendChild(textArea);
-        
-        // Handle iOS: need to prevent zooming and ensure selection works
-        textArea.contentEditable = 'true';
-        textArea.readOnly = false;
-        
-        const range = document.createRange();
-        range.selectNodeContents(textArea);
-        
-        const selection = window.getSelection();
-        if (selection) {
-            selection.removeAllRanges();
-            selection.addRange(range);
-            textArea.setSelectionRange(0, 999999);
-        }
-
-        const success = document.execCommand('copy');
-        document.body.removeChild(textArea);
-        
-        return success;
-    } catch (err) {
-        console.error('Clipboard fallback failed:', err);
-        return false;
-    }
+    // 2. Fallback to legacy method (sync)
+    return copyToClipboardLegacy(text);
 }
 
 /**

@@ -21,14 +21,15 @@ const getSeverityColor = (severity: string) => {
 export const AlarmsList: React.FC<AlarmsListProps> = ({ alarms, title = "Active Alarms" }) => {
     const [copied, setCopied] = useState(false);
 
-    const handleCopyAlarms = async () => {
+    const handleCopyAlarms = () => {
         if (alarms.length === 0) return;
         const text = getDataToCopy(alarms);
-        const success = await copyToClipboard(text);
-        if (success) {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-        }
+        copyToClipboard(text).then(success => {
+            if (success) {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+            }
+        });
     };
 
     if (alarms.length === 0) {

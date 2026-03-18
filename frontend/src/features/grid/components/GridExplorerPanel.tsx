@@ -1,6 +1,5 @@
-import { memo, useState, useEffect } from 'react';
 import { Paper, Title, Text, Group, Badge, ActionIcon, Button, Divider, Loader, Center, Box, Tooltip } from '@mantine/core';
-import { BarChart3, X, BookOpen, Activity, Copy, Check } from 'lucide-react';
+import { BookOpen, X, BarChart3, Activity, Copy, Check } from 'lucide-react';
 import { copyToClipboard } from '../../../shared/utils/exportUtils';
 import type { Node } from '../../../shared/types';
 import { fetchAlarms, type Alarm } from '../../../shared/api';
@@ -42,14 +41,15 @@ export const GridExplorerPanel = memo(function GridExplorerPanel({
     const hasSelection = selectedNodes.length > 0;
     const isMultiSelect = selectedNodes.length > 1;
 
-    const handleCopyDetails = async () => {
+    const handleCopyDetails = () => {
         if (!primaryNode) return;
         const text = JSON.stringify(primaryNode, null, 2);
-        const success = await copyToClipboard(text);
-        if (success) {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-        }
+        copyToClipboard(text).then(success => {
+            if (success) {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+            }
+        });
     };
 
     return (
