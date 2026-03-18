@@ -2,7 +2,7 @@ import '@mantine/core/styles.css';
 import '@mantine/dates/styles.css';
 import { useState, useEffect, useCallback } from 'react';
 import { useMediaQuery } from '@mantine/hooks';
-import { MantineProvider, AppShell, Box, Stack, ActionIcon, Menu, Group, Tooltip, Paper, LoadingOverlay } from '@mantine/core';
+import { MantineProvider, AppShell, Box, Stack, ActionIcon, Menu, Group, Tooltip, Paper } from '@mantine/core';
 import { Menu as MenuIcon, X, Search, Activity, Settings, Zap } from 'lucide-react';
 
 import { GridMap } from './features/grid/components/GridMap';
@@ -227,7 +227,8 @@ export default function App() {
   }, [isMobile]);
 
   const onEdgeClick = useCallback((edge: Edge, multiSelect: boolean) => {
-    const targetNode = nodes.find(n => n.id === edge.source) || nodes.find(n => n.id === edge.target);
+    // Select the downstream node (target)
+    const targetNode = nodes.find(n => n.id === edge.target);
     if (!targetNode) return;
     onNodeClick(targetNode, multiSelect);
   }, [nodes, onNodeClick]);
@@ -643,12 +644,6 @@ export default function App() {
 
           {/* Deck.GL Interactive Grid Map */}
           <Box style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
-            <LoadingOverlay 
-              visible={topologyLoading} 
-              overlayProps={{ blur: 1 }} 
-              loaderProps={{ variant: 'bars' }}
-              zIndex={10}
-            />
             <GridMap
               nodes={nodes}
               edges={edges}
@@ -688,6 +683,7 @@ export default function App() {
                   activeModelIds={activeModelIds}
                   onModelsChange={handleModelsChange} 
                   onZoomToModel={handleZoomToModel}
+                  loading={topologyLoading}
                 />
 
                 <Tooltip label="Global Settings" position="bottom" withArrow>

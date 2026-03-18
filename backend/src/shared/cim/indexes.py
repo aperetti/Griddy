@@ -337,7 +337,7 @@ class IndexBuilder:
             if self.transformer_kva.get(tank_mrid, 0.0) == 0.0:
                 kva = self.manual_info_to_kva.get(info_mrid)
                 if kva:
-                    val = kva / 1000.0 if kva >= 500 else kva
+                    val = kva / 1000.0
                     self.transformer_kva[tank_mrid] = val
                     tank_count += 1
 

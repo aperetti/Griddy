@@ -7,9 +7,10 @@ interface ModelSwitcherProps {
   activeModelIds: string[];
   onModelsChange: (activeModelIds: string[]) => void;
   onZoomToModel?: (modelId: string) => void;
+  loading?: boolean;
 }
 
-export function ModelSwitcher({ activeModelIds, onModelsChange, onZoomToModel }: ModelSwitcherProps) {
+export function ModelSwitcher({ activeModelIds, onModelsChange, onZoomToModel, loading }: ModelSwitcherProps) {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [opened, setOpened] = useState(false);
   const [search, setSearch] = useState('');
@@ -75,8 +76,8 @@ export function ModelSwitcher({ activeModelIds, onModelsChange, onZoomToModel }:
               overflow: 'visible',
             }}
           >
-            <Layers size={20} />
-            {activeCount > 1 && (
+            {loading ? <Loader size={18} color="white" /> : <Layers size={20} />}
+            {activeCount > 1 && !loading && (
               <Badge
                 size="xs"
                 circle

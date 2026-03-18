@@ -104,7 +104,7 @@ class CimModelManager:
             if cls_type:
                 logger.info("  Fetching %s...", cls_type.__name__)
                 self.network.get_all_attributes(cls_type)
-
+        
         logger.info("CIM classes loaded:")
         for cls, objs in sorted(self.network.graph.items(), key=lambda x: x[0].__name__):
             if objs:
@@ -314,6 +314,33 @@ class CimModelManager:
             
         return None
 
+    def _build_end_detail(self, end_obj) -> dict:
+        """Helper to extract common attributes from PowerTransformerEnd or TransformerTankEnd."""
+        detail: dict[str, Any] = {
+            "mrid": _mrid_str(end_obj),
+            "name": _get_name(end_obj),
+            "end_number": getattr(end_obj, "endNumber", None),
+        }
+        for attr, key in [
+            ("ratedS", "rated_kva"),
+            ("ratedU", "rated_kv"),
+            ("r", "resistance_ohm"),
+            ("x", "reactance_ohm"),
+            ("connectionKind", "connection_kind"),
+        ]:
+            val = getattr(end_obj, attr, None)
+            if val is not None:
+                if attr == "connectionKind":
+                    detail[key] = str(val)
+                else:
+                    fv = _safe_float(val)
+                    if fv is not None:
+                        if attr == "ratedS":
+                            detail[key] = fv / 1000.0
+                        else:
+                            detail[key] = fv
+        return detail
+
     # ── Type-specific enrichment helpers ──────────────────────────
 
     def _enrich_line_segment(self, detail: dict, obj):
@@ -344,32 +371,32 @@ class CimModelManager:
         cim = self.cim
 
         ends: list[dict] = []
+        
+        # 1. Look for PowerTransformerEnd (Transmission/Substation level)
         pte_cls = getattr(cim, "PowerTransformerEnd", None)
         if pte_cls:
             for _eid, pte in self.network.graph.get(pte_cls, {}).items():
                 pt = getattr(pte, "PowerTransformer", None)
                 if pt and _mrid_str(pt) == detail["mrid"]:
-                    end_data: dict[str, Any] = {
-                        "mrid": _mrid_str(pte),
-                        "name": _get_name(pte),
-                        "end_number": getattr(pte, "endNumber", None),
-                    }
-                    for attr, key in [
-                        ("ratedS", "rated_kva"),
-                        ("ratedU", "rated_kv"),
-                        ("r", "resistance_ohm"),
-                        ("x", "reactance_ohm"),
-                        ("connectionKind", "connection_kind"),
-                    ]:
-                        val = getattr(pte, attr, None)
-                        if val is not None:
-                            if attr == "connectionKind":
-                                end_data[key] = str(val)
-                            else:
-                                fv = _safe_float(val)
-                                if fv is not None:
-                                    end_data[key] = fv
+                    end_data = self._build_end_detail(pte)
                     ends.append(end_data)
+
+        # 2. Look for TransformerTankEnd (Distribution level: PT -> Tank -> TankEnd)
+        tte_cls = getattr(cim, "TransformerTankEnd", None)
+        if tte_cls and not ends: # Only search if direct ends weren't found
+            for _eid, tte in self.network.graph.get(tte_cls, {}).items():
+                tank = getattr(tte, "TransformerTank", None)
+                if tank:
+                    pt = getattr(tank, "PowerTransformer", None)
+                    if pt and _mrid_str(pt) == detail["mrid"]:
+                        end_data = self._build_end_detail(tte)
+                        # Distribution ends often store ratings in TransformerEndInfo
+                        ei = getattr(tte, "TransformerEndInfo", None)
+                        if ei and "rated_kva" not in end_data:
+                            va = _safe_float(getattr(ei, "ratedS", None))
+                            if va:
+                                end_data["rated_kva"] = va / 1000.0
+                        ends.append(end_data)
 
         detail["windings"] = sorted(ends, key=lambda e: e.get("end_number") or 0)
 
