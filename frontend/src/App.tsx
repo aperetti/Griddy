@@ -319,6 +319,24 @@ export default function App() {
     };
     setAnalysisWindows(prev => [...prev, newWindow]);
   };
+  
+  const handleZoomToAsset = useCallback((id: string, type: 'Node' | 'Edge') => {
+    if (type === 'Node') {
+      const node = nodes.find(n => n.id === id);
+      if (node) {
+        setHighlightedNodes(new Set([id]));
+        setHighlightedEdges(new Set());
+        setFitBoundsTrigger(prev => prev + 1);
+      }
+    } else {
+      const edge = edges.find(e => e.id === id || `${e.source}-${e.target}` === id);
+      if (edge) {
+        setHighlightedNodes(new Set([edge.source, edge.target]));
+        setHighlightedEdges(new Set([edge.id || `${edge.source}-${edge.target}`]));
+        setFitBoundsTrigger(prev => prev + 1);
+      }
+    }
+  }, [nodes, edges]);
 
   const handleRunVoltageMap = async (agg: string) => {
     setLoading(true);
@@ -846,6 +864,7 @@ export default function App() {
                 id={win.nodeIds[0]}
                 type={win.nodeIds[0].includes('_') || win.nodeIds[0].length > 20 ? 'Edge' : 'Node'}
                 title={win.nodeName}
+                onZoomTo={handleZoomToAsset}
               />
             ) : null
           ))}

@@ -21,10 +21,10 @@ def resolve_xml_path() -> Path:
             return cwd_resolved
 
     candidates = [
-        BACKEND_DIR / "sample_data" / "IEEE8500.xml",
-        WORKSPACE_ROOT / "backend" / "sample_data" / "IEEE8500.xml",
-        WORKSPACE_ROOT / "sample_data" / "IEEE8500.xml",
-        Path.cwd() / "sample_data" / "IEEE8500.xml",
+        BACKEND_DIR / "cim" / "models" / "IEEE8500.xml",
+        WORKSPACE_ROOT / "backend" / "cim" / "models" / "IEEE8500.xml",
+        WORKSPACE_ROOT / "cim" / "models" / "IEEE8500.xml",
+        Path.cwd() / "cim" / "models" / "IEEE8500.xml",
         Path.cwd() / "IEEE8500.xml",
     ]
 
@@ -33,7 +33,7 @@ def resolve_xml_path() -> Path:
             return c
 
     # Fall back to the primary expected location for a clearer error message
-    return BACKEND_DIR / "sample_data" / "IEEE8500.xml"
+    return BACKEND_DIR / "cim" / "models" / "IEEE8500.xml"
 
 
 # Default DB is workspace root so API and scripts read the same file.

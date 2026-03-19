@@ -1,3 +1,4 @@
+import { memo, useState, useEffect } from 'react';
 import { Paper, Title, Text, Group, Badge, ActionIcon, Button, Divider, Loader, Center, Box, Tooltip } from '@mantine/core';
 import { BookOpen, X, BarChart3, Activity, Copy, Check } from 'lucide-react';
 import { copyToClipboard } from '../../../shared/utils/exportUtils';

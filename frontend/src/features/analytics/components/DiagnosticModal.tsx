@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Stack, Text, ScrollArea, Table, Loader, Alert, Badge, Group, Code, Tabs, Box } from '@mantine/core';
-import { AlertCircle, Database, Network, List, Share2 } from 'lucide-react';
+import { Stack, Text, ScrollArea, Table, Loader, Alert, Badge, Group, Code, Tabs, Box, Button } from '@mantine/core';
+import { AlertCircle, Database, Network, List, Share2, MapPin } from 'lucide-react';
 import { AnalysisWindow } from './AnalysisWindow';
 import { fetchCimEquipment, fetchCimNode } from '../../../shared/api';
 import { autoExport, getDataToCopy } from '../../../shared/utils/exportUtils';
@@ -12,9 +12,17 @@ interface DiagnosticModalProps {
     id: string;
     type: 'Node' | 'Edge';
     title: string;
+    onZoomTo?: (id: string, type: 'Node' | 'Edge') => void;
 }
 
-export function DiagnosticModal({ isOpen, onClose, id: initialId, type: initialType, title: initialTitle }: DiagnosticModalProps) {
+export function DiagnosticModal({ 
+    isOpen, 
+    onClose, 
+    id: initialId, 
+    type: initialType, 
+    title: initialTitle,
+    onZoomTo
+}: DiagnosticModalProps) {
     const [currentId, setCurrentId] = useState(initialId);
     const [currentType, setCurrentType] = useState(initialType);
     const [loading, setLoading] = useState(true);
@@ -126,6 +134,17 @@ export function DiagnosticModal({ isOpen, onClose, id: initialId, type: initialT
                             <Text fw={600} size="sm">{data?.cim_class || currentType}</Text>
                             <Code color="blue.9" variant="light" style={{ fontSize: '10px' }}>{currentId}</Code>
                         </Group>
+                        {onZoomTo && (
+                            <Button 
+                                variant="subtle" 
+                                size="compact-xs" 
+                                leftSection={<MapPin size={12} />}
+                                onClick={() => onZoomTo(currentId, currentType)}
+                                styles={{ label: { fontSize: '10px' } }}
+                            >
+                                Zoom To
+                            </Button>
+                        )}
                     </Group>
                 </Box>
 
