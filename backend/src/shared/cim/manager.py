@@ -30,7 +30,7 @@ class CimModelManager:
 
     def __init__(self):
         self.network = None      # FeederModel
-        self.cim = None          # cimgraph.data_profile.rc4_2021
+        self.cim = None          # cimgraph.data_profile.cimhub_2023
         self._loaded = False
         self.model_id: str = ""  # set by registry or load()
 
@@ -79,7 +79,7 @@ class CimModelManager:
         self.model_id = path.stem
 
         # Deferred import so env vars set in loader.py take effect first
-        import cimgraph.data_profile.rc4_2021 as cim
+        import cimgraph.data_profile.cimhub_2023 as cim
         from cimgraph.databases import XMLFile
         from cimgraph.models import FeederModel
 
@@ -232,7 +232,7 @@ class CimModelManager:
             return None
         cim = self.cim
         cn_obj = None
-        for _cid, cn in self.network.graph.get(cim.ConnectivityNode, {}).items():
+        for _cid, cn in self.network.graph.get(getattr(cim, "ConnectivityNode", None), {}).items():
             if _mrid_str(cn) == node_id:
                 cn_obj = cn
                 break
@@ -314,31 +314,48 @@ class CimModelManager:
             
         return None
 
-    def _build_end_detail(self, end_obj) -> dict:
-        """Helper to extract common attributes from PowerTransformerEnd or TransformerTankEnd."""
+    def _extract_primitives(self, obj) -> dict:
+        """Helper to extract all primitive properties (strings, floats, ints, bools) from any CIM object."""
         detail: dict[str, Any] = {
-            "mrid": _mrid_str(end_obj),
-            "name": _get_name(end_obj),
-            "end_number": getattr(end_obj, "endNumber", None),
+            "mrid": _mrid_str(obj),
+            "name": _get_name(obj),
         }
-        for attr, key in [
-            ("ratedS", "rated_kva"),
-            ("ratedU", "rated_kv"),
-            ("r", "resistance_ohm"),
-            ("x", "reactance_ohm"),
-            ("connectionKind", "connection_kind"),
-        ]:
-            val = getattr(end_obj, attr, None)
-            if val is not None:
-                if attr == "connectionKind":
-                    detail[key] = str(val)
-                else:
-                    fv = _safe_float(val)
-                    if fv is not None:
-                        if attr == "ratedS":
-                            detail[key] = fv / 1000.0
-                        else:
-                            detail[key] = fv
+        
+        # Dynamically extract all primitive fields using their exact CIM names
+        if hasattr(obj, "__dataclass_fields__"):
+            for attr in obj.__dataclass_fields__.keys():
+                # Skip already handled or complex objects
+                if attr in ("mRID", "name", "identifier", "aliasName", "description"):
+                    continue
+                
+                val = getattr(obj, attr, None)
+                if val is not None:
+                    # Rename specific fields for clarity and perform standard unit conversion
+                    if attr == "ratedS" and isinstance(val, (int, float)):
+                        detail["sapparent_kva"] = float(val) / 1000.0
+                        continue
+                    if attr == "ratedU" and isinstance(val, (int, float)):
+                        detail["rated_u_kv"] = float(val) / 1000.0
+                        continue
+                        
+                    # Only include string, int, float, or bool primitives
+                    if isinstance(val, (str, int, float, bool)):
+                        detail[attr] = val
+                    elif hasattr(val, "value"): # Handle enums like WindingConnection
+                        detail[attr] = str(val.value)
+        else:
+            # Fallback if no __dataclass_fields__ (e.g., custom mock wrapper)
+            detail["endNumber"] = getattr(obj, "endNumber", None)
+            for attr in ["ratedS", "ratedU", "r", "x", "connectionKind"]:
+                val = getattr(obj, attr, None)
+                if val is not None:
+                    if attr == "ratedS" and isinstance(val, (int, float)):
+                        detail["sapparent_kva"] = float(val) / 1000.0
+                    elif attr == "ratedU" and isinstance(val, (int, float)):
+                        detail["rated_u_kv"] = float(val) / 1000.0
+                    else:
+                        detail[attr] = str(val.value) if hasattr(val, 'value') else val
+
         return detail
 
     # ── Type-specific enrichment helpers ──────────────────────────
@@ -378,44 +395,47 @@ class CimModelManager:
             for _eid, pte in self.network.graph.get(pte_cls, {}).items():
                 pt = getattr(pte, "PowerTransformer", None)
                 if pt and _mrid_str(pt) == detail["mrid"]:
-                    end_data = self._build_end_detail(pte)
+                    end_data = self._extract_primitives(pte)
                     ends.append(end_data)
 
-        # 2. Look for TransformerTankEnd (Distribution level: PT -> Tank -> TankEnd)
-        tte_cls = getattr(cim, "TransformerTankEnd", None)
-        if tte_cls and not ends: # Only search if direct ends weren't found
-            for _eid, tte in self.network.graph.get(tte_cls, {}).items():
-                tank = getattr(tte, "TransformerTank", None)
-                if tank:
-                    pt = getattr(tank, "PowerTransformer", None)
-                    if pt and _mrid_str(pt) == detail["mrid"]:
-                        end_data = self._build_end_detail(tte)
-                        # Distribution ends often store ratings in TransformerEndInfo
-                        ei = getattr(tte, "TransformerEndInfo", None)
-                        if ei and "rated_kva" not in end_data:
-                            va = _safe_float(getattr(ei, "ratedS", None))
-                            if va:
-                                end_data["rated_kva"] = va / 1000.0
-                        ends.append(end_data)
+        # 2. Look for TransformerTank (Distribution level: PT -> Tank -> TankInfo -> EndInfo)
+        tt_cls = getattr(cim, "TransformerTank", None)
+        if tt_cls and not ends: # Only search if direct ends weren't found
+            for _eid, tank in self.network.graph.get(tt_cls, {}).items():
+                pt = getattr(tank, "PowerTransformer", None)
+                if pt and _mrid_str(pt) == detail["mrid"]:
+                    tank_info = getattr(tank, "TransformerTankInfo", None)
+                    if tank_info:
+                        ti_mrid = _mrid_str(tank_info)
+                        ei_cls = getattr(cim, "TransformerEndInfo", None)
+                        if ei_cls and ti_mrid:
+                            for _ei_id, ei in self.network.graph.get(ei_cls, {}).items():
+                                ei_ti = getattr(ei, "TransformerTankInfo", None)
+                                if ei_ti and _mrid_str(ei_ti) == ti_mrid:
+                                    # Match found! Extract all ratings natively
+                                    info_data = self._extract_primitives(ei)
+                                    ends.append(info_data)
 
-        detail["windings"] = sorted(ends, key=lambda e: e.get("end_number") or 0)
+        detail["transformerends"] = sorted(ends, key=lambda e: e.get("endNumber") or 0)
 
+        # Look for RatioTapChanger
         rtc_cls = getattr(cim, "RatioTapChanger", None)
         if rtc_cls:
             winding_mrids = {w["mrid"] for w in ends if w.get("mrid")}
             for _rid, rtc in self.network.graph.get(rtc_cls, {}).items():
                 te = getattr(rtc, "TransformerEnd", None)
                 if te and _mrid_str(te) in winding_mrids:
-                    detail["tap_changer"] = {
-                        "mrid": _mrid_str(rtc),
-                        "step": getattr(rtc, "step", None),
-                        "high_step": getattr(rtc, "highStep", None),
-                        "low_step": getattr(rtc, "lowStep", None),
-                        "neutral_step": getattr(rtc, "neutralStep", None),
-                        "step_voltage_increment": _safe_float(
-                            getattr(rtc, "stepVoltageIncrement", None)
-                        ),
-                    }
+                    detail["RatioTapChanger"] = self._extract_primitives(rtc)
+                    break
+
+        # Look for PhaseTapChanger (indicates a voltage regulator)
+        ptc_cls = getattr(cim, "PhaseTapChanger", None)
+        if ptc_cls:
+            winding_mrids = {w["mrid"] for w in ends if w.get("mrid")}
+            for _rid, ptc in self.network.graph.get(ptc_cls, {}).items():
+                te = getattr(ptc, "TransformerEnd", None)
+                if te and _mrid_str(te) in winding_mrids:
+                    detail["PhaseTapChanger"] = self._extract_primitives(ptc)
                     break
 
     def _enrich_switch(self, detail: dict, obj):

@@ -72,7 +72,7 @@ class IndexBuilder:
         cim = self.cim
         graph = self.graph
 
-        position_points = graph.get(cim.PositionPoint, {})
+        position_points = graph.get(getattr(cim, "PositionPoint", None), {})
         raw_points: list[tuple[float, float]] = []
 
         for _pp_id, pp in position_points.items():
@@ -109,11 +109,10 @@ class IndexBuilder:
                     self.location_coords[loc_id] = _normalize(x, y)
 
         # Equipment mRID → (lat, lon)
-        eq_cls_with_location = [
-            cim.ACLineSegment, cim.PowerTransformer, cim.Breaker,
-            cim.LoadBreakSwitch, cim.EnergyConsumer, cim.EnergySource,
-        ]
-        for opt in ("Fuse", "Disconnector", "Recloser", "Substation",
+        eq_cls_with_location = []
+        for opt in ("ACLineSegment", "PowerTransformer", "Breaker",
+                    "LoadBreakSwitch", "EnergyConsumer", "EnergySource",
+                    "Fuse", "Disconnector", "Recloser", "Substation",
                     "LinearShuntCompensator", "TransformerTank"):
             cls = getattr(cim, opt, None)
             if cls:
@@ -136,7 +135,7 @@ class IndexBuilder:
 
     def _build_terminal_index(self):
         cim = self.cim
-        terminals = self.graph.get(cim.Terminal, {})
+        terminals = self.graph.get(getattr(cim, "Terminal", None), {})
         for _tid, term in terminals.items():
             ce = getattr(term, "ConductingEquipment", None)
             cn = getattr(term, "ConnectivityNode", None)
@@ -157,19 +156,15 @@ class IndexBuilder:
         cim = self.cim
         graph = self.graph
 
-        type_map: dict = {
-            cim.ACLineSegment: "ACLineSegment",
-            cim.PowerTransformer: "PowerTransformer",
-            cim.Breaker: "Breaker",
-            cim.LoadBreakSwitch: "LoadBreakSwitch",
-            cim.EnergyConsumer: "EnergyConsumer",
-            cim.EnergySource: "EnergySource",
-        }
-        tt_cls = getattr(cim, "TransformerTank", None)
-        if tt_cls:
-            type_map[tt_cls] = "PowerTransformer"
-
+        type_map: dict = {}
         for opt_name, type_str in [
+            ("ACLineSegment", "ACLineSegment"),
+            ("PowerTransformer", "PowerTransformer"),
+            ("Breaker", "Breaker"),
+            ("LoadBreakSwitch", "LoadBreakSwitch"),
+            ("EnergyConsumer", "EnergyConsumer"),
+            ("EnergySource", "EnergySource"),
+            ("TransformerTank", "PowerTransformer"),
             ("Fuse", "Fuse"),
             ("Disconnector", "Disconnector"),
             ("Recloser", "Recloser"),
@@ -189,7 +184,7 @@ class IndexBuilder:
                         is_open = getattr(eq, "normalOpen", None) or getattr(eq, "open", None)
                         self.equipment_open[m] = bool(is_open) if is_open is not None else False
 
-        for _sid, sub in graph.get(cim.Substation, {}).items():
+        for _sid, sub in graph.get(getattr(cim, "Substation", None), {}).items():
             m = _mrid_str(sub)
             if m:
                 self.equipment_types[m] = "Substation"

@@ -1,6 +1,6 @@
 import pytest
-from shared.cim.topology import TopologyBuilder
-from shared.cim.indexes import IndexBuilder
+from src.shared.cim.topology import TopologyBuilder
+from src.shared.cim.indexes import IndexBuilder
 
 class MockIndex:
     def __init__(self):
@@ -31,7 +31,10 @@ def test_regulator_identification():
 
 # Simplified: check the IndexBuilder directly since that's where the logic is
 def test_index_builder_regulator():
-    from shared.cim_model import cim
+    try:
+        from src.shared.cim.manager import cim
+    except ImportError:
+        pass
     
     class MockGraph:
         def get(self, cls, default):

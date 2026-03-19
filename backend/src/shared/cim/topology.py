@@ -105,7 +105,7 @@ class TopologyBuilder:
         graph = self.graph
         idx = self.idx
 
-        connectivity_nodes = graph.get(cim.ConnectivityNode, {})
+        connectivity_nodes = graph.get(getattr(cim, "ConnectivityNode", None), {})
 
         for _cn_id, cn in connectivity_nodes.items():
             cn_mrid = _mrid_str(cn)

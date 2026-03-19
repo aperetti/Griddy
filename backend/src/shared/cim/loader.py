@@ -17,7 +17,7 @@ else:
 _WORKSPACE_ROOT = _BACKEND_DIR.parent
 
 # CIM-Graph environment vars (must be set before importing cimgraph)
-os.environ.setdefault("CIMG_CIM_PROFILE", "rc4_2021")
+os.environ.setdefault("CIMG_CIM_PROFILE", "cimhub_2023")
 os.environ.setdefault("CIMG_IEC61970_301", "8")
 
 
@@ -47,9 +47,9 @@ def _resolve_xml_path(xml_path: Optional[str] = None) -> Path:
 
     # 3. Known candidates
     candidates = [
-        _BACKEND_DIR / "cim" / "IEEE8500_3subs.xml",
-        _BACKEND_DIR / "cim" / "IEEE8500.xml",
-        Path("/app/cim/IEEE8500.xml"), # Docker location
+        _BACKEND_DIR / "cim" / "models" / "IEEE8500_3subs.xml",
+        _BACKEND_DIR / "cim" / "models" / "IEEE8500.xml",
+        Path("/app/cim/models/IEEE8500.xml"), # Docker location
         Path("/app/IEEE8500.xml"),             # Alternative Docker location
     ]
     for c in candidates:
