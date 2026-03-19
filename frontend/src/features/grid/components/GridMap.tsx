@@ -84,6 +84,14 @@ const edgeMidpoint = (d: Edge): [number, number] => [
     (d.sourcePosition[1] + d.targetPosition[1]) / 2,
 ];
 
+const getBearing = (source: [number, number], target: [number, number]) => {
+    // Distort longitude by latitude for geographic bearing
+    const dx = (target[0] - source[0]) * Math.cos((source[1] * Math.PI) / 180);
+    const dy = target[1] - source[1];
+    // Return degrees clockwise from North
+    return 90 - (Math.atan2(dy, dx) * 180) / Math.PI;
+};
+
 export const GridMap = React.memo<GridMapProps>(({
     nodes,
     edges,
@@ -251,22 +259,32 @@ export const GridMap = React.memo<GridMapProps>(({
     }, []);
 
     // Edges that carry switch/breaker equipment (for icon rendering)
-    const switchEdgesOpen = useMemo(
-        () => edges.filter(e => SWITCH_EDGE_TYPES.has(e.edge_type ?? '') && e.is_open),
-        [edges]
-    );
-    const switchEdgesClosed = useMemo(
-        () => edges.filter(e => SWITCH_EDGE_TYPES.has(e.edge_type ?? '') && !e.is_open),
-        [edges]
-    );
-    const transformerEdges = useMemo(
-        () => edges.filter(e => e.edge_type === 'PowerTransformer' && !e.is_regulator),
-        [edges]
-    );
-    const regulatorEdges = useMemo(
-        () => edges.filter(e => e.edge_type === 'PowerTransformer' && e.is_regulator),
-        [edges]
-    );
+    const switchEdgesOpen = useMemo(() => edges.filter(e => SWITCH_EDGE_TYPES.has(e.edge_type ?? '') && e.is_open), [edges]);
+    const switchEdgesClosed = useMemo(() => edges.filter(e => SWITCH_EDGE_TYPES.has(e.edge_type ?? '') && !e.is_open), [edges]);
+    const transformerEdges = useMemo(() => edges.filter(e => e.edge_type === 'PowerTransformer' && !e.is_regulator), [edges]);
+    const regulatorEdges = useMemo(() => edges.filter(e => e.edge_type === 'PowerTransformer' && e.is_regulator), [edges]);
+
+    const visualEdgePaths = useMemo(() => {
+        const OFFSET = 0.00004; // ~4-5 meters
+        return edges.flatMap(e => {
+            const isSwitch = (e.edge_type && SWITCH_EDGE_TYPES.has(e.edge_type));
+            if (!isSwitch) return [{ ...e, path: [e.sourcePosition, e.targetPosition] }];
+
+            const mid = edgeMidpoint(e);
+            const dx = (e.targetPosition[0] - e.sourcePosition[0]) * Math.cos((e.sourcePosition[1] * Math.PI) / 180);
+            const dy = e.targetPosition[1] - e.sourcePosition[1];
+            const len = Math.sqrt(dx * dx + dy * dy);
+            if (len < OFFSET * 3) return [{ ...e, path: [e.sourcePosition, e.targetPosition] }];
+
+            const ux = (e.targetPosition[0] - e.sourcePosition[0]) / Math.sqrt(Math.pow(e.targetPosition[0] - e.sourcePosition[0], 2) + Math.pow(e.targetPosition[1] - e.sourcePosition[1], 2));
+            const uy = (e.targetPosition[1] - e.sourcePosition[1]) / Math.sqrt(Math.pow(e.targetPosition[0] - e.sourcePosition[0], 2) + Math.pow(e.targetPosition[1] - e.sourcePosition[1], 2));
+
+            return [
+                { ...e, path: [e.sourcePosition, [mid[0] - ux * (OFFSET / Math.cos((mid[1] * Math.PI) / 180)), mid[1] - uy * OFFSET]] },
+                { ...e, path: [[mid[0] + ux * (OFFSET / Math.cos((mid[1] * Math.PI) / 180)), mid[1] + uy * OFFSET], e.targetPosition] }
+            ];
+        });
+    }, [edges]);
 
     const layers = useMemo(() => [
         new ScatterplotLayer({
@@ -289,9 +307,28 @@ export const GridMap = React.memo<GridMapProps>(({
             }
         }),
         new PathLayer({
+            id: 'grid-lines-hit-area',
+            data: visualEdgePaths,
+            getPath: (d: any) => d.path,
+            getColor: () => [0, 0, 0, 0],
+            getWidth: () => 15, // Large hit area
+            widthUnits: 'pixels',
+            pickable: true,
+            autoHighlight: false,
+            onHover: (info) => {
+                setHoveredEdgeId(info.object ? (info.object.id || `${info.object.source}-${info.object.target}`) : null);
+            },
+            onClick: (info, event) => {
+                const srcEvent = (event as any).srcEvent as MouseEvent;
+                if (info.object && srcEvent && onEdgeClick) {
+                    onEdgeClick(info.object as Edge, srcEvent.shiftKey || srcEvent.ctrlKey);
+                }
+            }
+        }),
+        new PathLayer({
             id: 'grid-lines',
-            data: edges,
-            getPath: (d: Edge) => [d.sourcePosition, d.targetPosition],
+            data: visualEdgePaths,
+            getPath: (d: any) => d.path,
             getColor: (d: Edge) => {
                 if (nodeAverages && nodeAverages[d.target] !== undefined && voltageScale) {
                     const voltage = nodeAverages[d.target];
@@ -326,18 +363,7 @@ export const GridMap = React.memo<GridMapProps>(({
             },
             dashJustified: true,
             extensions: [new PathStyleExtension({ dash: true })],
-            pickable: true,
-            autoHighlight: true,
-            highlightColor: [255, 255, 255, 100],
-            onHover: (info) => {
-                setHoveredEdgeId(info.object ? (info.object.id || `${info.object.source}-${info.object.target}`) : null);
-            },
-            onClick: (info, event) => {
-                const srcEvent = (event as any).srcEvent as MouseEvent;
-                if (info.object && srcEvent && onEdgeClick) {
-                    onEdgeClick(info.object as Edge, srcEvent.shiftKey || srcEvent.ctrlKey);
-                }
-            },
+            pickable: false,
             updateTriggers: {
                 getColor: [highlightedEdges, nodeAverages, voltageScale],
                 getWidth: [highlightedEdges, hoveredEdgeId, nodeAverages]
@@ -405,6 +431,7 @@ export const GridMap = React.memo<GridMapProps>(({
                 marker: { x: 0, y: 0, width: 100, height: 100, anchorY: 50, mask: false }
             },
             getIcon: () => 'marker',
+            getAngle: (d: Edge) => getBearing(d.sourcePosition, d.targetPosition) + 90,
             getSize: (d: Edge) => highlightedEdges.has(d.id ?? '') ? 36 : 24,
             sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
             sizeMinPixels: 1,
@@ -430,6 +457,7 @@ export const GridMap = React.memo<GridMapProps>(({
                 marker: { x: 0, y: 0, width: 100, height: 100, anchorY: 50, mask: false }
             },
             getIcon: () => 'marker',
+            getAngle: (d: Edge) => getBearing(d.sourcePosition, d.targetPosition) + 90,
             getSize: (d: Edge) => highlightedEdges.has(d.id ?? '') ? 36 : 24,
             sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
             sizeMinPixels: 1,
@@ -449,7 +477,7 @@ export const GridMap = React.memo<GridMapProps>(({
         new IconLayer({
             id: 'grid-transformers',
             data: transformerEdges,
-            getPosition: (d: Edge) => edgeMidpoint(d),
+            getPosition: (d: Edge) => d.targetPosition,
             iconAtlas: '/transformer.svg',
             iconMapping: {
                 marker: { x: 0, y: 0, width: 100, height: 100, anchorY: 50, mask: false }
@@ -474,7 +502,7 @@ export const GridMap = React.memo<GridMapProps>(({
         new IconLayer({
             id: 'grid-regulators',
             data: regulatorEdges,
-            getPosition: (d: Edge) => edgeMidpoint(d),
+            getPosition: (d: Edge) => d.targetPosition,
             iconAtlas: '/regulator.svg',
             iconMapping: {
                 marker: { x: 0, y: 0, width: 100, height: 100, anchorY: 50, mask: false }
@@ -521,7 +549,7 @@ export const GridMap = React.memo<GridMapProps>(({
                 }
             }
         })
-    ], [nodes, edges, hoveredNodeId, hoveredEdgeId, highlightedNodes, highlightedEdges, selectedNodeIdsSet, switchEdgesOpen, switchEdgesClosed, transformerEdges, regulatorEdges, nodeAverages, voltageScale, onNodeClick, onEdgeClick, viewState.zoom]);
+    ], [nodes, edges, visualEdgePaths, hoveredNodeId, hoveredEdgeId, highlightedNodes, highlightedEdges, selectedNodeIdsSet, switchEdgesOpen, switchEdgesClosed, transformerEdges, regulatorEdges, nodeAverages, voltageScale, onNodeClick, onEdgeClick, viewState.zoom]);
 
     return (
         <div
