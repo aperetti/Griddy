@@ -38,7 +38,8 @@ class NetworkXEngine(GraphEngine):
                     edge["from_node_id"], 
                     edge["to_node_id"], 
                     edge_id=edge["edge_id"],
-                    phases=edge.get("phases", ["A", "B", "C"])
+                    phases=edge.get("phases", ["A", "B", "C"]),
+                    is_open=edge.get("is_open", False)
                 )
                 
         # 3. Perform Spatial Stitching
@@ -124,6 +125,10 @@ class NetworkXEngine(GraphEngine):
                     # Capture real edge IDs (ignore virtual stitch edges for the result)
                     if "edge_id" in data and not data.get("virtual", False):
                         edges.add(data["edge_id"])
+                        
+                    # Halt traversal if edge is open
+                    if data.get("is_open", False):
+                        continue
                         
                     if neighbor not in visited_nodes:
                         visited_nodes.add(neighbor)

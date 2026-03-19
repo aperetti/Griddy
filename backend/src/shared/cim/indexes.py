@@ -35,6 +35,8 @@ class IndexBuilder:
         self.transformer_kva: dict[str, float] = {}                # PT/Tank mRID → kVA
         self.transformer_primary_cn: dict[str, str] = {}           # PT mRID → primary CN mRID
         self.transformer_has_tap_changer: dict[str, bool] = {}     # PT/Tank mRID → bool
+        self.equipment_is_regulator: dict[str, bool] = {}          # mRID → bool
+        self.equipment_is_single_phase: dict[str, bool] = {}       # mRID → bool
         self.manual_tank_to_info: dict[str, str] = {}              # tank mRID → tankInfo mRID
         self.manual_info_to_kva: dict[str, float] = {}             # tankInfo mRID → VA
 
@@ -47,13 +49,13 @@ class IndexBuilder:
         self._index_equipment()
         self._build_coordinate_index()
         self._build_terminal_index()
-        self._classify_equipment()
         self._build_phase_index()
         if self._xml_path is not None:
             self.manual_tank_to_info, self.manual_info_to_kva = _manual_xml_catalog_scan(
                 self._xml_path
             )
         self._build_transformer_index()
+        self._classify_equipment()
 
     # ------------------------------------------------------------------
     # Private builders
@@ -179,6 +181,13 @@ class IndexBuilder:
                 m = _mrid_str(eq)
                 if m:
                     self.equipment_types[m] = type_name
+                    
+                    # Identify Regulators: PowerTransformers with Tap Changers
+                    if type_name == "PowerTransformer":
+                        if self.transformer_has_tap_changer.get(m):
+                            self.equipment_types[m] = "Regulator"
+                            self.equipment_is_regulator[m] = True
+
                     if type_name in ("Breaker", "LoadBreakSwitch", "Fuse",
                                      "Disconnector", "Recloser"):
                         is_open = getattr(eq, "normalOpen", None) or getattr(eq, "open", None)
@@ -233,9 +242,23 @@ class IndexBuilder:
         for phases in self.eq_phases.values():
             phases.sort(key=lambda p: _phase_order.get(p, 9))
 
+        # Identify single-phase units
+        for mrid, phases in self.eq_phases.items():
+            # Any unit with exactly 1 non-neutral phase is single-phase.
+            # (Neutral 'N' doesn't count towards the 'count' for 1-phase vs 3-phase classification)
+            active_phases = [p for p in phases if p in ("A", "B", "C", "S1", "S2")]
+            if len(active_phases) == 1:
+                self.equipment_is_single_phase[mrid] = True
+            elif len(active_phases) == 2 and ("S1" in active_phases or "S2" in active_phases):
+                # Split-phase is often considered "single phase" in distribution context
+                self.equipment_is_single_phase[mrid] = True
+            else:
+                self.equipment_is_single_phase[mrid] = False
+
         logger.info(
-            "  Equipment phase index: %d equipment with per-phase data",
+            "  Equipment phase index: %d equipment with per-phase data (%d single-phase)",
             len(self.eq_phases),
+            sum(1 for v in self.equipment_is_single_phase.values() if v)
         )
 
     def _build_transformer_index(self):
@@ -314,17 +337,21 @@ class IndexBuilder:
                     pt_id = _mrid_str(pt)
                     if pt_id:
                         self.transformer_has_tap_changer[pt_id] = True
+                        # Re-classify as Regulator
+                        self.equipment_is_regulator[pt_id] = True
                     
                     # TransformerTankEnd -> TransformerTank
                     tank = getattr(pte, "TransformerTank", None)
                     tank_id = _mrid_str(tank)
                     if tank_id:
                         self.transformer_has_tap_changer[tank_id] = True
+                        self.equipment_is_regulator[tank_id] = True
                         # Also flag the parent transformer if it's a tank
                         pt_from_tank = getattr(tank, "PowerTransformer", None)
                         pt_from_tank_id = _mrid_str(pt_from_tank)
                         if pt_from_tank_id:
                             self.transformer_has_tap_changer[pt_from_tank_id] = True
+                            self.equipment_is_regulator[pt_from_tank_id] = True
 
         # ── 4. Fallback: Manual XML Scan results ──
         tank_count = 0

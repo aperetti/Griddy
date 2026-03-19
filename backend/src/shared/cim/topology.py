@@ -64,7 +64,7 @@ class TopologyBuilder:
     # Equipment types that appear as edges (2-terminal) in the graph
     EDGE_TYPES = {
         "ACLineSegment", "PowerTransformer", "Breaker", "LoadBreakSwitch",
-        "Fuse", "Disconnector", "Recloser",
+        "Fuse", "Disconnector", "Recloser", "Regulator",
     }
 
     def __init__(self, cim, graph, idx: IndexBuilder):
@@ -200,6 +200,8 @@ class TopologyBuilder:
                 "to_node_id": cn2,
                 "name": _get_name(obj) if obj else eq_mrid,
                 "phases": phases,
+                "phase_count": len([p for p in phases if p in ("A", "B", "C", "S1", "S2")]),
+                "is_single_phase": idx.equipment_is_single_phase.get(eq_mrid, False),
             }
 
             # Switch/breaker state
@@ -228,6 +230,8 @@ class TopologyBuilder:
             "type": eq_type,
             "name": _get_name(obj) if obj else eq_mrid,
             "phases": phases,
+            "phase_count": len([p for p in phases if p in ("A", "B", "C", "S1", "S2")]) if phases else 0,
+            "is_single_phase": self.idx.equipment_is_single_phase.get(eq_mrid, False),
         }
 
         if eq_type == "EnergyConsumer" and obj is not None:
