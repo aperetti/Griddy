@@ -166,7 +166,11 @@ export const GridMap = React.memo<GridMapProps>(({
             
             lastHandledTrigger.current = fitHighlightedNodesTrigger;
             
-            const nodesToFit = nodes.filter(n => highlightedNodes.has(n.id));
+            const nodesToFit = nodes.filter(n => 
+                highlightedNodes.has(n.id) && 
+                !isNaN(n.position[0]) && 
+                !isNaN(n.position[1])
+            );
             if (nodesToFit.length === 0) return;
 
             const viewport = new WebMercatorViewport({

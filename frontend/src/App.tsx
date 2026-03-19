@@ -319,24 +319,73 @@ export default function App() {
     };
     setAnalysisWindows(prev => [...prev, newWindow]);
   };
-  
+
   const handleZoomToAsset = useCallback((id: string, type: 'Node' | 'Edge') => {
+    // Helper to find the nearest geographic coordinate starting from any node ID
+    const findNearestGeographicNodeId = (startId: string): string | null => {
+      const queue: string[] = [startId];
+      const visited = new Set<string>();
+      
+      while (queue.length > 0) {
+        const currentId = queue.shift()!;
+        if (visited.has(currentId)) continue;
+        visited.add(currentId);
+        
+        const node = nodes.find(n => n.id === currentId);
+        if (node && !isNaN(node.position[0]) && !isNaN(node.position[1])) {
+          return currentId;
+        }
+        
+        // Find neighbors through edges
+        const neighbors = edges
+          .filter(e => e.source === currentId || e.target === currentId)
+          .map(e => (e.source === currentId ? e.target : e.source));
+        
+        queue.push(...neighbors);
+      }
+      return null;
+    };
+
     if (type === 'Node') {
+      // 1. Check if it's a direct Node
+      let targetNodeId: string | null = id;
       const node = nodes.find(n => n.id === id);
-      if (node) {
-        setHighlightedNodes(new Set([id]));
-        setHighlightedEdges(new Set());
-        setFitBoundsTrigger(prev => prev + 1);
+      
+      if (!node) {
+        // 2. Check if it's an AttachedEquipment mrid
+        const parentNode = nodes.find(n => n.attached_equipment?.some(eq => eq.mrid === id));
+        if (parentNode) {
+          targetNodeId = parentNode.id;
+        } else {
+          targetNodeId = null;
+        }
+      }
+
+      if (targetNodeId) {
+        const geoId = findNearestGeographicNodeId(targetNodeId);
+        if (geoId) {
+          setHighlightedNodes(new Set([geoId]));
+          setHighlightedEdges(new Set());
+          setFitBoundsTrigger(prev => prev + 1);
+        }
       }
     } else {
       const edge = edges.find(e => e.id === id || `${e.source}-${e.target}` === id);
       if (edge) {
-        setHighlightedNodes(new Set([edge.source, edge.target]));
-        setHighlightedEdges(new Set([edge.id || `${edge.source}-${edge.target}`]));
-        setFitBoundsTrigger(prev => prev + 1);
+        const geoSource = findNearestGeographicNodeId(edge.source);
+        const geoTarget = findNearestGeographicNodeId(edge.target);
+        const highlights = new Set<string>();
+        if (geoSource) highlights.add(geoSource);
+        if (geoTarget) highlights.add(geoTarget);
+        
+        if (highlights.size > 0) {
+          setHighlightedNodes(highlights);
+          setHighlightedEdges(new Set([edge.id || `${edge.source}-${edge.target}`]));
+          setFitBoundsTrigger(prev => prev + 1);
+        }
       }
     }
-  }, [nodes, edges]);
+  }, [nodes, edges, setHighlightedNodes, setHighlightedEdges, setFitBoundsTrigger]);
 
   const handleRunVoltageMap = async (agg: string) => {
     setLoading(true);
