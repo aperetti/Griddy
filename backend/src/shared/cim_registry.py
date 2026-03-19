@@ -26,7 +26,7 @@ _SHARED_DIR = Path(__file__).resolve().parent
 _BACKEND_DIR = _SHARED_DIR.parents[1]
 _WORKSPACE_ROOT = _BACKEND_DIR.parent
 
-_CIM_DATA_DIR = _BACKEND_DIR / "cim"
+_CIM_DATA_DIR = _BACKEND_DIR / "cim" / "models"
 
 
 def _discover_xml_files() -> list[dict]:
@@ -177,7 +177,11 @@ class CimModelRegistry:
             for node in mgr.get_topology_nodes():
                 name = (node.get("name") or "").lower()
                 node_id = node.get("node_id", "").lower()
-                if lower_query in name or lower_query in node_id:
+                node_type = (node.get("node_type") or "").lower()
+                
+                if (lower_query in name or 
+                    lower_query in node_id or 
+                    lower_query in node_type):
                     results.append({
                         "id": node["node_id"],
                         "name": node.get("name") or node["node_id"],
@@ -185,6 +189,44 @@ class CimModelRegistry:
                         "model_id": mid,
                         "cim_type": node.get("node_type", "ConnectivityNode")
                     })
+                
+                # Search attached equipment within nodes
+                for eq in node.get("attached_equipment", []):
+                    eq_name = (eq.get("name") or "").lower()
+                    eq_id = eq.get("mrid", "").lower()
+                    eq_type = (eq.get("type") or "").lower()
+                    
+                    if (lower_query in eq_name or 
+                        lower_query in eq_id or 
+                        lower_query in eq_type):
+                        results.append({
+                            "id": eq["mrid"],
+                            "name": eq.get("name") or eq["mrid"],
+                            "type": "equipment",
+                            "model_id": mid,
+                            "cim_type": eq.get("type", "Equipment")
+                        })
+                    if len(results) >= 50: break
+                if len(results) >= 50: break
+
+            # Search edges
+            if len(results) < 50:
+                for edge in mgr.get_topology_edges():
+                    name = (edge.get("name") or "").lower()
+                    edge_id = edge.get("edge_id", "").lower()
+                    edge_type = (edge.get("edge_type") or "").lower()
+                    
+                    if (lower_query in name or 
+                        lower_query in edge_id or 
+                        lower_query in edge_type):
+                        results.append({
+                            "id": edge["edge_id"],
+                            "name": edge.get("name") or edge["edge_id"],
+                            "type": "edge",
+                            "model_id": mid,
+                            "cim_type": edge.get("edge_type", "Edge")
+                        })
+                    if len(results) >= 50: break
             
             # Limit search results to avoid massive responses
             if len(results) >= 50:
