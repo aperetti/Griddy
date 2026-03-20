@@ -77,6 +77,8 @@ def _manual_xml_catalog_scan(path: Path) -> tuple[dict, dict]:
 
         curr_tank_mrid = None
         curr_end_info_mrid = None
+        temp_kva: dict[str, float] = {}
+        end_info_to_parent: dict[str, str] = {}
         tank_count = 0
 
         for event, elem in context:
@@ -101,6 +103,15 @@ def _manual_xml_catalog_scan(path: Path) -> tuple[dict, dict]:
                         if m.startswith("urn:uuid:"):
                             m = m[9:]
                         curr_end_info_mrid = m.upper()
+                elif tag == "PowerTransformerInfo":
+                    m = (
+                        elem.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}ID")
+                        or elem.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}about")
+                    )
+                    if m:
+                        if m.startswith("urn:uuid:"):
+                            m = m[9:]
+                        curr_end_info_mrid = m.upper()
 
             elif event == "end":
                 if tag == "TransformerTank.TransformerTankInfo":
@@ -113,22 +124,26 @@ def _manual_xml_catalog_scan(path: Path) -> tuple[dict, dict]:
                 elif tag == "TransformerEndInfo.ratedS":
                     if curr_end_info_mrid and elem.text:
                         try:
-                            info_to_kva[curr_end_info_mrid] = float(elem.text)
+                            val = float(elem.text)
+                            info_to_kva[curr_end_info_mrid] = val
+                            temp_kva[curr_end_info_mrid] = val
                         except (ValueError, TypeError):
                             pass
-                elif tag == "TransformerEndInfo.TransformerTankInfo":
+                elif tag == "TransformerEndInfo.TransformerTankInfo" or tag == "TransformerEndInfo.PowerTransformerInfo":
                     res = elem.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}resource")
                     if curr_end_info_mrid and res:
                         if res.startswith("urn:uuid:"):
                             res = res[9:]
-                        kva = info_to_kva.get(curr_end_info_mrid)
-                        if kva:
-                            # Map rating from EndInfo to TankInfo mRID
-                            info_to_kva[res.upper()] = kva
+                        end_info_to_parent[curr_end_info_mrid] = res.upper()
 
                 if tag == "TransformerTank":
                     curr_tank_mrid = None
-                if tag == "TransformerEndInfo":
+                if tag == "TransformerEndInfo" or tag == "PowerTransformerInfo":
+                    if curr_end_info_mrid:
+                        parent = end_info_to_parent.get(curr_end_info_mrid)
+                        kva = temp_kva.get(curr_end_info_mrid)
+                        if parent and kva:
+                            info_to_kva[parent] = kva
                     curr_end_info_mrid = None
 
                 root.clear()  # Memory optimisation

@@ -109,6 +109,9 @@ export const GridMap = React.memo<GridMapProps>(({
 }) => {
     const selectedNodeIdsSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
     const [mounted, setMounted] = useState(false);
+    const isDraggingRef = useRef(false);
+    const lastDragTime = useRef(0);
+    const mouseDownPos = useRef<{x: number, y: number} | null>(null);
     const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
     const [viewState, setViewState] = useState<any>({
@@ -261,8 +264,12 @@ export const GridMap = React.memo<GridMapProps>(({
     // Edges that carry switch/breaker equipment (for icon rendering)
     const switchEdgesOpen = useMemo(() => edges.filter(e => SWITCH_EDGE_TYPES.has(e.edge_type ?? '') && e.is_open), [edges]);
     const switchEdgesClosed = useMemo(() => edges.filter(e => SWITCH_EDGE_TYPES.has(e.edge_type ?? '') && !e.is_open), [edges]);
-    const transformerEdges = useMemo(() => edges.filter(e => e.edge_type === 'PowerTransformer' && !e.is_regulator), [edges]);
-    const regulatorEdges = useMemo(() => edges.filter(e => e.edge_type === 'PowerTransformer' && e.is_regulator), [edges]);
+    const transformerEdges = useMemo(() => 
+        edges.filter(e => (e.edge_type === 'PowerTransformer' || e.edge_type === 'TransformerTank') && !e.is_regulator), 
+    [edges]);
+    const regulatorEdges = useMemo(() => 
+        edges.filter(e => (e.edge_type === 'PowerTransformer' || e.edge_type === 'TransformerTank') && e.is_regulator), 
+    [edges]);
 
     const visualEdgePaths = useMemo(() => {
         const OFFSET = 0.00004; // ~4-5 meters
@@ -349,10 +356,17 @@ export const GridMap = React.memo<GridMapProps>(({
             },
             getWidth: (d: Edge) => {
                 const isHovered = (d.id && hoveredEdgeId === d.id) || hoveredEdgeId === `${d.source}-${d.target}`;
-                if (isHovered) return 3;
-                if (nodeAverages && nodeAverages[d.target] !== undefined) return 2;
-                if (highlightedEdges.has(d.id || '') || highlightedEdges.has(`${d.source}-${d.target}`)) return 2;
-                return 1;
+                if (isHovered) return 4;
+                
+                // Base width: scale from 1.0 to 2.5 based on primary phase count
+                const realPhases = d.phases ? d.phases.filter(p => !['N', 'Neutral'].includes(p)) : ['A', 'B', 'C'];
+                const phaseCount = Math.max(1, realPhases.length);
+                let width = 1 + (phaseCount - 1) * 0.75; // 1.0, 1.75, 2.5
+                
+                if (nodeAverages && nodeAverages[d.target] !== undefined) width += 1;
+                if (highlightedEdges.has(d.id || '') || highlightedEdges.has(`${d.source}-${d.target}`)) width += 1;
+                
+                return width;
             },
             widthUnits: 'pixels',
             getDashArray: (d: Edge) => {
@@ -415,6 +429,7 @@ export const GridMap = React.memo<GridMapProps>(({
                 setHoveredNodeId(info.object ? info.object.id : null);
             },
             onClick: (info, event) => {
+                if (isDraggingRef.current) return;
                 const srcEvent = (event as any).srcEvent as MouseEvent;
                 console.log('[GridMap] Interaction:', info.object?.id, 'Shift:', srcEvent?.shiftKey);
                 if (info.object && srcEvent) {
@@ -442,6 +457,7 @@ export const GridMap = React.memo<GridMapProps>(({
                 setHoveredEdgeId(info.object ? (info.object.id ?? null) : null);
             },
             onClick: (info, event) => {
+                if (isDraggingRef.current) return;
                 const srcEvent = (event as any).srcEvent as MouseEvent;
                 if (info.object && srcEvent && onEdgeClick) {
                     onEdgeClick(info.object as Edge, srcEvent.shiftKey || srcEvent.ctrlKey);
@@ -468,6 +484,7 @@ export const GridMap = React.memo<GridMapProps>(({
                 setHoveredEdgeId(info.object ? (info.object.id ?? null) : null);
             },
             onClick: (info, event) => {
+                if (isDraggingRef.current) return;
                 const srcEvent = (event as any).srcEvent as MouseEvent;
                 if (info.object && srcEvent && onEdgeClick) {
                     onEdgeClick(info.object as Edge, srcEvent.shiftKey || srcEvent.ctrlKey);
@@ -493,6 +510,7 @@ export const GridMap = React.memo<GridMapProps>(({
                 setHoveredEdgeId(info.object ? (info.object.id ?? null) : null);
             },
             onClick: (info, event) => {
+                if (isDraggingRef.current) return;
                 const srcEvent = (event as any).srcEvent as MouseEvent;
                 if (info.object && srcEvent && onEdgeClick) {
                     onEdgeClick(info.object as Edge, srcEvent.shiftKey || srcEvent.ctrlKey);
@@ -518,6 +536,7 @@ export const GridMap = React.memo<GridMapProps>(({
                 setHoveredEdgeId(info.object ? (info.object.id ?? null) : null);
             },
             onClick: (info, event) => {
+                if (isDraggingRef.current) return;
                 const srcEvent = (event as any).srcEvent as MouseEvent;
                 if (info.object && srcEvent && onEdgeClick) {
                     onEdgeClick(info.object as Edge, srcEvent.shiftKey || srcEvent.ctrlKey);
@@ -543,6 +562,7 @@ export const GridMap = React.memo<GridMapProps>(({
                 setHoveredNodeId(info.object ? (info.object.id ?? null) : null);
             },
             onClick: (info, event) => {
+                if (isDraggingRef.current) return;
                 const srcEvent = (event as any).srcEvent as MouseEvent;
                 if (info.object && srcEvent) {
                     onNodeClick(info.object, srcEvent.shiftKey || srcEvent.ctrlKey);
@@ -566,14 +586,57 @@ export const GridMap = React.memo<GridMapProps>(({
                     initialViewState={viewState}
                     viewState={viewState}
                     onViewStateChange={({ viewState }) => setViewState(viewState)}
-                    onDragStart={() => {
-                        // We track drag starts but don't block them with 'return false'
-                        // as that can interfere with click propagation in some environments
+                    onInteractionStateChange={({ isDragging, isPanning, isZooming }) => {
+                        if (isDragging || isPanning || isZooming) {
+                            isDraggingRef.current = true;
+                            lastDragTime.current = Date.now();
+                        } else if (!isDragging && !isPanning && !isZooming) {
+                            // Delay slightly to give onClick handles a chance to see the dragging state
+                            setTimeout(() => {
+                                isDraggingRef.current = false;
+                            }, 250);
+                        }
                     }}
-                    getCursor={({ isHovering }) => isHovering ? 'pointer' : 'grabbing'}
-                    onClick={(info) => {
+                    onDragStart={(info) => {
+                        mouseDownPos.current = { x: info.x, y: info.y };
+                    }}
+                    onDragEnd={() => {
+                        // Position check is handled in onClick, but we can clear here too
+                        // Don't clear mouseDownPos yet, onClick needs it
+                    }}
+                    getCursor={({ isHovering }) => isHovering ? 'pointer' : (isDraggingRef.current ? 'grabbing' : 'grab')}
+                    onClick={(info, event) => {
+                        const now = Date.now();
+                        const timeSinceDrag = now - lastDragTime.current;
+                        
+                        // Prevent deselection if click was on the tooltip overlay
+                        const srcEvent = (event as any)?.srcEvent || (event as any)?.nativeEvent;
+                        const target = srcEvent?.target as HTMLElement;
+                        if (target && (target.closest('.grid-map-tooltip') || (target as any).dataset?.gridMapTooltip)) {
+                            console.log('[GridMap] Click on tooltip detected, ignoring background click');
+                            mouseDownPos.current = null;
+                            return;
+                        }
+
+                        // Check distance to distinguish click from micro-drag
+                        let isActualClick = true;
+                        if (mouseDownPos.current) {
+                            const dx = info.x - mouseDownPos.current.x;
+                            const dy = info.y - mouseDownPos.current.y;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            console.log('[GridMap] onClick check - dist:', dist.toFixed(1), 'isDragging:', isDraggingRef.current);
+                            if (dist > 7) isActualClick = false;
+                        }
+
+                        if (isDraggingRef.current || timeSinceDrag < 200 || !isActualClick) {
+                            console.log('[GridMap] Skipping selection clear due to drag/movement detection.');
+                            mouseDownPos.current = null;
+                            return;
+                        }
+
+                        mouseDownPos.current = null;
                         if (!info.object && onMapClick) {
-                            console.log('[GridMap] Background click - clearing selection');
+                            console.log('[GridMap] Background click - CLEARING SELECTION');
                             onMapClick();
                         }
                     }}
@@ -585,49 +648,78 @@ export const GridMap = React.memo<GridMapProps>(({
                     layers={layers}
                     getTooltip={({ object }) => {
                         if (!object) return null;
-                        if ('type' in object) {
-                            return {
-                                html: `
-                                <div style="padding: 10px; background: #25262b; border: 1px solid #373A40; border-radius: 8px; color: #fff;">
-                                <strong>ID:</strong> ${object.id}<br/>
-                                <strong>Type:</strong> ${object.type}<br/>
-                                <strong>Name:</strong> ${object.name}
-                                </div>
-                            `,
-                                style: { backgroundColor: 'transparent', fontSize: '13px' }
-                            };
-                        } else {
-                            const edgeObj = object as Edge;
-                            const extraLine = edgeObj.transformer_kva
-                                ? `<br/><strong>Size:</strong> ${edgeObj.transformer_kva.toFixed(1)} kVA`
-                                : edgeObj.is_open !== undefined && edgeObj.edge_type && SWITCH_EDGE_TYPES.has(edgeObj.edge_type)
-                                    ? `<br/><strong>State:</strong> ${edgeObj.is_open ? 'Open' : 'Closed'}`
-                                    : edgeObj.length_m
-                                        ? `<br/><strong>Length:</strong> ${edgeObj.length_m.toFixed(1)} m`
-                                        : '';
-
-                            // Calculate apparent power for transformers if we have currents
-                            let powerLine = '';
-                            if (edgeObj.edge_type === 'PowerTransformer' && nodeCurrents && nodeCurrents[edgeObj.target] && nodeAverages && nodeAverages[edgeObj.target]) {
-                                const currents = nodeCurrents[edgeObj.target];
-                                const voltage = nodeAverages[edgeObj.target];
-                                // S = V * (Ia + Ib + Ic) for balanced or single-phase voltage assumption
-                                // If we only have one voltage reading (voltage_a average), we use it for all phases
-                                const totalS = (voltage * (currents.a + currents.b + currents.c)) / 1000.0;
-                                powerLine = `<br/><strong>Apparent Power:</strong> ${totalS.toFixed(1)} kVA`;
+                        
+                        // Node detected (Nodes have 'position' and 'type', but not 'source')
+                        if ('position' in object && !('source' in object)) {
+                            const node = object as Node;
+                            let attachedInfo = '';
+                            if (node.attached_equipment && node.attached_equipment.length > 0) {
+                                attachedInfo = `<div style="margin-top: 8px; border-top: 1px solid #373A40; padding-top: 5px;">`;
+                                node.attached_equipment.forEach(eq => {
+                                    attachedInfo += `<div style="margin-top: 2px;">• <strong>${eq.type}:</strong> ${eq.name}`;
+                                    if (eq.active_power_w != null) {
+                                        attachedInfo += `<br/>&nbsp;&nbsp;Rating: ${(eq.active_power_w / 1000).toFixed(1)} kVA`;
+                                    }
+                                    if (eq.phases) {
+                                        attachedInfo += `<br/>&nbsp;&nbsp;Phases: ${eq.phases.join('')}`;
+                                    }
+                                    attachedInfo += `</div>`;
+                                });
+                                attachedInfo += `</div>`;
                             }
-
+                            
                             return {
                                 html: `
-                                <div style="padding: 10px; background: #25262b; border: 1px solid #373A40; border-radius: 8px; color: #fff;">
-                                <strong>ID:</strong> ${edgeObj.id || `${edgeObj.source}-${edgeObj.target}`}<br/>
-                                <strong>Type:</strong> ${edgeObj.edge_type ?? 'Edge'}<br/>
-                                <strong>Phases:</strong> ${edgeObj.phases ? edgeObj.phases.join('') : 'ABC'}${extraLine}${powerLine}
+                                <div class="grid-map-tooltip" style="padding: 10px; background: #1A1B1E; border: 1px solid #373A40; border-radius: 8px; color: #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.5); min-width: 150px; pointer-events: auto;">
+                                    <div style="font-size: 14px; font-weight: 700; margin-bottom: 5px; color: #4dabf7;">${node.name || 'Unnamed Node'}</div>
+                                    <div style="opacity: 0.8; font-size: 12px; margin-bottom: 8px;">${node.id}</div>
+                                    <div style="display: flex; gap: 10px; font-size: 13px;">
+                                        <span><strong>Type:</strong> ${node.type || 'ConnectivityNode'}</span>
+                                        <span><strong>Phases:</strong> ${Array.isArray(node.phases) ? node.phases.join('') : (node.phases || 'ABC')}</span>
+                                    </div>
+                                    ${attachedInfo}
                                 </div>
-                            `,
-                                style: { backgroundColor: 'transparent', fontSize: '13px' }
+                                `,
+                                style: { backgroundColor: 'transparent', fontSize: '12px' }
                             };
+                        } 
+                        
+                        // Edge detected
+                        const edgeObj = object as Edge;
+                        const phaseData = Array.isArray(edgeObj.phases) ? edgeObj.phases.join('') : (edgeObj.phases || 'ABC');
+                        
+                        let details = '';
+                        if (edgeObj.transformer_kva && edgeObj.transformer_kva > 0) {
+                            details = `<div style="margin-top: 5px; color: #ffd43b;"><strong>Rating:</strong> ${edgeObj.transformer_kva.toFixed(1)} kVA</div>`;
+                        } else if (edgeObj.is_open !== undefined && edgeObj.edge_type && SWITCH_EDGE_TYPES.has(edgeObj.edge_type)) {
+                            details = `<div style="margin-top: 5px; color: ${edgeObj.is_open ? '#ff6b6b' : '#69db7c'};"><strong>State:</strong> ${edgeObj.is_open ? 'OPEN' : 'CLOSED'}</div>`;
+                        } else if (edgeObj.length_m) {
+                            details = `<div style="margin-top: 5px;"><strong>Length:</strong> ${edgeObj.length_m.toFixed(1)} m</div>`;
                         }
+
+                        let powerStats = '';
+                        if ((edgeObj.edge_type === 'PowerTransformer' || edgeObj.is_regulator) && nodeCurrents && nodeCurrents[edgeObj.target] && nodeAverages && nodeAverages[edgeObj.target]) {
+                            const currents = nodeCurrents[edgeObj.target];
+                            const voltage = nodeAverages[edgeObj.target];
+                            const totalS = (voltage * (currents.a + currents.b + currents.c)) / 1000.0;
+                            powerStats = `<div style="margin-top: 8px; border-top: 1px solid #373A40; padding-top: 5px; color: #91a7ff;"><strong>Apparent Power:</strong> ${totalS.toFixed(1)} kVA</div>`;
+                        }
+
+                        return {
+                            html: `
+                            <div class="grid-map-tooltip" style="padding: 10px; background: #1A1B1E; border: 1px solid #373A40; border-radius: 8px; color: #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.5); min-width: 150px; pointer-events: auto;">
+                                <div style="font-size: 14px; font-weight: 700; margin-bottom: 5px; color: #4dabf7;">${edgeObj.name || (edgeObj.edge_type ?? 'Edge')}</div>
+                                <div style="opacity: 0.8; font-size: 12px; margin-bottom: 8px;">${edgeObj.id || `${edgeObj.source} → ${edgeObj.target}`}</div>
+                                <div style="display: flex; gap: 10px; font-size: 13px;">
+                                    <span><strong>Type:</strong> ${edgeObj.edge_type || 'Line'}</span>
+                                    <span><strong>Phases:</strong> ${phaseData}</span>
+                                </div>
+                                ${details}
+                                ${powerStats}
+                            </div>
+                            `,
+                            style: { backgroundColor: 'transparent', fontSize: '12px' }
+                        };
                     }}
                 />
             )}

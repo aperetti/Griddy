@@ -504,6 +504,7 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
                                     useUTC: true,
                                     legend: {
                                         data: ['kWh Delivered', 'kWh Received', 'Net Consumption', 'Temp (24h Avg)'],
+                                        selected: { 'kWh Delivered': false },
                                         textStyle: { color: '#A6A7AB', fontSize: 10 },
                                         top: 0
                                     },
