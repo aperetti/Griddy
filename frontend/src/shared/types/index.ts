@@ -30,6 +30,7 @@ export interface Node {
     phases?: string[];
     base_voltage_kv?: number;
     attached_equipment?: AttachedEquipment[];
+    display_type?: string;
 }
 
 export interface Edge {

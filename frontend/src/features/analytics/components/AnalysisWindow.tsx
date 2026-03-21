@@ -68,7 +68,7 @@ export function AnalysisWindow({
     useEffect(() => {
         if ((isInitialMount || !loading) && rndRef.current) {
             const saved = localStorage.getItem(storageKey);
-            
+
             // Give the browser a moment to render the charts after loading finishes
             const timer = setTimeout(() => {
                 const node = rndRef.current.getSelfElement();
@@ -76,7 +76,7 @@ export function AnalysisWindow({
                     // Try to finding the inner scroll area to get the true content height
                     const innerBox = node.querySelector('.analysis-window-content');
                     const header = node.querySelector('.analysis-window-header');
-                    
+
                     let targetHeight: number;
                     if (innerBox && header) {
                         // Header height + scrollHeight of content + some buffer
@@ -84,7 +84,7 @@ export function AnalysisWindow({
                     } else {
                         targetHeight = node.getBoundingClientRect().height;
                     }
-                    
+
                     // If we have a saved state, we should probably stick to it unless it's a new window
                     if (!saved || isInitialMount) {
                         const clamped = clampToViewport({
@@ -128,7 +128,7 @@ export function AnalysisWindow({
 
     const handleCopy = () => {
         if (!onCopy) return;
-        
+
         try {
             const text = onCopy();
             if (!text) return;
@@ -241,9 +241,9 @@ export function AnalysisWindow({
                                 </Button>
                             )}
                             {filterContent && (
-                                <ActionIcon 
-                                    variant="subtle" 
-                                    hiddenFrom="xs" 
+                                <ActionIcon
+                                    variant="subtle"
+                                    hiddenFrom="xs"
                                     onClick={() => setShowFilters(!showFilters)}
                                     color={showFilters ? 'blue' : 'gray'}
                                 >
@@ -252,9 +252,9 @@ export function AnalysisWindow({
                             )}
                             {onCopy && (
                                 <Tooltip label={copied ? "Copied!" : "Copy to Clipboard"} withArrow position="bottom">
-                                    <ActionIcon 
-                                        variant="subtle" 
-                                        onClick={handleCopy} 
+                                    <ActionIcon
+                                        variant="subtle"
+                                        onClick={handleCopy}
                                         color={copied ? "green" : "gray"}
                                     >
                                         {copied ? <Check size={16} /> : <Copy size={16} />}
@@ -314,13 +314,13 @@ function defaultPosition() {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const width = vw - 40; // 100% width with 20px margin on both sides
-    
+
     // Safety margin at the top to avoid overlap with fixed UI (search, toolbar, asset bar)
     const topMargin = 180;
-    
+
     return {
-        x: 20, 
-        y: Math.max(topMargin, vh - 600), 
+        x: 20,
+        y: Math.max(topMargin, vh - 600),
         width,
         height: 'auto',
     };
@@ -329,12 +329,12 @@ function defaultPosition() {
 function clampToViewport(pos: { x: number; y: number; width: number | string; height: number | string }) {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    
+
     const topMargin = 180;
-    
+
     // Width defaults to full width if not specified/numeric
     const w = typeof pos.width === 'number' ? pos.width : (vw - 40);
-    
+
     // Handle 'auto' height during initial clamp
     if (pos.height === 'auto') {
         return {
@@ -344,11 +344,11 @@ function clampToViewport(pos: { x: number; y: number; width: number | string; he
             height: 'auto'
         };
     }
-    
+
     const h = Math.min(typeof pos.height === 'number' ? pos.height : parseInt(pos.height as string), vh - topMargin - 10);
-    
+
     const x = Math.max(10, Math.min(pos.x, vw - w - 10));
     const y = Math.max(topMargin, Math.min(pos.y, vh - h - 10));
-    
+
     return { x, y, width: w, height: h };
 }

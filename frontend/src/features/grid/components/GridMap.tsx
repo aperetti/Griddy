@@ -25,6 +25,8 @@ interface GridMapProps {
     };
     fitHighlightedNodesTrigger?: number;
     skipGlobalFit?: boolean;
+    onViewStateChange?: (viewState: any) => void;
+    goToLocation?: { longitude: number; latitude: number } | null;
 }
 const stringToColor = (str: string): [number, number, number] => {
     let hash = 0;
@@ -51,6 +53,7 @@ const SWITCH_EDGE_TYPES = new Set(['Breaker', 'LoadBreakSwitch', 'Fuse', 'Discon
 // After the CIM refactor, node.type is only "Bus" | "Substation"; richer
 // categories come from what equipment is attached at the node.
 const getVisualType = (node: Node): string => {
+    if (node.display_type) return node.display_type;
     if (node.type === 'Substation') return 'Substation';
     const attached = node.attached_equipment ?? [];
     if (attached.some(eq => eq.type === 'EnergySource')) return 'Substation';
@@ -74,6 +77,10 @@ const getNodeColor = (visualType: string, isHighlighted: boolean, isSelected: bo
             return [100, 255, 100];
         case 'Capacitor':
             return [255, 210, 80];
+        case 'Regulator':
+            return [255, 120, 0];
+        case 'Recloser':
+            return [0, 200, 255];
         default:
             return [200, 200, 200];
     }
@@ -105,7 +112,9 @@ export const GridMap = React.memo<GridMapProps>(({
     onMapClick,
     voltageScale,
     fitHighlightedNodesTrigger = 0,
-    skipGlobalFit = false
+    skipGlobalFit = false,
+    onViewStateChange,
+    goToLocation,
 }) => {
     const selectedNodeIdsSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
     const [mounted, setMounted] = useState(false);
@@ -166,6 +175,20 @@ export const GridMap = React.memo<GridMapProps>(({
             }));
         }
     }, [nodes, dimensions.width, dimensions.height]);
+
+    // Handle external navigation from minimap
+    const lastGoTo = useRef<{ longitude: number; latitude: number } | null>(null);
+    useEffect(() => {
+        if (goToLocation && goToLocation !== lastGoTo.current) {
+            lastGoTo.current = goToLocation;
+            setViewState((prev: any) => ({
+                ...prev,
+                longitude: goToLocation.longitude,
+                latitude: goToLocation.latitude,
+                transitionDuration: 300
+            }));
+        }
+    }, [goToLocation]);
 
     const lastHandledTrigger = useRef(0);
 
@@ -301,7 +324,7 @@ export const GridMap = React.memo<GridMapProps>(({
             getFillColor: [255, 255, 255, 80],
             getRadius: (d: Node) => {
                 const vt = getVisualType(d);
-                const baseRadius = vt === 'Meter' || vt === 'Bus' ? 5 : 10;
+                const baseRadius = vt === 'Meter' || vt === 'Bus' ? 4 : 8;
                 return baseRadius * 1.1;
             },
             radiusUnits: 'pixels',
@@ -408,8 +431,7 @@ export const GridMap = React.memo<GridMapProps>(({
                 const isHovered = hoveredNodeId === d.id;
                 const isHighlighted = highlightedNodes.has(d.id);
                 const isSelected = selectedNodeIdsSet.has(d.id);
-                const vt = getVisualType(d);
-                const baseRadius = vt === 'Meter' ? 3 : 8;
+                const baseRadius = 3;
                 let radius = isHovered ? baseRadius * 2.5 : baseRadius;
                 if (isHighlighted) radius *= 1.5;
                 if (isSelected) radius *= 1.1;
@@ -701,7 +723,10 @@ export const GridMap = React.memo<GridMapProps>(({
                     }}
                     initialViewState={viewState}
                     viewState={viewState}
-                    onViewStateChange={({ viewState }) => setViewState(viewState)}
+                    onViewStateChange={({ viewState: vs }) => {
+                        setViewState(vs);
+                        onViewStateChange?.(vs);
+                    }}
                     onInteractionStateChange={({ isDragging, isPanning, isZooming }) => {
                         if (isDragging || isPanning || isZooming) {
                             isDraggingRef.current = true;

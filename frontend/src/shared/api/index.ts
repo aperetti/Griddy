@@ -78,6 +78,59 @@ export interface PhaseBalanceResponse {
 }
 
 const API_BASE = '/api';
+// Point to the main Python backend (port 8000) for Display Rule configuration
+export const ADMIN_API_BASE = 'http://127.0.0.1:8000/api';
+
+export interface DisplayConfig {
+    id: number;
+    name: string;
+    description: string;
+    is_default: boolean;
+    is_readonly: boolean;
+}
+
+export interface DisplayRule {
+    id: number;
+    config_id: number;
+    name: string;
+    priority: number;
+    match_conditions: string;
+    visual_type: string;
+    icon?: string;
+    color_hex?: string;
+}
+
+export const fetchDisplayConfigs = async (): Promise<DisplayConfig[]> => {
+    const res = await fetch(`${ADMIN_API_BASE}/display-rules/configs`);
+    return res.json();
+};
+
+export const fetchDisplayRules = async (configId: number): Promise<DisplayRule[]> => {
+    const res = await fetch(`${ADMIN_API_BASE}/display-rules/configs/${configId}/rules`);
+    return res.json();
+};
+
+export const setDefaultDisplayConfig = async (configId: number): Promise<void> => {
+    await fetch(`${ADMIN_API_BASE}/display-rules/configs/${configId}/set-default`, { method: 'POST' });
+};
+
+export const saveDisplayRule = async (rule: Partial<DisplayRule>): Promise<DisplayRule> => {
+    const method = rule.id ? 'PUT' : 'POST';
+    const url = rule.id 
+        ? `${ADMIN_API_BASE}/display-rules/rules/${rule.id}` 
+        : `${ADMIN_API_BASE}/display-rules/configs/${rule.config_id}/rules`;
+    
+    const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(rule)
+    });
+    return res.json();
+};
+
+export const deleteDisplayRule = async (ruleId: number): Promise<void> => {
+    await fetch(`${ADMIN_API_BASE}/display-rules/rules/${ruleId}`, { method: 'DELETE' });
+};
 
 export const fetchTopology = async (models?: string[]): Promise<TopologyResponse> => {
     let url = `${API_BASE}/graph/topology`;
@@ -237,5 +290,11 @@ export const fetchCimNeighbors = async (id: string): Promise<any> => {
 export const searchCim = async (query: string): Promise<any[]> => {
     const response = await fetch(`${API_BASE}/cim/search?query=${encodeURIComponent(query)}`);
     if (!response.ok) throw new Error('Search failed');
+    return response.json();
+};
+
+export const fetchCimSchema = async (): Promise<Record<string, any>> => {
+    const response = await fetch(`${API_BASE}/cim/schema`);
+    if (!response.ok) throw new Error('Failed to fetch CIM schema');
     return response.json();
 };

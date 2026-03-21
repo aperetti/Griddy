@@ -6,6 +6,7 @@ import { MantineProvider, Box, Group, Stack, Tooltip, ActionIcon, Paper, Menu } 
 import { Menu as MenuIcon, X, Search, Activity, Settings, Zap } from 'lucide-react';
 
 import { GridMap } from './features/grid/components/GridMap';
+import { Minimap } from './features/grid/components/Minimap';
 import { AnalysisToolbar } from './features/grid/components/AnalysisToolbar';
 import { AnalyticsPanel } from './features/analytics/components/AnalyticsPanel';
 import { ConsumptionTimeSeriesModal } from './features/analytics/components/ConsumptionTimeSeriesModal';
@@ -15,6 +16,7 @@ import { GlobalSettingsModal, type GlobalConfig } from './features/analytics/com
 import { DiagnosticModal } from './features/analytics/components/DiagnosticModal';
 import { GlobalSearch } from './features/grid/components/GlobalSearch';
 import { ModelSwitcher } from './features/grid/components/ModelSwitcher';
+import { DisplayRulesManager } from './features/grid/components/DisplayRulesManager';
 import {
   fetchTopology,
   fetchConsumption,
@@ -93,6 +95,7 @@ export default function App() {
   const [selectedNodes, setSelectedNodes] = useState<Node[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [menuOpened, setMenuOpened] = useState(false);
+  const [displayRulesOpen, setDisplayRulesOpen] = useState(false);
   const [activeModelIds, setActiveModelIds] = useState<string[]>([]);
 
   const [globalConfig, setGlobalConfig] = useState<GlobalConfig>(() => {
@@ -139,6 +142,8 @@ export default function App() {
   const [nodeCurrents, setNodeCurrents] = useState<Record<string, { a: number, b: number, c: number }> | null>(null);
   const [topologyLoading, setTopologyLoading] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [mainViewState, setMainViewState] = useState<any>(null);
+  const [goToLocation, setGoToLocation] = useState<{ longitude: number; latitude: number } | null>(null);
 
   const [voltageScale, setVoltageScale] = useState(() => {
     const saved = localStorage.getItem('voltageScale');
@@ -705,6 +710,10 @@ export default function App() {
           setDateRange(newRange);
         }}
       />
+      <DisplayRulesManager 
+        opened={displayRulesOpen} 
+        onClose={() => setDisplayRulesOpen(false)} 
+      />
       <DiagnosticModal
         isOpen={analysisWindows.some(w => w.type === 'diagnostic' && w.isOpen)}
         onClose={() => setAnalysisWindows(prev => prev.map(w => w.type === 'diagnostic' ? { ...w, isOpen: false } : w))}
@@ -749,6 +758,8 @@ export default function App() {
               voltageScale={voltageScale}
               fitHighlightedNodesTrigger={fitBoundsTrigger}
               skipGlobalFit={isSearching}
+              onViewStateChange={setMainViewState}
+              goToLocation={goToLocation}
             />
           </Box>
 
@@ -770,12 +781,14 @@ export default function App() {
                   loading={topologyLoading}
                 />
 
-                <ModelSwitcher 
-                  activeModelIds={activeModelIds}
-                  onModelsChange={handleModelsChange} 
-                  onZoomToModel={handleZoomToModel}
-                  loading={topologyLoading}
-                />
+                  <ModelSwitcher 
+                    activeModelIds={activeModelIds}
+                    onModelsChange={handleModelsChange} 
+                    onZoomToModel={handleZoomToModel}
+                    loading={topologyLoading}
+                  />
+
+
  
                 {selectedNodes.length > 0 && (
                   <Tooltip label="Diagnostic View" position="bottom" withArrow>
@@ -853,6 +866,12 @@ export default function App() {
                       Global Analysis Settings
                     </Menu.Item>
                     <Menu.Item
+                      leftSection={<Zap size={16} />}
+                      onClick={() => setDisplayRulesOpen(true)}
+                    >
+                      Display Rules Manager
+                    </Menu.Item>
+                    <Menu.Item
                       leftSection={<Activity size={16} />}
                       onClick={() => setActiveSidePanel(p => p === 'analytics' ? 'none' : 'analytics')}
                       bg={activeSidePanel === 'analytics' ? 'rgba(51, 154, 240, 0.2)' : undefined}
@@ -891,8 +910,22 @@ export default function App() {
                 configLabel={globalConfig.defaultDuration === 'custom' ? `${globalConfig.customDays} Days` : globalConfig.defaultDuration}
                 onOpenSettings={() => setSettingsOpen(true)}
               />
+
             </Stack>
           </Box>
+
+          {/* Minimap - bottom right corner, desktop only */}
+          {!isMobile && nodes.length > 0 && (
+            <Box style={{ position: 'absolute', bottom: 20, right: 20, zIndex: 100, pointerEvents: 'none' }}>
+              <Minimap
+                nodes={nodes}
+                edges={edges}
+                viewState={mainViewState}
+                selectedNodeIds={selectedNodes.map(n => n.id)}
+                onNavigate={(lon, lat) => setGoToLocation({ longitude: lon, latitude: lat })}
+              />
+            </Box>
+          )}
 
           {activeSidePanel !== 'none' && (
             <Box
