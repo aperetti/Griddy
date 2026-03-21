@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Stack, Text, ScrollArea, Table, Loader, Alert, Badge, Group, Code, Tabs, Box, Button } from '@mantine/core';
-import { AlertCircle, Database, Network, List, Share2, MapPin } from 'lucide-react';
+import { AlertCircle, Database, Network, List, Share2, MapPin, Zap, Activity } from 'lucide-react';
 import { AnalysisWindow } from './AnalysisWindow';
 import { fetchCimEquipment, fetchCimNode } from '../../../shared/api';
 import { autoExport, getDataToCopy } from '../../../shared/utils/exportUtils';
-import { TopologyTree } from './TopologyTree';
+import { AssetIntegratedExplorer } from './AssetIntegratedExplorer';
 
 interface DiagnosticModalProps {
     isOpen: boolean;
@@ -13,6 +13,8 @@ interface DiagnosticModalProps {
     type: 'Node' | 'Edge';
     title: string;
     onZoomTo?: (id: string, type: 'Node' | 'Edge') => void;
+    onViewConsumption?: (nodeIds: string[]) => void;
+    onViewVoltage?: (nodeIds: string[]) => void;
 }
 
 export function DiagnosticModal({ 
@@ -21,7 +23,9 @@ export function DiagnosticModal({
     id: initialId, 
     type: initialType, 
     title: initialTitle,
-    onZoomTo
+    onZoomTo,
+    onViewConsumption,
+    onViewVoltage
 }: DiagnosticModalProps) {
     const [currentId, setCurrentId] = useState(initialId);
     const [currentType, setCurrentType] = useState(initialType);
@@ -151,7 +155,8 @@ export function DiagnosticModal({
                 <Tabs value={activeTab} onChange={setActiveTab} variant="pills" styles={{ tab: { fontSize: '11px', padding: '4px 12px' } }}>
                     <Tabs.List p={4}>
                         <Tabs.Tab value="attributes" leftSection={<List size={12} />}>Attributes</Tabs.Tab>
-                        <Tabs.Tab value="topology" leftSection={<Share2 size={12} />}>Topology</Tabs.Tab>
+                        <Tabs.Tab value="explorer" leftSection={<Share2 size={12} />}>Explorer</Tabs.Tab>
+                        <Tabs.Tab value="analysis" leftSection={<Activity size={12} />}>Analysis</Tabs.Tab>
                     </Tabs.List>
 
                     <Tabs.Panel value="attributes">
@@ -188,13 +193,41 @@ export function DiagnosticModal({
                         </ScrollArea>
                     </Tabs.Panel>
 
-                    <Tabs.Panel value="topology">
-                        <ScrollArea h="calc(100vh - 400px)" offsetScrollbars>
-                            <TopologyTree 
+                    <Tabs.Panel value="explorer">
+                        <ScrollArea h="400px" offsetScrollbars>
+                            <AssetIntegratedExplorer 
                                 id={currentId} 
-                                onNavigate={handleNavigate} 
+                                type={currentType} 
+                                onNavigate={handleNavigate}
+                                onZoomTo={onZoomTo}
                             />
                         </ScrollArea>
+                    </Tabs.Panel>
+
+                    <Tabs.Panel value="analysis">
+                        <Stack p="md" gap="md">
+                            <Text size="sm" fw={500}>Telemetry Analysis</Text>
+                            <Group grow>
+                                <Button 
+                                    leftSection={<Zap size={14} />} 
+                                    onClick={() => onViewConsumption?.([currentId])}
+                                    variant="light"
+                                >
+                                    Consumption
+                                </Button>
+                                <Button 
+                                    leftSection={<Activity size={14} />} 
+                                    onClick={() => onViewVoltage?.([currentId])}
+                                    variant="light"
+                                    color="yellow"
+                                >
+                                    Voltage Distribution
+                                </Button>
+                            </Group>
+                            <Text size="xs" c="dimmed">
+                                Triggers a new analysis window for this asset and its downstream network.
+                            </Text>
+                        </Stack>
                     </Tabs.Panel>
                 </Tabs>
             </Stack>

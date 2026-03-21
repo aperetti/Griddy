@@ -571,11 +571,127 @@ export const GridMap = React.memo<GridMapProps>(({
         })
     ], [nodes, edges, visualEdgePaths, hoveredNodeId, hoveredEdgeId, highlightedNodes, highlightedEdges, selectedNodeIdsSet, switchEdgesOpen, switchEdgesClosed, transformerEdges, regulatorEdges, nodeAverages, voltageScale, onNodeClick, onEdgeClick, viewState.zoom]);
 
+    const getTooltipContent = (object: any) => {
+        if (!object) return null;
+        
+        // Node detected (Nodes have 'position' and 'type', but not 'source')
+        if ('position' in object && !('source' in object)) {
+            const node = object as Node;
+            let attachedInfo = '';
+            if (node.attached_equipment && node.attached_equipment.length > 0) {
+                attachedInfo = `<div style="margin-top: 8px; border-top: 1px solid #373A40; padding-top: 5px;">`;
+                node.attached_equipment.forEach(eq => {
+                    attachedInfo += `<div style="margin-top: 2px;">• <strong>${eq.type}:</strong> ${eq.name}`;
+                    if (eq.active_power_w != null) {
+                        attachedInfo += `<br/>&nbsp;&nbsp;Rating: ${(eq.active_power_w / 1000).toFixed(1)} kVA`;
+                    }
+                    if (eq.phases) {
+                        attachedInfo += `<br/>&nbsp;&nbsp;Phases: ${eq.phases.join('')}`;
+                    }
+                    attachedInfo += `</div>`;
+                });
+                attachedInfo += `</div>`;
+            }
+            
+            return {
+                html: `
+                <div class="grid-map-tooltip" style="padding: 10px; background: #1A1B1E; border: 1px solid #373A40; border-radius: 8px; color: #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.5); min-width: 150px; pointer-events: auto;">
+                    <div style="font-size: 14px; font-weight: 700; margin-bottom: 5px; color: #4dabf7;">${node.name || 'Unnamed Node'}</div>
+                    <div style="opacity: 0.8; font-size: 12px; margin-bottom: 8px;">${node.id}</div>
+                    <div style="display: flex; gap: 10px; font-size: 13px;">
+                        <span><strong>Type:</strong> ${node.type || 'ConnectivityNode'}</span>
+                        <span><strong>Phases:</strong> ${Array.isArray(node.phases) ? node.phases.join('') : (node.phases || 'ABC')}</span>
+                    </div>
+                    ${attachedInfo}
+                </div>
+                `,
+                style: { backgroundColor: 'transparent', fontSize: '12px' }
+            };
+        } 
+        
+        // Edge detected
+        const edgeObj = object as Edge;
+        const phaseData = Array.isArray(edgeObj.phases) ? edgeObj.phases.join('') : (edgeObj.phases || 'ABC');
+        
+        let details = '';
+        if (edgeObj.transformer_kva && edgeObj.transformer_kva > 0) {
+            details = `<div style="margin-top: 5px; color: #ffd43b;"><strong>Rating:</strong> ${edgeObj.transformer_kva.toFixed(1)} kVA</div>`;
+        } else if (edgeObj.is_open !== undefined && edgeObj.edge_type && SWITCH_EDGE_TYPES.has(edgeObj.edge_type)) {
+            details = `<div style="margin-top: 5px; color: ${edgeObj.is_open ? '#ff6b6b' : '#69db7c'};"><strong>State:</strong> ${edgeObj.is_open ? 'OPEN' : 'CLOSED'}</div>`;
+        } else if (edgeObj.length_m) {
+            details = `<div style="margin-top: 5px;"><strong>Length:</strong> ${edgeObj.length_m.toFixed(1)} m</div>`;
+        }
+
+        let powerStats = '';
+        if ((edgeObj.edge_type === 'PowerTransformer' || edgeObj.is_regulator) && nodeCurrents && nodeCurrents[edgeObj.target] && nodeAverages && nodeAverages[edgeObj.target]) {
+            const currents = nodeCurrents[edgeObj.target];
+            const voltage = nodeAverages[edgeObj.target];
+            const totalS = (voltage * (currents.a + currents.b + currents.c)) / 1000.0;
+            powerStats = `<div style="margin-top: 8px; border-top: 1px solid #373A40; padding-top: 5px; color: #91a7ff;"><strong>Apparent Power:</strong> ${totalS.toFixed(1)} kVA</div>`;
+        }
+
+        return {
+            html: `
+            <div class="grid-map-tooltip" style="padding: 10px; background: #1A1B1E; border: 1px solid #373A40; border-radius: 8px; color: #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.5); min-width: 150px; pointer-events: auto;">
+                <div style="font-size: 14px; font-weight: 700; margin-bottom: 5px; color: #4dabf7;">${edgeObj.name || (edgeObj.edge_type ?? 'Edge')}</div>
+                <div style="opacity: 0.8; font-size: 12px; margin-bottom: 8px;">${edgeObj.id || `${edgeObj.source} → ${edgeObj.target}`}</div>
+                <div style="display: flex; gap: 10px; font-size: 13px;">
+                    <span><strong>Type:</strong> ${edgeObj.edge_type || 'Line'}</span>
+                    <span><strong>Phases:</strong> ${phaseData}</span>
+                </div>
+                ${details}
+                ${powerStats}
+            </div>
+            `,
+            style: { backgroundColor: 'transparent', fontSize: '12px' }
+        };
+    };
+
+    const persistentTooltip = useMemo(() => {
+        if (selectedNodeIds.length !== 1 || !dimensions.width) return null;
+        
+        const nodeId = selectedNodeIds[0];
+        const node = nodes.find(n => n.id === nodeId);
+        if (!node) return null;
+
+        const viewport = new WebMercatorViewport({
+            width: dimensions.width,
+            height: dimensions.height,
+            ...viewState
+        });
+
+        const [x, y] = viewport.project(node.position);
+        
+        // Don't show if off screen
+        if (x < 0 || x > dimensions.width || y < 0 || y > dimensions.height) return null;
+
+        const tooltip = getTooltipContent(node);
+        if (!tooltip) return null;
+
+        return (
+            <div
+                className="persistent-grid-tooltip"
+                style={{
+                    position: 'absolute',
+                    left: x,
+                    top: y,
+                    transform: 'translate(-50%, -105%)',
+                    zIndex: 1000,
+                    pointerEvents: 'auto',
+                    cursor: 'default'
+                }}
+                dangerouslySetInnerHTML={{ __html: tooltip.html }}
+                onClick={(e) => e.stopPropagation()}
+            />
+        );
+    }, [selectedNodeIds, nodes, viewState, dimensions, nodeAverages, nodeCurrents, voltageScale]);
+
     return (
         <div
             style={{ position: 'relative', width: '100vw', height: '100vh', minHeight: '500px', background: '#141517' }}
         >
             {mounted && dimensions.width > 0 && dimensions.height > 0 && (
+                <>
                 <DeckGL
                     width={dimensions.width}
                     height={dimensions.height}
@@ -612,7 +728,7 @@ export const GridMap = React.memo<GridMapProps>(({
                         // Prevent deselection if click was on the tooltip overlay
                         const srcEvent = (event as any)?.srcEvent || (event as any)?.nativeEvent;
                         const target = srcEvent?.target as HTMLElement;
-                        if (target && (target.closest('.grid-map-tooltip') || (target as any).dataset?.gridMapTooltip)) {
+                        if (target && (target.closest('.grid-map-tooltip') || (target as any).dataset?.gridMapTooltip || target.closest('.persistent-grid-tooltip'))) {
                             console.log('[GridMap] Click on tooltip detected, ignoring background click');
                             mouseDownPos.current = null;
                             return;
@@ -646,82 +762,16 @@ export const GridMap = React.memo<GridMapProps>(({
                         touchRotate: false
                     }}
                     layers={layers}
-                    getTooltip={({ object }) => {
-                        if (!object) return null;
-                        
-                        // Node detected (Nodes have 'position' and 'type', but not 'source')
-                        if ('position' in object && !('source' in object)) {
-                            const node = object as Node;
-                            let attachedInfo = '';
-                            if (node.attached_equipment && node.attached_equipment.length > 0) {
-                                attachedInfo = `<div style="margin-top: 8px; border-top: 1px solid #373A40; padding-top: 5px;">`;
-                                node.attached_equipment.forEach(eq => {
-                                    attachedInfo += `<div style="margin-top: 2px;">• <strong>${eq.type}:</strong> ${eq.name}`;
-                                    if (eq.active_power_w != null) {
-                                        attachedInfo += `<br/>&nbsp;&nbsp;Rating: ${(eq.active_power_w / 1000).toFixed(1)} kVA`;
-                                    }
-                                    if (eq.phases) {
-                                        attachedInfo += `<br/>&nbsp;&nbsp;Phases: ${eq.phases.join('')}`;
-                                    }
-                                    attachedInfo += `</div>`;
-                                });
-                                attachedInfo += `</div>`;
-                            }
-                            
-                            return {
-                                html: `
-                                <div class="grid-map-tooltip" style="padding: 10px; background: #1A1B1E; border: 1px solid #373A40; border-radius: 8px; color: #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.5); min-width: 150px; pointer-events: auto;">
-                                    <div style="font-size: 14px; font-weight: 700; margin-bottom: 5px; color: #4dabf7;">${node.name || 'Unnamed Node'}</div>
-                                    <div style="opacity: 0.8; font-size: 12px; margin-bottom: 8px;">${node.id}</div>
-                                    <div style="display: flex; gap: 10px; font-size: 13px;">
-                                        <span><strong>Type:</strong> ${node.type || 'ConnectivityNode'}</span>
-                                        <span><strong>Phases:</strong> ${Array.isArray(node.phases) ? node.phases.join('') : (node.phases || 'ABC')}</span>
-                                    </div>
-                                    ${attachedInfo}
-                                </div>
-                                `,
-                                style: { backgroundColor: 'transparent', fontSize: '12px' }
-                            };
-                        } 
-                        
-                        // Edge detected
-                        const edgeObj = object as Edge;
-                        const phaseData = Array.isArray(edgeObj.phases) ? edgeObj.phases.join('') : (edgeObj.phases || 'ABC');
-                        
-                        let details = '';
-                        if (edgeObj.transformer_kva && edgeObj.transformer_kva > 0) {
-                            details = `<div style="margin-top: 5px; color: #ffd43b;"><strong>Rating:</strong> ${edgeObj.transformer_kva.toFixed(1)} kVA</div>`;
-                        } else if (edgeObj.is_open !== undefined && edgeObj.edge_type && SWITCH_EDGE_TYPES.has(edgeObj.edge_type)) {
-                            details = `<div style="margin-top: 5px; color: ${edgeObj.is_open ? '#ff6b6b' : '#69db7c'};"><strong>State:</strong> ${edgeObj.is_open ? 'OPEN' : 'CLOSED'}</div>`;
-                        } else if (edgeObj.length_m) {
-                            details = `<div style="margin-top: 5px;"><strong>Length:</strong> ${edgeObj.length_m.toFixed(1)} m</div>`;
+                    getTooltip={info => {
+                        // If selecting, don't show hover tooltip if it's the same node
+                        if (selectedNodeIds.length === 1 && info.object && info.object.id === selectedNodeIds[0]) {
+                            return null;
                         }
-
-                        let powerStats = '';
-                        if ((edgeObj.edge_type === 'PowerTransformer' || edgeObj.is_regulator) && nodeCurrents && nodeCurrents[edgeObj.target] && nodeAverages && nodeAverages[edgeObj.target]) {
-                            const currents = nodeCurrents[edgeObj.target];
-                            const voltage = nodeAverages[edgeObj.target];
-                            const totalS = (voltage * (currents.a + currents.b + currents.c)) / 1000.0;
-                            powerStats = `<div style="margin-top: 8px; border-top: 1px solid #373A40; padding-top: 5px; color: #91a7ff;"><strong>Apparent Power:</strong> ${totalS.toFixed(1)} kVA</div>`;
-                        }
-
-                        return {
-                            html: `
-                            <div class="grid-map-tooltip" style="padding: 10px; background: #1A1B1E; border: 1px solid #373A40; border-radius: 8px; color: #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.5); min-width: 150px; pointer-events: auto;">
-                                <div style="font-size: 14px; font-weight: 700; margin-bottom: 5px; color: #4dabf7;">${edgeObj.name || (edgeObj.edge_type ?? 'Edge')}</div>
-                                <div style="opacity: 0.8; font-size: 12px; margin-bottom: 8px;">${edgeObj.id || `${edgeObj.source} → ${edgeObj.target}`}</div>
-                                <div style="display: flex; gap: 10px; font-size: 13px;">
-                                    <span><strong>Type:</strong> ${edgeObj.edge_type || 'Line'}</span>
-                                    <span><strong>Phases:</strong> ${phaseData}</span>
-                                </div>
-                                ${details}
-                                ${powerStats}
-                            </div>
-                            `,
-                            style: { backgroundColor: 'transparent', fontSize: '12px' }
-                        };
+                        return getTooltipContent(info.object);
                     }}
                 />
+                {persistentTooltip}
+                </>
             )}
         </div>
     );

@@ -248,39 +248,49 @@ async def get_topology(
     # Map into Deck.GL format with enriched CIM attributes
     mapped_nodes = []
     for n in nodes:
-        if n['longitude'] and n['latitude']:
-            mapped_nodes.append({
-                "id": n['node_id'],
-                "type": n['node_type'],
-                "name": n['name'],
-                "position": [n['longitude'], n['latitude']],
-                "circuit_id": node_to_circuit.get(n['node_id'], "unknown"),
-                "phases": n.get('phases_present', ['A', 'B', 'C']),
-                "base_voltage_kv": n.get('base_voltage_kv'),
-                "attached_equipment": n.get('attached_equipment', []),
-                "model_id": n.get('model_id', 'unknown'),
-            })
+        # We include all nodes even if they lack coordinates so they are searchable/selectable.
+        # Assets connected to non-geographic nodes will still trigger selection.
+        has_coords = n['longitude'] is not None and n['latitude'] is not None
+        pos = [n['longitude'], n['latitude']] if has_coords else [0,0]
+        
+        mapped_nodes.append({
+            "id": n['node_id'],
+            "type": n['node_type'],
+            "name": n['name'],
+            "position": pos,
+            "has_coords": has_coords,
+            "circuit_id": node_to_circuit.get(n['node_id'], "unknown"),
+            "phases": n.get('phases_present', ['A', 'B', 'C']),
+            "base_voltage_kv": n.get('base_voltage_kv'),
+            "attached_equipment": n.get('attached_equipment', []),
+            "model_id": n.get('model_id', 'unknown'),
+        })
 
     mapped_edges = []
     for e in all_edges:
         src = e['from_node_id']
         tgt = e['to_node_id']
-        if src in node_coords and tgt in node_coords:
-            mapped_edges.append({
-                "id": e.get('edge_id', f"{src}-{tgt}"),
-                "source": src,
-                "target": tgt,
-                "sourcePosition": node_coords[src],
-                "targetPosition": node_coords[tgt],
-                "circuit_id": node_to_circuit.get(src, "unknown"),
-                "phases": e.get('phases'),
-                "edge_type": e.get('edge_type'),
-                "name": e.get('name', ''),
-                "is_open": e.get('is_open', False),
-                "transformer_kva": e.get('transformer_kva'),
-                "is_regulator": e.get('is_regulator', False),
-                "model_id": e.get('model_id', 'unknown'),
-            })
+        
+        # We include the edge even if nodes lack coordinates, but LineLayer will only render if positions exist.
+        src_pos = node_coords.get(src)
+        tgt_pos = node_coords.get(tgt)
+        
+        mapped_edges.append({
+            "id": e.get('edge_id', f"{src}-{tgt}"),
+            "source": src,
+            "target": tgt,
+            "sourcePosition": src_pos or [0,0],
+            "targetPosition": tgt_pos or [0,0],
+            "has_coords": src_pos is not None and tgt_pos is not None,
+            "circuit_id": node_to_circuit.get(src, "unknown"),
+            "phases": e.get('phases'),
+            "edge_type": e.get('edge_type'),
+            "name": e.get('name', ''),
+            "is_open": e.get('is_open', False),
+            "transformer_kva": e.get('transformer_kva'),
+            "is_regulator": e.get('is_regulator', False),
+            "model_id": e.get('model_id', 'unknown'),
+        })
 
     return {"nodes": mapped_nodes, "edges": mapped_edges}
 

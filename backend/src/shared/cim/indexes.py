@@ -5,7 +5,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from src.shared.cim.helpers import _mrid_str, _safe_float, _parse_phase_code
+from src.shared.cim.helpers import _mrid_str, _get_name, _safe_float, _parse_phase_code
 from src.shared.cim.loader import _manual_xml_catalog_scan
 
 logger = logging.getLogger(__name__)
@@ -37,6 +37,7 @@ class IndexBuilder:
         self.transformer_has_tap_changer: dict[str, bool] = {}     # PT/Tank mRID → bool
         self.equipment_is_regulator: dict[str, bool] = {}          # mRID → bool
         self.equipment_is_single_phase: dict[str, bool] = {}       # mRID → bool
+        self.equipment_current_limits: dict[str, float] = {}       # mRID → Amps
         self.manual_tank_to_info: dict[str, str] = {}              # tank mRID → tankInfo mRID
         self.manual_info_to_kva: dict[str, float] = {}             # tankInfo mRID → VA
 
@@ -55,6 +56,7 @@ class IndexBuilder:
                 self._xml_path
             )
         self._build_transformer_index()
+        self._build_limit_index()
         self._classify_equipment()
 
     # ------------------------------------------------------------------
@@ -184,7 +186,7 @@ class IndexBuilder:
                     
                     # Identify Regulators: PowerTransformers with Tap Changers
                     if type_name == "PowerTransformer":
-                        if self.transformer_has_tap_changer.get(m):
+                        if self.transformer_has_tap_changer.get(m) or self.equipment_is_regulator.get(m):
                             self.equipment_types[m] = "Regulator"
                             self.equipment_is_regulator[m] = True
 
@@ -234,6 +236,74 @@ class IndexBuilder:
                 parsed = _parse_phase_code(pc)
                 if parsed:
                     existing = self.eq_phases.setdefault(parent_id, [])
+                    for p in parsed:
+                        if p not in existing:
+                            existing.append(p)
+
+        # 2. Transformer Ends (PowerTransformerEnd / TransformerTankEnd)
+        # Gather all candidates and pick the one with max voltage or min endNumber
+        transformer_candidates: dict[str, list[dict]] = {}
+
+        for cls_name in ["PowerTransformerEnd", "TransformerTankEnd"]:
+            cls = getattr(cim, cls_name, None)
+            if not cls: continue
+            
+            for _eid, end in graph.get(cls, {}).items():
+                parent = getattr(end, "PowerTransformer", None) or getattr(end, "TransformerTank", None)
+                parent_id = _mrid_str(parent)
+                if not parent_id: continue
+                
+                # Get phase code
+                ph = getattr(end, "phases", None) or getattr(end, "orderedPhases", None)
+                if not ph:
+                    term = getattr(end, "Terminal", None)
+                    ph = getattr(term, "phases", None) if term else None
+                
+                if ph:
+                    parsed = _parse_phase_code(ph)
+                    if parsed:
+                        enum = getattr(end, "endNumber", 1)
+                        # Identify voltage for priority (max voltage = primary side)
+                        voltage = 0.0
+                        if cls_name == "PowerTransformerEnd":
+                            voltage = _safe_float(getattr(end, "ratedU", 0.0))
+                        else: # TransformerTankEnd
+                            ti = getattr(parent, "TransformerTankInfo", None)
+                            if ti:
+                                ti_id = _mrid_str(ti)
+                                tei_cls = getattr(cim, "TransformerEndInfo", None)
+                                if tei_cls:
+                                    for _ei_id, tei in graph.get(tei_cls, {}).items():
+                                        ti_p = getattr(tei, "TransformerTankInfo", None)
+                                        if ti_p and _mrid_str(ti_p) == ti_id:
+                                            if getattr(tei, "endNumber", 0) == enum:
+                                                voltage = _safe_float(getattr(tei, "rated_u_kv", 0.0))
+                                                break
+
+                        if parent_id not in transformer_candidates:
+                            transformer_candidates[parent_id] = []
+                        transformer_candidates[parent_id].append({
+                            "enum": enum, 
+                            "voltage": voltage, 
+                            "parsed": parsed, 
+                            "cls": cls_name,
+                            "parent_obj": parent
+                        })
+
+        # Select the best candidate for each transformer
+        for pid, candidates in transformer_candidates.items():
+            # Best = 1. Highest Voltage, 2. Lowest endNumber
+            best = sorted(candidates, key=lambda c: (-c["voltage"], c["enum"]))[0]
+            parsed = best["parsed"]
+            
+            self.eq_phases[pid] = parsed
+            
+            # If this is a tank, propagate to parent PowerTransformer
+            if best["cls"] == "TransformerTankEnd":
+                pt = getattr(best["parent_obj"], "PowerTransformer", None)
+                pt_m = _mrid_str(pt)
+                if pt_m:
+                    existing = self.eq_phases.setdefault(pt_m, [])
                     for p in parsed:
                         if p not in existing:
                             existing.append(p)
@@ -352,6 +422,59 @@ class IndexBuilder:
                         if pt_from_tank_id:
                             self.transformer_has_tap_changer[pt_from_tank_id] = True
                             self.equipment_is_regulator[pt_from_tank_id] = True
+                    
+    def _build_limit_index(self):
+        """Map equipment to their associated CurrentLimit values."""
+        cim = self.cim
+        graph = self.graph
+        
+        limit_set_cls = getattr(cim, "OperationalLimitSet", None)
+        current_limit_cls = getattr(cim, "CurrentLimit", None)
+        
+        if not limit_set_cls or not current_limit_cls:
+            return
+            
+        # CIM relationship: CurrentLimit -> OperationalLimitSet -> Equipment/Terminal
+        for _lid, cl in graph.get(current_limit_cls, {}).items():
+            val = _safe_float(getattr(cl, "value", None))
+            if val is None:
+                continue
+                
+            lset = getattr(cl, "OperationalLimitSet", None)
+            if not lset:
+                continue
+                
+            # Check direct Equipment link
+            eq = getattr(lset, "Equipment", None)
+            eq_id = _mrid_str(eq)
+            if eq_id:
+                # Store the limit (taking first found or could implement preference logic)
+                if eq_id not in self.equipment_current_limits:
+                    self.equipment_current_limits[eq_id] = val
+                continue
+                
+            # Check Terminal link (ConductingEquipment -> Terminal -> OperationalLimitSet)
+            term = getattr(lset, "Terminal", None)
+            if term:
+                eq = getattr(term, "ConductingEquipment", None)
+                eq_id = _mrid_str(eq)
+                if eq_id:
+                    if eq_id not in self.equipment_current_limits:
+                        self.equipment_current_limits[eq_id] = val
+
+        # ── 3c. AssetInfo-based Regulator detection ──
+        # Check if PowerTransformer.AssetInfo points to something that sounds like a regulator
+        pt_cls = getattr(cim, "PowerTransformer", None)
+        if pt_cls:
+            for _pid, pt in graph.get(pt_cls, {}).items():
+                pt_id = _mrid_str(pt)
+                if pt_id and not self.equipment_is_regulator.get(pt_id):
+                    ai = getattr(pt, "AssetInfo", None)
+                    if ai:
+                        ai_name = (_get_name(ai) or "").lower()
+                        if "regulator" in ai_name:
+                            self.equipment_is_regulator[pt_id] = True
+                            self.equipment_types[pt_id] = "Regulator"
 
         # ── 4. Fallback: Manual XML Scan results ──
         tank_count = 0
@@ -372,6 +495,21 @@ class IndexBuilder:
                             self.transformer_kva[pt_id] = max(
                                 self.transformer_kva.get(pt_id, 0.0), val
                             )
+
+        # Fallback for PowerTransformerInfo linked directly to PowerTransformer
+        # (models that don't use Tanks for substation transformers)
+        pt_cls = getattr(cim, "PowerTransformer", None)
+        if pt_cls:
+            for _pid, pt in graph.get(pt_cls, {}).items():
+                pt_id = _mrid_str(pt)
+                if pt_id and self.transformer_kva.get(pt_id, 0.0) == 0.0:
+                    pti = getattr(pt, "PowerTransformerInfo", None)
+                    pti_id = _mrid_str(pti)
+                    if pti_id:
+                        kva = self.manual_info_to_kva.get(pti_id)
+                        if kva:
+                            self.transformer_kva[pt_id] = kva / 1000.0
+                            tank_count += 1
 
         logger.info(
             "  Transformer KVA index: %d transformers rated (%d from manual scan fallback)",

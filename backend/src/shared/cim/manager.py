@@ -100,6 +100,16 @@ class CimModelManager:
             getattr(cim, "PowerTransformerEnd", None),
             getattr(cim, "TransformerTank", None),
             getattr(cim, "TransformerTankEnd", None),
+            getattr(cim, "Fuse", None),
+            getattr(cim, "Recloser", None),
+            getattr(cim, "RatioTapChanger", None),
+            getattr(cim, "PhaseTapChanger", None),
+            getattr(cim, "TapChanger", None),
+            getattr(cim, "RatioTapChangerInfo", None),
+            getattr(cim, "TapChangerInfo", None),
+            getattr(cim, "OperationalLimitSet", None),
+            getattr(cim, "OperationalLimitValue", None),
+            getattr(cim, "CurrentLimit", None),
         ]:
             if cls_type:
                 logger.info("  Fetching %s...", cls_type.__name__)
@@ -223,6 +233,15 @@ class CimModelManager:
         enricher = enrichers.get(cls_name)
         if enricher:
             enricher(detail, obj)
+
+        # Apply specific identification flags
+        detail["is_regulator"] = self._idx.equipment_is_regulator.get(mrid, False)
+        if cls_name == "Fuse":
+            detail["is_fuse"] = True
+        elif cls_name == "Recloser":
+            detail["is_recloser"] = True
+        elif cls_name == "Disconnector":
+            detail["is_disconnector"] = True
 
         return detail
 
@@ -386,37 +405,114 @@ class CimModelManager:
     def _enrich_transformer(self, detail: dict, obj):
         """PowerTransformer: winding data, tap changer."""
         cim = self.cim
+        graph = self.network.graph
 
         ends: list[dict] = []
+        hierarchy = {
+            "mrid": detail["mrid"],
+            "name": detail.get("name"),
+            "class": "PowerTransformer",
+            "attributes": detail.copy(),
+            "children": []
+        }
         
         # 1. Look for PowerTransformerEnd (Transmission/Substation level)
         pte_cls = getattr(cim, "PowerTransformerEnd", None)
         if pte_cls:
-            for _eid, pte in self.network.graph.get(pte_cls, {}).items():
+            for _eid, pte in graph.get(pte_cls, {}).items():
                 pt = getattr(pte, "PowerTransformer", None)
                 if pt and _mrid_str(pt) == detail["mrid"]:
                     end_data = self._extract_primitives(pte)
                     ends.append(end_data)
+                    hierarchy["children"].append({
+                        "mrid": end_data["mrid"],
+                        "name": end_data.get("name") or f"End {end_data.get('endNumber', '')}",
+                        "class": "PowerTransformerEnd",
+                        "attributes": end_data
+                    })
 
         # 2. Look for TransformerTank (Distribution level: PT -> Tank -> TankInfo -> EndInfo)
         tt_cls = getattr(cim, "TransformerTank", None)
-        if tt_cls and not ends: # Only search if direct ends weren't found
-            for _eid, tank in self.network.graph.get(tt_cls, {}).items():
+        if tt_cls:
+            for _eid, tank in graph.get(tt_cls, {}).items():
                 pt = getattr(tank, "PowerTransformer", None)
                 if pt and _mrid_str(pt) == detail["mrid"]:
-                    tank_info = getattr(tank, "TransformerTankInfo", None)
-                    if tank_info:
-                        ti_mrid = _mrid_str(tank_info)
+                    tank_data = self._extract_primitives(tank)
+                    tank_node = {
+                        "mrid": tank_data["mrid"],
+                        "name": tank_data.get("name") or "TransformerTank",
+                        "class": "TransformerTank",
+                        "attributes": tank_data,
+                        "children": []
+                    }
+                    
+                    # Tank Info (Catalog Data)
+                    ti = getattr(tank, "TransformerTankInfo", None)
+                    if ti:
+                        ti_data = self._extract_primitives(ti)
+                        ti_mrid = _mrid_str(ti)
+                        tank_node["children"].append({
+                            "mrid": ti_mrid,
+                            "name": ti_data.get("name") or "TransformerTankInfo",
+                            "class": "TransformerTankInfo",
+                            "attributes": ti_data
+                        })
+                        
+                        # Match Ends for Catalog
                         ei_cls = getattr(cim, "TransformerEndInfo", None)
                         if ei_cls and ti_mrid:
-                            for _ei_id, ei in self.network.graph.get(ei_cls, {}).items():
+                            for _ei_id, ei in graph.get(ei_cls, {}).items():
                                 ei_ti = getattr(ei, "TransformerTankInfo", None)
                                 if ei_ti and _mrid_str(ei_ti) == ti_mrid:
-                                    # Match found! Extract all ratings natively
                                     info_data = self._extract_primitives(ei)
-                                    ends.append(info_data)
+                                    if not ends: ends.append(info_data) # Legacy compat
+                                    tank_node["children"].append({
+                                        "mrid": info_data["mrid"],
+                                        "name": info_data.get("name") or f"EndInfo {info_data.get('endNumber', '')}",
+                                        "class": "TransformerEndInfo",
+                                        "attributes": info_data
+                                    })
+                                    
+                    # Tank Ends (Actual instance connections)
+                    tte_cls = getattr(cim, "TransformerTankEnd", None)
+                    if tte_cls:
+                        for _eeid, tte in graph.get(tte_cls, {}).items():
+                            tt_p = getattr(tte, "TransformerTank", None)
+                            if tt_p and _mrid_str(tt_p) == tank_node["mrid"]:
+                                tte_data = self._extract_primitives(tte)
+                                tte_node = {
+                                    "mrid": tte_data["mrid"],
+                                    "name": tte_data.get("name") or f"TankEnd {tte_data.get('endNumber', '')}",
+                                    "class": "TransformerTankEnd",
+                                    "attributes": tte_data,
+                                    "children": []
+                                }
+                                
+                                # Match with TransformerEndInfo from the catalog if we have TankInfo
+                                enum = getattr(tte, "endNumber", None)
+                                if ti and enum:
+                                    ei_cls = getattr(cim, "TransformerEndInfo", None)
+                                    if ei_cls:
+                                        for _eiid, tei in graph.get(ei_cls, {}).items():
+                                            ti_p = getattr(tei, "TransformerTankInfo", None)
+                                            if ti_p and _mrid_str(ti_p) == _mrid_str(ti):
+                                                if getattr(tei, "endNumber", None) == enum:
+                                                    ei_data = self._extract_primitives(tei)
+                                                    tte_node["children"].append({
+                                                        "mrid": ei_data["mrid"],
+                                                        "name": ei_data.get("name") or f"EndInfo {ei_data.get('endNumber', '')}",
+                                                        "class": "TransformerEndInfo",
+                                                        "attributes": ei_data
+                                                    })
+                                
+                                tank_node["children"].append(tte_node)
 
+                    hierarchy["children"].append(tank_node)
+
+        detail["hierarchy"] = hierarchy
         detail["transformerends"] = sorted(ends, key=lambda e: e.get("endNumber") or 0)
+
+        # Look for RatioTapChanger
 
         # Look for RatioTapChanger
         rtc_cls = getattr(cim, "RatioTapChanger", None)
@@ -445,9 +541,17 @@ class CimModelManager:
         val = _safe_float(getattr(obj, "ratedCurrent", None))
         if val is not None:
             detail["rated_current_a"] = val
+            
+        # Add CurrentLimit from OperationalLimitSet if it exists
+        mrid = _mrid_str(obj)
+        limit = self.network.index.equipment_current_limits.get(mrid)
+        if limit is not None:
+            detail["current_limit_a"] = limit
         val = _safe_float(getattr(obj, "breakingCapacity", None))
         if val is not None:
             detail["breaking_capacity"] = val
+        
+        detail["hierarchy"] = self._build_asset_hierarchy(detail, obj)
 
     def _enrich_energy_consumer(self, detail: dict, obj):
         """EnergyConsumer (load / meter)."""
@@ -469,6 +573,8 @@ class CimModelManager:
         pc = getattr(obj, "phaseConnection", None)
         if pc:
             detail["phase_connection"] = str(pc)
+            
+        detail["hierarchy"] = self._build_asset_hierarchy(detail, obj)
 
     def _enrich_energy_source(self, detail: dict, obj):
         """EnergySource (substation source)."""
@@ -484,6 +590,8 @@ class CimModelManager:
             val = _safe_float(getattr(obj, attr, None))
             if val is not None:
                 detail[key] = val
+        
+        detail["hierarchy"] = self._build_asset_hierarchy(detail, obj)
 
     def _enrich_capacitor(self, detail: dict, obj):
         """LinearShuntCompensator (capacitor bank)."""
@@ -497,3 +605,49 @@ class CimModelManager:
             val = _safe_float(getattr(obj, attr, None))
             if val is not None:
                 detail[key] = val
+        
+        detail["hierarchy"] = self._build_asset_hierarchy(detail, obj)
+
+    def _build_asset_hierarchy(self, detail: dict, obj) -> dict:
+        """Generic asset hierarchy builder for equipment."""
+        cim = self.cim
+        graph = self.network.graph
+        
+        hierarchy = {
+            "mrid": detail["mrid"],
+            "name": detail.get("name"),
+            "class": detail.get("cim_class", type(obj).__name__),
+            "attributes": detail.copy(),
+            "children": []
+        }
+        
+        # Look for associated Asset
+        asset_cls = getattr(cim, "Asset", None)
+        if asset_cls:
+            for _eid, asset in graph.get(asset_cls, {}).items():
+                # Check for direct link (CIM often uses PowerSystemResource -> Asset)
+                psr = getattr(asset, "PowerSystemResource", None)
+                if psr and _mrid_str(psr) == detail["mrid"]:
+                    asset_data = self._extract_primitives(asset)
+                    asset_node = {
+                        "mrid": asset_data["mrid"],
+                        "name": asset_data.get("name") or "Asset",
+                        "class": "Asset",
+                        "attributes": asset_data,
+                        "children": []
+                    }
+                    
+                    # Asset Info
+                    ai = getattr(asset, "AssetInfo", None)
+                    if ai:
+                        ai_data = self._extract_primitives(ai)
+                        asset_node["children"].append({
+                            "mrid": ai_data["mrid"],
+                            "name": ai_data.get("name") or "AssetInfo",
+                            "class": "AssetInfo",
+                            "attributes": ai_data
+                        })
+                    
+                    hierarchy["children"].append(asset_node)
+                    
+        return hierarchy

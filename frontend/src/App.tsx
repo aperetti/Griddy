@@ -2,7 +2,7 @@ import '@mantine/core/styles.css';
 import '@mantine/dates/styles.css';
 import { useState, useEffect, useCallback } from 'react';
 import { useMediaQuery } from '@mantine/hooks';
-import { MantineProvider, AppShell, Box, Stack, ActionIcon, Menu, Group, Tooltip, Paper } from '@mantine/core';
+import { MantineProvider, Box, Group, Stack, Tooltip, ActionIcon, Paper, Menu } from '@mantine/core';
 import { Menu as MenuIcon, X, Search, Activity, Settings, Zap } from 'lucide-react';
 
 import { GridMap } from './features/grid/components/GridMap';
@@ -45,6 +45,7 @@ interface AnalysisInstance {
   loading: boolean;
   data: any[];
   estimatedRows?: number;
+  assetType?: 'Node' | 'Edge';
   // Voltage specific
   degrees?: number | null;
   scatterData?: any[];
@@ -282,18 +283,17 @@ export default function App() {
         setTimeout(() => setIsSearching(false), 1500);
       });
   }, [activeModelIds]);
-  
   const handleShowDiagnostic = async (targetId?: string, targetType?: 'Node' | 'Edge') => {
-    // If no specific ID provided, use the last selected node or the first selected node
     const id = targetId || selectedNodes[selectedNodes.length - 1]?.id;
     if (!id) return;
     
-    // Default to Node if not specified
+    const type = targetType || (selectedNodes.find(n => n.id === id) ? 'Node' as const : 'Edge' as const);
+    
     const windowId = `diagnostic-${id}`;
     
     const nodeLabel = targetId 
-        ? `${targetType} ${targetId}` 
-        : (selectedNodes[selectedNodes.length - 1]?.name || id);
+        ? `${type} ${targetId}` 
+        : (selectedNodes.find(n => n.id === id)?.name || id);
 
     setAnalysisWindows(prev => prev.map(w =>
       (w.id !== windowId)
@@ -312,9 +312,10 @@ export default function App() {
       type: 'diagnostic',
       nodeIds: [id],
       nodeName: nodeLabel,
+      assetType: type,
       isOpen: true,
       isMinimized: false,
-      loading: false, // DiagnosticModal handles its own loading
+      loading: false,
       data: [],
     };
     setAnalysisWindows(prev => [...prev, newWindow]);
@@ -704,9 +705,32 @@ export default function App() {
           setDateRange(newRange);
         }}
       />
+      <DiagnosticModal
+        isOpen={analysisWindows.some(w => w.type === 'diagnostic' && w.isOpen)}
+        onClose={() => setAnalysisWindows(prev => prev.map(w => w.type === 'diagnostic' ? { ...w, isOpen: false } : w))}
+        id={analysisWindows.find(w => w.type === 'diagnostic' && w.isOpen)?.id || ""}
+        type={analysisWindows.find(w => w.type === 'diagnostic' && w.isOpen)?.assetType || "Node"}
+        title={analysisWindows.find(w => w.type === 'diagnostic' && w.isOpen)?.nodeName || "Diagnostic"}
+        onZoomTo={handleZoomToAsset}
+        onViewConsumption={(nodeIds) => {
+          const id = nodeIds[0];
+          const asset = nodes.find(n => n.id === id) || edges.find(e => e.id === id);
+          if (asset) {
+            const nodePayload = 'position' in asset ? asset : { id: asset.id!, name: asset.name || asset.id! } as Node;
+            handleShowConsumption(undefined, nodePayload);
+          }
+        }}
+        onViewVoltage={(nodeIds) => {
+          const id = nodeIds[0];
+          const asset = nodes.find(n => n.id === id) || edges.find(e => e.id === id);
+          if (asset) {
+            const nodePayload = 'position' in asset ? asset : { id: asset.id!, name: asset.name || asset.id! } as Node;
+            handleShowVoltageDistribution(undefined, nodePayload);
+          }
+        }}
+      />
 
-      <AppShell padding="0" header={{ height: 0 }}>
-        <AppShell.Main>
+      <Box h="100vh" w="100vw" style={{ position: 'relative', overflow: 'hidden' }}>
 
 
           {/* Deck.GL Interactive Grid Map */}
@@ -752,6 +776,27 @@ export default function App() {
                   onZoomToModel={handleZoomToModel}
                   loading={topologyLoading}
                 />
+ 
+                {selectedNodes.length > 0 && (
+                  <Tooltip label="Diagnostic View" position="bottom" withArrow>
+                    <ActionIcon
+                      variant="filled"
+                      color="teal"
+                      size="xl"
+                      radius="md"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleShowDiagnostic();
+                      }}
+                      style={{
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                      }}
+                    >
+                      <Activity size={20} />
+                    </ActionIcon>
+                  </Tooltip>
+                )}
 
                 <Tooltip label="Global Settings" position="bottom" withArrow>
                   <ActionIcon
@@ -911,7 +956,7 @@ export default function App() {
                 isOpen={win.isOpen}
                 onClose={() => removeWindow(win.id)}
                 id={win.nodeIds[0]}
-                type={win.nodeIds[0].includes('_') || win.nodeIds[0].length > 20 ? 'Edge' : 'Node'}
+                type={win.assetType || 'Node'}
                 title={win.nodeName}
                 onZoomTo={handleZoomToAsset}
               />
@@ -967,9 +1012,7 @@ export default function App() {
               </Paper>
             ))}
           </Box>
-
-        </AppShell.Main>
-      </AppShell>
+        </Box>
     </MantineProvider >
   );
 }

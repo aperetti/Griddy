@@ -164,7 +164,7 @@ class TopologyBuilder:
                 "node_id": cn_mrid,
                 "node_type": node_type,
                 "name": cn_name,
-                "phases_present": phases,
+                "phases": phases,
                 "latitude": lat,
                 "longitude": lon,
                 "base_voltage_kv": base_voltage_kv,
@@ -209,7 +209,7 @@ class TopologyBuilder:
                 edge["is_open"] = idx.equipment_open.get(eq_mrid, False)
 
             # Transformer kVA
-            if eq_type == "PowerTransformer":
+            if eq_type in ("PowerTransformer", "Regulator", "TransformerTank"):
                 edge["transformer_kva"] = idx.transformer_kva.get(eq_mrid)
 
             # Line length
