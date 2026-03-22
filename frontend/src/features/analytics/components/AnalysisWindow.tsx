@@ -18,6 +18,7 @@ interface AnalysisWindowProps {
     onCopy?: () => string;
     children: ReactNode;
     loading?: boolean;
+    onFocus?: () => void;
 }
 
 /**
@@ -43,6 +44,7 @@ export function AnalysisWindow({
     onCopy,
     children,
     loading = false,
+    onFocus,
 }: AnalysisWindowProps) {
     const [showFilters, setShowFilters] = useState<boolean>(false);
     const [copied, setCopied] = useState(false);
@@ -175,6 +177,15 @@ export function AnalysisWindow({
         >
             <Paper
                 withBorder
+                onMouseDown={(e) => {
+                    // Don't trigger focus/bring-to-front if clicking on interactive elements
+                    // which might need their own event handling (like color pickers or selects)
+                    const target = e.target as HTMLElement;
+                    const isInteractive = target.closest('button, input, select, textarea, [role="button"], [role="menuitem"]');
+                    if (!isInteractive) {
+                        onFocus?.();
+                    }
+                }}
                 style={{
                     width: '100%',
                     height: '100%',

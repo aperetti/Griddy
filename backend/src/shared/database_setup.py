@@ -64,11 +64,26 @@ def init_admin_db():
             match_conditions    TEXT,
             icon                TEXT,
             color_hex           TEXT,
+            size                REAL DEFAULT 1.0,
+            label               TEXT,
+            css_overrides       TEXT,
+            radial_offset       REAL DEFAULT 0.0,
             enabled             INTEGER DEFAULT 1,
             created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    
+    # Migration: Add css_overrides if it doesn't exist
+    try:
+        conn.execute("ALTER TABLE display_config_rules ADD COLUMN css_overrides TEXT")
+    except sqlite3.OperationalError:
+        pass # Already exists
+    
+    try:
+        conn.execute("ALTER TABLE display_config_rules ADD COLUMN radial_offset REAL DEFAULT 0.0")
+    except sqlite3.OperationalError:
+        pass # Already exists
     
     # Ensure at least one default config exists
     cursor = conn.cursor()

@@ -49,6 +49,82 @@ const stringToColor = (str: string): [number, number, number] => {
 // Switch and breaker edge_type values
 const SWITCH_EDGE_TYPES = new Set(['Breaker', 'LoadBreakSwitch', 'Fuse', 'Disconnector', 'Recloser']);
 
+const SVG_CACHE = new Map<string, string>();
+const SVG_DIM_CACHE = new Map<string, { width: number, height: number }>();
+
+const OPEN_SWITCH_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><line x1="30" y1="10" x2="30" y2="90" stroke="currentColor" stroke-width="8" stroke-linecap="round" /><line x1="70" y1="10" x2="70" y2="90" stroke="currentColor" stroke-width="8" stroke-linecap="round" /></svg>`;
+const CLOSE_SWITCH_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><line x1="30" y1="10" x2="30" y2="90" stroke="currentColor" stroke-width="8" stroke-linecap="round" /><line x1="70" y1="10" x2="70" y2="90" stroke="currentColor" stroke-width="8" stroke-linecap="round" /><line x1="15" y1="65" x2="85" y2="35" stroke="currentColor" stroke-width="8" stroke-linecap="round" /></svg>`;
+const TRANSFORMER_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><polygon points="50,15 15,85 85,85" stroke="currentColor" fill="none" stroke-width="8" stroke-linejoin="round" /></svg>`;
+const REGULATOR_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="currentColor" font-family="Arial, sans-serif" font-weight="bold" font-size="12">R</text></svg>`;
+const CAPACITOR_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="currentColor" font-family="Arial, sans-serif" font-weight="bold" font-size="12">C</text></svg>`;
+
+const getSvgDataUrl = (svg: string, color?: string, css?: string) => {
+    if (!svg) return '';
+    const cacheKey = `${svg}_${color || ''}_${css || ''}`;
+    if (SVG_CACHE.has(cacheKey)) return SVG_CACHE.get(cacheKey)!;
+    
+    let processedSvg = svg;
+
+    // Inject CSS if provided
+    if (css && css.trim()) {
+        const styleBlock = `<style>${css}</style>`;
+        if (processedSvg.includes('</svg>')) {
+            processedSvg = processedSvg.replace('</svg>', `${styleBlock}</svg>`);
+        } else {
+            processedSvg = `${processedSvg}${styleBlock}`;
+        }
+    }
+
+    if (color) {
+        // Replace currentColor with actual color
+        processedSvg = processedSvg.replace(/currentColor/g, color);
+        
+        // Inject color into fill and stroke attributes, skipping "none"
+        processedSvg = processedSvg.replace(/fill=["'](?!none)[^"']+["']/g, `fill="${color}"`)
+                                   .replace(/stroke=["'](?!none)[^"']+["']/g, `stroke="${color}"`);
+                          
+        // Also handle cases where there's no fill/stroke (use defaults)
+        if (processedSvg === svg && !css) { // Don't force-inject if we added custom CSS which might handle its own colors
+            processedSvg = processedSvg.replace('<svg', `<svg fill="${color}" stroke="${color}"`);
+        }
+    }
+
+    const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(processedSvg)}`;
+    SVG_CACHE.set(cacheKey, url);
+    return url;
+};
+
+const getSvgDimensions = (svg: string): { width: number, height: number } => {
+    if (!svg) return { width: 128, height: 128 };
+    if (SVG_DIM_CACHE.has(svg)) return SVG_DIM_CACHE.get(svg)!;
+    
+    try {
+        // Try to find width/height attributes
+        const widthMatch = svg.match(/width=["']([\d.]+)/);
+        const heightMatch = svg.match(/height=["']([\d.]+)/);
+        
+        // Try to find viewBox
+        const viewBoxMatch = svg.match(/viewBox=["'][\d.]+\s+[\d.]+\s+([\d.]+)\s+([\d.]+)/);
+        
+        let width = 24;
+        let height = 24;
+        
+        if (widthMatch && heightMatch) {
+            width = parseFloat(widthMatch[1]);
+            height = parseFloat(heightMatch[1]);
+        } else if (viewBoxMatch) {
+            width = parseFloat(viewBoxMatch[1]);
+            height = parseFloat(viewBoxMatch[2]);
+        }
+        
+        const res = { width, height };
+        SVG_DIM_CACHE.set(svg, res);
+        return res;
+    } catch (e) {
+        return { width: 24, height: 24 };
+    }
+};
+
 // Derive a visual category from node.type and attached_equipment.
 // After the CIM refactor, node.type is only "Bus" | "Substation"; richer
 // categories come from what equipment is attached at the node.
@@ -62,9 +138,19 @@ const getVisualType = (node: Node): string => {
     return 'Bus';
 };
 
-const getNodeColor = (visualType: string, isHighlighted: boolean, isSelected: boolean, circuitId?: string): [number, number, number] => {
+const getNodeColor = (node: Node, visualType: string, isHighlighted: boolean, isSelected: boolean, circuitId?: string): [number, number, number] => {
     if (isSelected) return [255, 200, 50];
     if (isHighlighted) return [60, 160, 240];
+
+    if (node.display_color) {
+        const hex = node.display_color.replace('#', '');
+        if (hex.length === 6) {
+            const r = parseInt(hex.substring(0, 2), 16);
+            const g = parseInt(hex.substring(2, 4), 16);
+            const b = parseInt(hex.substring(4, 6), 16);
+            return [r, g, b];
+        }
+    }
 
     if (circuitId && circuitId !== 'unknown') {
         return stringToColor(circuitId);
@@ -84,6 +170,32 @@ const getNodeColor = (visualType: string, isHighlighted: boolean, isSelected: bo
         default:
             return [200, 200, 200];
     }
+};
+
+const getEdgeColor = (edge: Edge, isHighlighted: boolean, isHovered: boolean, circuitId?: string): [number, number, number] => {
+    if (isHighlighted) return [60, 160, 240];
+    if (isHovered) return [255, 255, 255];
+
+    if (edge.display_color) {
+        const hex = edge.display_color.replace('#', '');
+        if (hex.length === 6) {
+            const r = parseInt(hex.substring(0, 2), 16);
+            const g = parseInt(hex.substring(2, 4), 16);
+            const b = parseInt(hex.substring(4, 6), 16);
+            return [r, g, b];
+        }
+    }
+
+    // Default coloring for switches if no rule override
+    if (edge.edge_type && SWITCH_EDGE_TYPES.has(edge.edge_type)) {
+        return edge.is_open ? [255, 107, 107] : [105, 219, 124]; // Red for open, Green for closed
+    }
+
+    if (circuitId && circuitId !== 'unknown') {
+        return stringToColor(circuitId);
+    }
+
+    return [150, 150, 150];
 };
 
 const edgeMidpoint = (d: Edge): [number, number] => [
@@ -284,19 +396,65 @@ export const GridMap = React.memo<GridMapProps>(({
         return () => window.removeEventListener('resize', updateSize);
     }, []);
 
+    const nodePositions = useMemo(() => {
+        const groups: Record<string, Node[]> = {};
+        nodes.forEach(node => {
+            // Using toFixed(6) to handle floating point precision for grouping (~10cm)
+            const key = `${node.position[0].toFixed(6)},${node.position[1].toFixed(6)}`;
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(node);
+        });
+
+        const posMap: Record<string, [number, number]> = {};
+        Object.values(groups).forEach(group => {
+            if (group.length <= 1) {
+                group.forEach(node => {
+                    posMap[node.id] = node.position;
+                });
+                return;
+            }
+
+            const magnitude = Math.max(...group.map(n => n.display_offset || 0));
+            if (magnitude === 0) {
+                group.forEach(node => {
+                    posMap[node.id] = node.position;
+                });
+                return;
+            }
+
+            group.forEach((node, i) => {
+                const angle = (i / group.length) * 2 * Math.PI;
+                const latRad = (node.position[1] * Math.PI) / 180;
+                posMap[node.id] = [
+                    node.position[0] + (Math.cos(angle) * magnitude) / Math.cos(latRad),
+                    node.position[1] + Math.sin(angle) * magnitude
+                ];
+            });
+        });
+        return posMap;
+    }, [nodes]);
+
+    const offsetEdges = useMemo(() => {
+        return edges.map(edge => ({
+            ...edge,
+            sourcePosition: nodePositions[edge.source] || edge.sourcePosition,
+            targetPosition: nodePositions[edge.target] || edge.targetPosition
+        }));
+    }, [edges, nodePositions]);
+
     // Edges that carry switch/breaker equipment (for icon rendering)
-    const switchEdgesOpen = useMemo(() => edges.filter(e => SWITCH_EDGE_TYPES.has(e.edge_type ?? '') && e.is_open), [edges]);
-    const switchEdgesClosed = useMemo(() => edges.filter(e => SWITCH_EDGE_TYPES.has(e.edge_type ?? '') && !e.is_open), [edges]);
+    const switchEdgesOpen = useMemo(() => offsetEdges.filter(e => SWITCH_EDGE_TYPES.has(e.edge_type ?? '') && e.is_open && !e.display_icon), [offsetEdges]);
+    const switchEdgesClosed = useMemo(() => offsetEdges.filter(e => SWITCH_EDGE_TYPES.has(e.edge_type ?? '') && !e.is_open && !e.display_icon), [offsetEdges]);
     const transformerEdges = useMemo(() => 
-        edges.filter(e => (e.edge_type === 'PowerTransformer' || e.edge_type === 'TransformerTank') && !e.is_regulator), 
-    [edges]);
+        offsetEdges.filter(e => (e.edge_type === 'PowerTransformer' || e.edge_type === 'TransformerTank') && !e.is_regulator && !e.display_icon), 
+    [offsetEdges]);
     const regulatorEdges = useMemo(() => 
-        edges.filter(e => (e.edge_type === 'PowerTransformer' || e.edge_type === 'TransformerTank') && e.is_regulator), 
-    [edges]);
+        offsetEdges.filter(e => (e.edge_type === 'PowerTransformer' || e.edge_type === 'TransformerTank') && e.is_regulator && !e.display_icon), 
+    [offsetEdges]);
 
     const visualEdgePaths = useMemo(() => {
         const OFFSET = 0.00004; // ~4-5 meters
-        return edges.flatMap(e => {
+        return offsetEdges.flatMap(e => {
             const isSwitch = (e.edge_type && SWITCH_EDGE_TYPES.has(e.edge_type));
             if (!isSwitch) return [{ ...e, path: [e.sourcePosition, e.targetPosition] }];
 
@@ -314,13 +472,13 @@ export const GridMap = React.memo<GridMapProps>(({
                 { ...e, path: [[mid[0] + ux * (OFFSET / Math.cos((mid[1] * Math.PI) / 180)), mid[1] + uy * OFFSET], e.targetPosition] }
             ];
         });
-    }, [edges]);
+    }, [offsetEdges]);
 
     const layers = useMemo(() => [
         new ScatterplotLayer({
             id: 'selection-halo',
             data: nodes.filter(n => selectedNodeIdsSet.has(n.id)),
-            getPosition: (d: Node) => d.position,
+            getPosition: (d: Node) => nodePositions[d.id],
             getFillColor: [255, 255, 255, 80],
             getRadius: (d: Node) => {
                 const vt = getVisualType(d);
@@ -408,8 +566,8 @@ export const GridMap = React.memo<GridMapProps>(({
         }),
         new ScatterplotLayer({
             id: 'grid-nodes',
-            data: nodes.filter(n => getVisualType(n) !== 'Bus'),
-            getPosition: (d: Node) => d.position,
+            data: nodes.filter(n => getVisualType(n) !== 'Bus' && !n.display_icon),
+            getPosition: (d: Node) => nodePositions[d.id],
             getFillColor: (d: Node) => {
                 if (selectedNodeIdsSet.has(d.id)) return [255, 200, 50, 255];
 
@@ -424,14 +582,14 @@ export const GridMap = React.memo<GridMapProps>(({
                 }
 
                 const vt = getVisualType(d);
-                const color = getNodeColor(vt, highlightedNodes.has(d.id), false, d.circuit_id);
+                const color = getNodeColor(d, vt, highlightedNodes.has(d.id), false, d.circuit_id);
                 return [color[0], color[1], color[2], 255];
             },
             getRadius: (d: Node) => {
                 const isHovered = hoveredNodeId === d.id;
                 const isHighlighted = highlightedNodes.has(d.id);
                 const isSelected = selectedNodeIdsSet.has(d.id);
-                const baseRadius = 3;
+                const baseRadius = 2;
                 let radius = isHovered ? baseRadius * 2.5 : baseRadius;
                 if (isHighlighted) radius *= 1.5;
                 if (isSelected) radius *= 1.1;
@@ -463,16 +621,25 @@ export const GridMap = React.memo<GridMapProps>(({
             id: 'grid-switches-open',
             data: switchEdgesOpen,
             getPosition: (d: Edge) => edgeMidpoint(d),
-            iconAtlas: '/open-switch.svg',
-            iconMapping: {
-                marker: { x: 0, y: 0, width: 100, height: 100, anchorY: 50, mask: false }
+            getIcon: (d: Edge) => {
+                const colorArr = getEdgeColor(d, highlightedEdges.has(d.id ?? ''), hoveredEdgeId === d.id, d.circuit_id);
+                const colorHex = `#${colorArr.map(c => c.toString(16).padStart(2, '0')).join('')}`;
+                return {
+                    url: getSvgDataUrl(OPEN_SWITCH_SVG, colorHex),
+                    width: 100,
+                    height: 100,
+                    anchorY: 50,
+                    mask: false
+                };
             },
-            getIcon: () => 'marker',
             getAngle: (d: Edge) => getBearing(d.sourcePosition, d.targetPosition) + 90,
             getSize: (d: Edge) => highlightedEdges.has(d.id ?? '') ? 36 : 24,
             sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
             sizeMinPixels: 1,
-            updateTriggers: { getSize: [highlightedEdges] },
+            updateTriggers: { 
+                getSize: [highlightedEdges],
+                getIcon: [highlightedEdges, hoveredEdgeId]
+            },
             pickable: true,
             autoHighlight: false,
             onHover: (info) => {
@@ -490,16 +657,25 @@ export const GridMap = React.memo<GridMapProps>(({
             id: 'grid-switches-closed',
             data: switchEdgesClosed,
             getPosition: (d: Edge) => edgeMidpoint(d),
-            iconAtlas: '/close-switch.svg',
-            iconMapping: {
-                marker: { x: 0, y: 0, width: 100, height: 100, anchorY: 50, mask: false }
+            getIcon: (d: Edge) => {
+                const colorArr = getEdgeColor(d, highlightedEdges.has(d.id ?? ''), hoveredEdgeId === d.id, d.circuit_id);
+                const colorHex = `#${colorArr.map(c => c.toString(16).padStart(2, '0')).join('')}`;
+                return {
+                    url: getSvgDataUrl(CLOSE_SWITCH_SVG, colorHex),
+                    width: 100,
+                    height: 100,
+                    anchorY: 50,
+                    mask: false
+                };
             },
-            getIcon: () => 'marker',
             getAngle: (d: Edge) => getBearing(d.sourcePosition, d.targetPosition) + 90,
             getSize: (d: Edge) => highlightedEdges.has(d.id ?? '') ? 36 : 24,
             sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
             sizeMinPixels: 1,
-            updateTriggers: { getSize: [highlightedEdges] },
+            updateTriggers: { 
+                getSize: [highlightedEdges],
+                getIcon: [highlightedEdges, hoveredEdgeId]
+            },
             pickable: true,
             autoHighlight: false,
             onHover: (info) => {
@@ -517,15 +693,24 @@ export const GridMap = React.memo<GridMapProps>(({
             id: 'grid-transformers',
             data: transformerEdges,
             getPosition: (d: Edge) => d.targetPosition,
-            iconAtlas: '/transformer.svg',
-            iconMapping: {
-                marker: { x: 0, y: 0, width: 100, height: 100, anchorY: 50, mask: false }
+            getIcon: (d: Edge) => {
+                const colorArr = getEdgeColor(d, highlightedEdges.has(d.id ?? ''), hoveredEdgeId === d.id, d.circuit_id);
+                const colorHex = `#${colorArr.map(c => c.toString(16).padStart(2, '0')).join('')}`;
+                return {
+                    url: getSvgDataUrl(TRANSFORMER_SVG, colorHex),
+                    width: 100,
+                    height: 100,
+                    anchorY: 50,
+                    mask: false
+                };
             },
-            getIcon: () => 'marker',
             getSize: (d: Edge) => highlightedEdges.has(d.id ?? '') ? 20 : 16,
             sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
             sizeMinPixels: 1,
-            updateTriggers: { getSize: [highlightedEdges] },
+            updateTriggers: { 
+                getSize: [highlightedEdges],
+                getIcon: [highlightedEdges, hoveredEdgeId]
+            },
             pickable: true,
             autoHighlight: false,
             onHover: (info) => {
@@ -543,15 +728,24 @@ export const GridMap = React.memo<GridMapProps>(({
             id: 'grid-regulators',
             data: regulatorEdges,
             getPosition: (d: Edge) => d.targetPosition,
-            iconAtlas: '/regulator.svg',
-            iconMapping: {
-                marker: { x: 0, y: 0, width: 100, height: 100, anchorY: 50, mask: false }
+            getIcon: (d: Edge) => {
+                const colorArr = getEdgeColor(d, highlightedEdges.has(d.id ?? ''), hoveredEdgeId === d.id, d.circuit_id);
+                const colorHex = `#${colorArr.map(c => c.toString(16).padStart(2, '0')).join('')}`;
+                return {
+                    url: getSvgDataUrl(REGULATOR_SVG, colorHex),
+                    width: 100,
+                    height: 100,
+                    anchorY: 50,
+                    mask: false
+                };
             },
-            getIcon: () => 'marker',
             getSize: (d: Edge) => highlightedEdges.has(d.id ?? '') ? 50 : 30,
             sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
             sizeMinPixels: 1,
-            updateTriggers: { getSize: [highlightedEdges] },
+            updateTriggers: { 
+                getSize: [highlightedEdges],
+                getIcon: [highlightedEdges, hoveredEdgeId]
+            },
             pickable: true,
             autoHighlight: false,
             onHover: (info) => {
@@ -567,17 +761,26 @@ export const GridMap = React.memo<GridMapProps>(({
         }),
         new IconLayer({
             id: 'grid-capacitors',
-            data: nodes.filter(n => getVisualType(n) === 'Capacitor'),
-            getPosition: (d: Node) => d.position,
-            iconAtlas: '/capacitor.svg',
-            iconMapping: {
-                marker: { x: 0, y: 0, width: 100, height: 100, anchorY: 50, mask: false }
+            data: nodes.filter(n => getVisualType(n) === 'Capacitor' && !n.display_icon),
+            getPosition: (d: Node) => nodePositions[d.id],
+            getIcon: (d: Node) => {
+                const colorArr = getNodeColor(d, getVisualType(d), highlightedNodes.has(d.id), selectedNodeIdsSet.has(d.id), d.circuit_id);
+                const colorHex = `#${colorArr.map(c => c.toString(16).padStart(2, '0')).join('')}`;
+                return {
+                    url: getSvgDataUrl(CAPACITOR_SVG, colorHex),
+                    width: 100,
+                    height: 100,
+                    anchorY: 50,
+                    mask: false
+                };
             },
-            getIcon: () => 'marker',
             getSize: (d: Node) => hoveredNodeId === d.id ? 50 : 30,
             sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
             sizeMinPixels: 1,
-            updateTriggers: { getSize: [hoveredNodeId] },
+            updateTriggers: { 
+                getSize: [hoveredNodeId],
+                getIcon: [highlightedNodes, selectedNodeIdsSet, hoveredNodeId]
+            },
             pickable: true,
             autoHighlight: false,
             onHover: (info) => {
@@ -590,8 +793,105 @@ export const GridMap = React.memo<GridMapProps>(({
                     onNodeClick(info.object, srcEvent.shiftKey || srcEvent.ctrlKey);
                 }
             }
+        }),
+        new IconLayer({
+            id: 'grid-custom-node-icons',
+            data: nodes.filter(n => n.display_icon),
+            getPosition: (d: Node) => nodePositions[d.id],
+            getIcon: (d: Node) => {
+                const dims = getSvgDimensions(d.display_icon!);
+                const isHighlighted = highlightedNodes.has(d.id);
+                const isSelected = selectedNodeIdsSet.has(d.id);
+                const colorArr = getNodeColor(d, getVisualType(d), isHighlighted, isSelected, d.circuit_id);
+                const colorHex = `#${colorArr.map(c => c.toString(16).padStart(2, '0')).join('')}`;
+                
+                return {
+                    url: getSvgDataUrl(d.display_icon!, colorHex, d.display_css),
+                    width: dims.width,
+                    height: dims.height,
+                    anchorY: dims.height / 2,
+                    mask: false
+                };
+            },
+            getColor: (d: Node) => getNodeColor(d, getVisualType(d), highlightedNodes.has(d.id), selectedNodeIdsSet.has(d.id), d.circuit_id),
+            getSize: (d: Node) => {
+                const isHovered = hoveredNodeId === d.id;
+                const isHighlighted = highlightedNodes.has(d.id);
+                const sizeAttr = d.display_size ?? 1.0;
+                const baseSize = sizeAttr;
+                let size = isHovered ? baseSize * 1.5 : baseSize;
+                if (isHighlighted) size *= 1.2;
+                
+                return size;
+            },
+            sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
+            sizeMinPixels: 1,
+            pickable: true,
+            onHover: (info) => {
+                setHoveredNodeId(info.object ? info.object.id : null);
+            },
+            onClick: (info, event) => {
+                if (isDraggingRef.current) return;
+                const srcEvent = (event as any).srcEvent as MouseEvent;
+                if (info.object && srcEvent) {
+                    onNodeClick(info.object, srcEvent.shiftKey || srcEvent.ctrlKey);
+                }
+            },
+            updateTriggers: {
+                getSize: [hoveredNodeId, highlightedNodes, nodes],
+                getIcon: [highlightedNodes, selectedNodeIdsSet, nodes, nodes.map(n => n.display_css)],
+                getColor: [highlightedNodes, selectedNodeIdsSet, nodes]
+            }
+        }),
+        new IconLayer({
+            id: 'grid-custom-edge-icons',
+            data: edges.filter(e => e.display_icon),
+            getPosition: (d: Edge) => edgeMidpoint(d),
+            getIcon: (d: Edge) => {
+                const dims = getSvgDimensions(d.display_icon!);
+                const isHighlighted = highlightedEdges.has(d.id || '') || highlightedEdges.has(`${d.source}-${d.target}`);
+                const isHovered = hoveredEdgeId === d.id;
+                const colorArr = getEdgeColor(d, isHighlighted, isHovered, d.circuit_id);
+                const colorHex = `#${colorArr.map(c => c.toString(16).padStart(2, '0')).join('')}`;
+
+                return {
+                    url: getSvgDataUrl(d.display_icon!, colorHex, d.display_css),
+                    width: dims.width,
+                    height: dims.height,
+                    anchorY: dims.height / 2,
+                    mask: false
+                };
+            },
+            getColor: (d: Edge) => getEdgeColor(d, highlightedEdges.has(d.id || ''), hoveredEdgeId === d.id, d.circuit_id),
+            getSize: (d: Edge) => {
+                const isHovered = hoveredEdgeId === d.id;
+                const isHighlighted = highlightedEdges.has(d.id || '');
+                const sizeAttr = d.display_size ?? 1.0;
+                const baseSize = sizeAttr;
+                let size = isHovered ? baseSize * 1.5 : baseSize;
+                if (isHighlighted) size *= 1.2;
+                return size;
+            },
+            sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
+            sizeMinPixels: 1,
+            pickable: true,
+            onHover: (info) => {
+                setHoveredEdgeId(info.object ? (info.object.id ?? null) : null);
+            },
+            onClick: (info, event) => {
+                if (isDraggingRef.current) return;
+                const srcEvent = (event as any).srcEvent as MouseEvent;
+                if (info.object && srcEvent && onEdgeClick) {
+                    onEdgeClick(info.object as Edge, srcEvent.shiftKey || srcEvent.ctrlKey);
+                }
+            },
+            updateTriggers: {
+                getSize: [hoveredEdgeId, highlightedEdges, edges],
+                getIcon: [highlightedEdges, hoveredEdgeId, edges, edges.map(e => e.display_css)],
+                getColor: [highlightedEdges, hoveredEdgeId, edges]
+            }
         })
-    ], [nodes, edges, visualEdgePaths, hoveredNodeId, hoveredEdgeId, highlightedNodes, highlightedEdges, selectedNodeIdsSet, switchEdgesOpen, switchEdgesClosed, transformerEdges, regulatorEdges, nodeAverages, voltageScale, onNodeClick, onEdgeClick, viewState.zoom]);
+    ], [nodes, edges, visualEdgePaths, hoveredNodeId, hoveredEdgeId, highlightedNodes, highlightedEdges, selectedNodeIdsSet, switchEdgesOpen, switchEdgesClosed, transformerEdges, regulatorEdges, nodeAverages, voltageScale, onNodeClick, onEdgeClick, viewState.zoom, nodePositions]);
 
     const getTooltipContent = (object: any) => {
         if (!object) return null;
@@ -682,7 +982,7 @@ export const GridMap = React.memo<GridMapProps>(({
             ...viewState
         });
 
-        const [x, y] = viewport.project(node.position);
+        const [x, y] = viewport.project(nodePositions[node.id] || node.position);
         
         // Don't show if off screen
         if (x < 0 || x > dimensions.width || y < 0 || y > dimensions.height) return null;
@@ -706,7 +1006,7 @@ export const GridMap = React.memo<GridMapProps>(({
                 onClick={(e) => e.stopPropagation()}
             />
         );
-    }, [selectedNodeIds, nodes, viewState, dimensions, nodeAverages, nodeCurrents, voltageScale]);
+    }, [selectedNodeIds, nodes, viewState, dimensions, nodeAverages, nodeCurrents, voltageScale, nodePositions]);
 
     return (
         <div

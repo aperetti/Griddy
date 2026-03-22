@@ -20,6 +20,7 @@ interface CimRuleBuilderProps {
 export const CimRuleBuilder: React.FC<CimRuleBuilderProps> = ({ value, onChange }) => {
     const [schema, setSchema] = useState<Record<string, any>>({});
     const [config, setConfig] = useState<MatchConditions>(() => {
+        if (typeof value !== 'string') return value || { conditions: [] };
         try {
             const parsed = JSON.parse(value);
             return {
@@ -31,8 +32,14 @@ export const CimRuleBuilder: React.FC<CimRuleBuilderProps> = ({ value, onChange 
         }
     });
 
+    const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
     useEffect(() => {
         fetchCimSchema().then(setSchema).catch(console.error);
+        
+        const handleResize = () => setIsMobile(window.innerWidth < 768);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
     }, []);
 
     const updateConfig = (newConfig: MatchConditions) => {
@@ -92,8 +99,25 @@ export const CimRuleBuilder: React.FC<CimRuleBuilderProps> = ({ value, onChange 
                     Conditions (AND)
                 </label>
                 {config.conditions.map((cond, idx) => (
-                    <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'flex-start' }}>
-                        <div style={{ flex: 1 }}>
+                    <div 
+                        key={idx} 
+                        style={{ 
+                            display: 'flex', 
+                            flexDirection: isMobile ? 'column' : 'row',
+                            gap: '8px', 
+                            marginBottom: '12px', 
+                            alignItems: isMobile ? 'stretch' : 'flex-start',
+                            flexWrap: 'wrap',
+                            padding: '8px',
+                            background: 'rgba(0,0,0,0.1)',
+                            borderRadius: '4px'
+                        }}
+                    >
+                        <div style={{ 
+                            flex: isMobile ? '1 1 100%' : '1 1 200px', 
+                            minWidth: isMobile ? '100%' : '150px' 
+                        }}>
+                            <label style={{ display: 'block', fontSize: '10px', color: '#888', marginBottom: '2px' }}>Path</label>
                             <input
                                 list={`attrs-${idx}`}
                                 value={cond.path}
@@ -105,64 +129,119 @@ export const CimRuleBuilder: React.FC<CimRuleBuilderProps> = ({ value, onChange 
                                     background: '#2a2a2a',
                                     color: 'white',
                                     border: '1px solid #444',
-                                    borderRadius: '4px'
+                                    borderRadius: '4px',
+                                    fontSize: '13px'
                                 }}
                             />
                             <datalist id={`attrs-${idx}`}>
-                                {currentClassAttributes.map((attr: any) => (
-                                    <option key={attr.name} value={attr.name} />
-                                ))}
+                                {(() => {
+                                    const pathParts = cond.path.split('.');
+                                    const prefix = pathParts.slice(0, -1).join('.');
+                                    
+                                    let options: string[] = [];
+                                    
+                                    if (cond.path.startsWith('hierarchy')) {
+                                        const hierarchyKeys = ['mrid', 'name', 'class', 'attributes', 'children'];
+                                        if (cond.path === 'hierarchy' || cond.path === 'hierarchy.') {
+                                            options = hierarchyKeys.map(k => `hierarchy.${k}`);
+                                        } else if (cond.path.includes('attributes.')) {
+                                            options = currentClassAttributes.map((a: any) => `${prefix}.${a.name}`);
+                                        } else if (cond.path.includes('children.')) {
+                                            const parts = cond.path.split('.');
+                                            if (parts.length === 3) {
+                                                options = hierarchyKeys.map(k => `${prefix}.${k}`);
+                                            }
+                                        }
+                                    } else {
+                                        options = currentClassAttributes.map((attr: any) => attr.name);
+                                        options.push('hierarchy');
+                                    }
+                                    
+                                    return options.map(opt => (
+                                        <option key={opt} value={opt} />
+                                    ));
+                                })()}
                             </datalist>
                         </div>
-                        <select
-                            value={cond.op}
-                            onChange={(e) => updateCondition(idx, { op: e.target.value })}
-                            style={{
-                                width: '80px',
-                                padding: '6px',
-                                background: '#2a2a2a',
-                                color: 'white',
-                                border: '1px solid #444',
-                                borderRadius: '4px'
-                            }}
-                        >
-                            <option value="==">==</option>
-                            <option value="!=">!=</option>
-                            <option value=">">&gt;</option>
-                            <option value="<">&lt;</option>
-                            <option value=">=">&gt;=</option>
-                            <option value="<=">&lt;=</option>
-                            <option value="contains">contains</option>
-                        </select>
-                        <input
-                            value={cond.value}
-                            placeholder="value"
-                            onChange={(e) => updateCondition(idx, { value: e.target.value })}
-                            style={{
-                                width: '100px',
-                                padding: '6px',
-                                background: '#2a2a2a',
-                                color: 'white',
-                                border: '1px solid #444',
-                                borderRadius: '4px'
-                            }}
-                        />
-                        <button
-                            onClick={() => removeCondition(idx)}
-                            style={{
-                                padding: '6px 10px',
-                                background: '#442222',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '4px',
-                                cursor: 'pointer'
-                            }}
-                        >
-                            ×
-                        </button>
+
+                        <div style={{ 
+                            display: 'flex', 
+                            gap: '8px', 
+                            flex: isMobile ? '1 1 100%' : '1 1 auto',
+                            alignItems: 'flex-end'
+                        }}>
+                            <div style={{ flex: '1 1 100px', minWidth: '80px' }}>
+                                <label style={{ display: 'block', fontSize: '10px', color: '#888', marginBottom: '2px' }}>Op</label>
+                                <select
+                                    value={cond.op}
+                                    onChange={(e) => updateCondition(idx, { op: e.target.value })}
+                                    style={{
+                                        width: '100%',
+                                        padding: '6px',
+                                        background: '#2a2a2a',
+                                        color: 'white',
+                                        border: '1px solid #444',
+                                        borderRadius: '4px',
+                                        fontSize: '13px'
+                                    }}
+                                >
+                                    <option value="==">==</option>
+                                    <option value="!=">!=</option>
+                                    <option value=">">&gt;</option>
+                                    <option value="<">&lt;</option>
+                                    <option value=">=">&gt;=</option>
+                                    <option value="<=">&lt;=</option>
+                                    <option value="contains">contains</option>
+                                    <option value="exists">exists</option>
+                                    <option value="not_exists">not exists</option>
+                                </select>
+                            </div>
+                            {(cond.op !== 'exists' && cond.op !== 'not_exists') && (
+                                <div style={{ flex: '2 1 120px', minWidth: '100px' }}>
+                                    <label style={{ display: 'block', fontSize: '10px', color: '#888', marginBottom: '2px' }}>Value</label>
+                                    <input
+                                        value={cond.value}
+                                        placeholder="value"
+                                        onChange={(e) => updateCondition(idx, { value: e.target.value })}
+                                        style={{
+                                            width: '100%',
+                                            padding: '6px',
+                                            background: '#2a2a2a',
+                                            color: 'white',
+                                            border: '1px solid #444',
+                                            borderRadius: '4px',
+                                            fontSize: '13px'
+                                        }}
+                                    />
+                                </div>
+                            )}
+                            <div style={{ flex: '0 0 32px' }}>
+                                <button
+                                    onClick={() => removeCondition(idx)}
+                                    title="Remove condition"
+                                    style={{
+                                        width: '32px',
+                                        height: '32px',
+                                        padding: 0,
+                                        background: '#442222',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: '18px'
+                                    }}
+                                >
+                                    ×
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 ))}
             </div>
+
 
             <button
                 onClick={addCondition}

@@ -21,6 +21,8 @@ interface Props {
     onMinimize?: () => void;
     isPaused?: boolean;
     onConfirm?: () => void;
+    onFocus?: () => void;
+    zIndex?: number;
 }
 
 export const VoltageDistributionModal = memo(function VoltageDistributionModal({
@@ -38,6 +40,8 @@ export const VoltageDistributionModal = memo(function VoltageDistributionModal({
     onMinimize,
     isPaused,
     onConfirm,
+    onFocus,
+    zIndex,
 }: Props) {
     const handleExport = () => {
         if (!data || data.length === 0) return;
@@ -82,7 +86,8 @@ export const VoltageDistributionModal = memo(function VoltageDistributionModal({
             isMinimized={isMinimized}
             title={`Voltage Analysis: ${nodeName}`}
             storageKey="voltageWindowPos"
-            zIndex={20}
+            zIndex={zIndex ?? 20}
+            onFocus={onFocus}
             filterContent={filterContent}
             onExport={handleExport}
             onCopy={handleCopy}

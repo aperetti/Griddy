@@ -15,6 +15,8 @@ interface DiagnosticModalProps {
     onZoomTo?: (id: string, type: 'Node' | 'Edge') => void;
     onViewConsumption?: (nodeIds: string[]) => void;
     onViewVoltage?: (nodeIds: string[]) => void;
+    onFocus?: () => void;
+    zIndex?: number;
 }
 
 export function DiagnosticModal({ 
@@ -25,7 +27,9 @@ export function DiagnosticModal({
     title: initialTitle,
     onZoomTo,
     onViewConsumption,
-    onViewVoltage
+    onViewVoltage,
+    onFocus,
+    zIndex
 }: DiagnosticModalProps) {
     const [currentId, setCurrentId] = useState(initialId);
     const [currentType, setCurrentType] = useState(initialType);
@@ -126,6 +130,8 @@ export function DiagnosticModal({
             onClose={onClose}
             title={data?.name ? `Diagnostic: ${data.name}` : initialTitle}
             storageKey={`diagnostic-${initialId}`}
+            zIndex={zIndex}
+            onFocus={onFocus}
             onExport={handleExport}
             onCopy={handleCopy}
             loading={loading}

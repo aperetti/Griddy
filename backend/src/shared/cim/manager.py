@@ -149,6 +149,52 @@ class CimModelManager:
         """All pre-computed topology edges."""
         return self._topology_edges
 
+    def get_cim_schema(self) -> dict:
+        """Return a structured schema of common CIM classes and their attributes for the rule builder."""
+        schema = {}
+        # Core classes we want to highlight in the rule builder
+        target_classes = [
+            "PowerTransformer", "TransformerTank", "TransformerTankInfo", "TransformerEndInfo",
+            "Fuse", "Recloser", "Breaker", "LoadBreakSwitch", "Disconnector",
+            "EnergyConsumer", "EnergySource", "LinearShuntCompensator", "ACLineSegment",
+            "Asset", "AssetInfo"
+        ]
+        
+        cim = self.cim
+        graph = self.network.graph
+        
+        for class_name in target_classes:
+            cls_obj = getattr(cim, class_name, None)
+            if not cls_obj or cls_obj not in graph or not graph[cls_obj]:
+                continue
+                
+            # Take one instance to inspect attributes
+            sample_id = next(iter(graph[cls_obj]))
+            sample = graph[cls_obj][sample_id]
+            
+            attributes = []
+            if hasattr(sample, "__dataclass_fields__"):
+                for attr, field in sample.__dataclass_fields__.items():
+                    # Simplified attribute metadata
+                    # In a real CIM profile we'd check field.type, but for now we look at sample values
+                    val = getattr(sample, attr, None)
+                    attr_type = "string"
+                    if isinstance(val, (int, float)): attr_type = "number"
+                    elif isinstance(val, bool): attr_type = "boolean"
+                    
+                    attributes.append({
+                        "name": attr,
+                        "type": attr_type,
+                        "is_complex": not isinstance(val, (str, int, float, bool, type(None)))
+                    })
+            
+            schema[class_name] = {
+                "attributes": attributes,
+                "count": len(graph[cls_obj])
+            }
+            
+        return schema
+
     def get_cim_classes(self) -> dict[str, int]:
         """Summary of every CIM class in the model with object counts."""
         result = {}
@@ -544,7 +590,7 @@ class CimModelManager:
             
         # Add CurrentLimit from OperationalLimitSet if it exists
         mrid = _mrid_str(obj)
-        limit = self.network.index.equipment_current_limits.get(mrid)
+        limit = self._idx.equipment_current_limits.get(mrid)
         if limit is not None:
             detail["current_limit_a"] = limit
         val = _safe_float(getattr(obj, "breakingCapacity", None))

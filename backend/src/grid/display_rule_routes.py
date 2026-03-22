@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 import sqlite3
 import json
-from src.shared.dependencies import ADMIN_SQLITE_PATH
+from src.shared.dependencies import ADMIN_SQLITE_PATH, display_engine
 
 router = APIRouter(prefix="/api/display-rules", tags=["display-rules"])
 
@@ -21,6 +21,10 @@ class RuleUpdate(BaseModel):
     match_conditions: Optional[Dict[str, Any]] = None
     icon: Optional[str] = None
     color_hex: Optional[str] = None
+    size: float = 1.0
+    label: str = ""
+    css_overrides: Optional[List[Dict[str, Any]]] = None
+    radial_offset: float = 0.0
     enabled: bool = True
 
 # ── Helpers ───────────────────────────────────────────────────────
@@ -48,6 +52,7 @@ async def create_display_config(config: DisplayConfigUpdate):
             config_id = cursor.lastrowid
             if config.is_default:
                 conn.execute("UPDATE display_configs SET is_default = 0 WHERE id != ?", (config_id,))
+            display_engine.load_rules()
             return {"id": config_id, **config.dict()}
     return await run_in_threadpool(_create)
 
@@ -57,6 +62,7 @@ async def set_default_config(config_id: int):
         with _get_admin_conn() as conn:
             conn.execute("UPDATE display_configs SET is_default = 0")
             conn.execute("UPDATE display_configs SET is_default = 1 WHERE id = ?", (config_id,))
+            display_engine.load_rules()
             return {"success": True}
     return await run_in_threadpool(_set)
 
@@ -74,6 +80,9 @@ async def list_config_rules(config_id: int):
                 if d.get('match_conditions'):
                     try: d['match_conditions'] = json.loads(d['match_conditions'])
                     except: pass
+                if d.get('css_overrides'):
+                    try: d['css_overrides'] = json.loads(d['css_overrides'])
+                    except: pass
                 results.append(d)
             return results
     return await run_in_threadpool(_list)
@@ -83,13 +92,16 @@ async def add_config_rule(config_id: int, rule: RuleUpdate):
     def _add():
         with _get_admin_conn() as conn:
             cursor = conn.execute(
-                """INSERT INTO display_config_rules 
-                   (config_id, name, visual_type, priority, match_conditions, icon, color_hex, enabled)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (config_id, rule.name, rule.visual_type, rule.priority, 
+                """INSERT INTO display_config_rules
+                   (config_id, name, visual_type, priority, match_conditions, icon, color_hex, size, label, css_overrides, radial_offset, enabled, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
+                (config_id, rule.name, rule.visual_type, rule.priority,
                  json.dumps(rule.match_conditions) if rule.match_conditions else None,
-                 rule.icon, rule.color_hex, 1 if rule.enabled else 0)
+                 rule.icon, rule.color_hex, rule.size, rule.label,
+                 json.dumps(rule.css_overrides) if rule.css_overrides else None,
+                 rule.radial_offset, 1 if rule.enabled else 0)
             )
+            display_engine.load_rules()
             return {"id": cursor.lastrowid, "config_id": config_id, **rule.dict()}
     return await run_in_threadpool(_add)
 
@@ -99,13 +111,17 @@ async def update_config_rule(rule_id: int, rule: RuleUpdate):
         with _get_admin_conn() as conn:
             conn.execute(
                 """UPDATE display_config_rules SET
-                   name = ?, visual_type = ?, priority = ?, match_conditions = ?, icon = ?, color_hex = ?, enabled = ?,
+                   name = ?, visual_type = ?, priority = ?, match_conditions = ?, icon = ?, color_hex = ?,
+                   size = ?, label = ?, css_overrides = ?, radial_offset = ?, enabled = ?,
                    updated_at = CURRENT_TIMESTAMP
                    WHERE id = ?""",
                 (rule.name, rule.visual_type, rule.priority,
                  json.dumps(rule.match_conditions) if rule.match_conditions else None,
-                 rule.icon, rule.color_hex, 1 if rule.enabled else 0, rule_id)
+                 rule.icon, rule.color_hex, rule.size, rule.label,
+                 json.dumps(rule.css_overrides) if rule.css_overrides else None,
+                 rule.radial_offset, 1 if rule.enabled else 0, rule_id)
             )
+            display_engine.load_rules()
             return {"id": rule_id, **rule.dict()}
     return await run_in_threadpool(_update)
 
@@ -114,6 +130,7 @@ async def delete_config_rule(rule_id: int):
     def _delete():
         with _get_admin_conn() as conn:
             conn.execute("DELETE FROM display_config_rules WHERE id = ?", (rule_id,))
+            display_engine.load_rules()
             return {"success": True}
     return await run_in_threadpool(_delete)
 
@@ -136,6 +153,9 @@ async def get_active_config():
                 rd = dict(r)
                 if rd.get('match_conditions'):
                     try: rd['match_conditions'] = json.loads(rd['match_conditions'])
+                    except: pass
+                if rd.get('css_overrides'):
+                    try: rd['css_overrides'] = json.loads(rd['css_overrides'])
                     except: pass
                 rule_list.append(rd)
                 

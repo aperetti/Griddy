@@ -2,7 +2,6 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { dataRoutes } from './features/data/routes.js';
 import { configRoutes } from './features/config/routes.js';
-import { mappingRoutes } from './features/mapping/routes.js';
 
 const fastify = Fastify({
   logger: true
@@ -16,7 +15,7 @@ await fastify.register(cors, {
 // Register routes (slices)
 await fastify.register(dataRoutes, { prefix: '/api/data' });
 await fastify.register(configRoutes, { prefix: '/api/config' });
-await fastify.register(mappingRoutes, { prefix: '/api/mapping' });
+fastify.get('/ping', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 
 const start = async () => {
   try {

@@ -46,9 +46,21 @@ class DisplayRuleEngine:
                 rule = dict(row)
                 # Parse conditions JSON
                 try:
-                    rule['match_conditions'] = json.loads(rule['match_conditions'])
+                    rule['match_conditions'] = json.loads(rule['match_conditions']) if rule.get('match_conditions') else {}
                 except:
                     rule['match_conditions'] = {}
+                
+                # Parse css_overrides JSON: [{"conditions": {...}, "css": "..."}]
+                try:
+                    rule['css_overrides'] = json.loads(rule['css_overrides']) if rule.get('css_overrides') else []
+                except:
+                    rule['css_overrides'] = []
+                
+                # Ensure size and label have safe defaults if missing from DB
+                rule['size'] = rule.get('size', 1.0)
+                rule['label'] = rule.get('label', "")
+                rule['radial_offset'] = rule.get('radial_offset', 0.0)
+                
                 self._rules.append(rule)
 
             conn.close()
@@ -57,31 +69,61 @@ class DisplayRuleEngine:
             logger.error(f"Error loading display rules: {e}")
             self._rules = []
 
-    def classify_node(self, node_data: Dict[str, Any]) -> Optional[str]:
+    def classify_node(self, node_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
-        Classifies a node based on rules. Returns the visual_type of the first matching rule.
+        Classifies a node based on rules. Returns a dict {visual_type, size, label} of the first match.
         """
         if not self._rules:
             return None
 
         for rule in self._rules:
             # Nodes can match on equipment type or properties
-            if self._matches_rule(rule, node_data, is_edge=False):
-                return rule['visual_type']
+            match, objects_to_check = self._matches_rule(rule, node_data, is_edge=False)
+            if match:
+                # Evaluate CSS overrides
+                active_css = []
+                for override in rule.get('css_overrides', []):
+                    if self._check_conditions(override.get('conditions', {}), objects_to_check):
+                        active_css.append(override.get('css', ""))
+                
+                return {
+                    "visual_type": rule['visual_type'],
+                    "size": rule.get('size', 1.0),
+                    "label": rule.get('label', ""),
+                    "icon": rule.get('icon'),
+                    "color_hex": rule.get('color_hex'),
+                    "radial_offset": rule.get('radial_offset', 0.0),
+                    "display_css": "\n".join(active_css) if active_css else ""
+                }
         
         return None
 
-    def classify_edge(self, edge_data: Dict[str, Any]) -> Optional[str]:
+    def classify_edge(self, edge_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
-        Classifies an edge based on rules. Returns the visual_type of the first matching rule.
+        Classifies an edge based on rules. Returns a dict {visual_type, size, label} of the first match.
         """
         if not self._rules:
             return None
 
         for rule in self._rules:
             # Edges can match on edge_type or properties
-            if self._matches_rule(rule, edge_data, is_edge=True):
-                return rule['visual_type']
+            match, objects_to_check = self._matches_rule(rule, edge_data, is_edge=True)
+            if match:
+                # Evaluate CSS overrides
+                active_css = []
+                for override in rule.get('css_overrides', []):
+                    if self._check_conditions(override.get('conditions', {}), objects_to_check):
+                        active_css.append(override.get('css', ""))
+                        
+                return {
+                    "visual_type": rule['visual_type'],
+                    "size": rule.get('size', 1.0),
+                    "label": rule.get('label', ""),
+                    "icon": rule.get('icon'),
+                    "color_hex": rule.get('color_hex'),
+                    "radial_offset": rule.get('radial_offset', 0.0),
+                    "display_css": "\n".join(active_css) if active_css else ""
+                }
         
         return None
 
@@ -105,6 +147,8 @@ class DisplayRuleEngine:
         """Helper to evaluate operators."""
         if op == '==' : return actual_val == target_val
         if op == '!=' : return actual_val != target_val
+        if op == 'exists': return actual_val is not None
+        if op == 'not_exists': return actual_val is None
         
         # For numeric/sequence ops, ensure actual_val is not None
         if actual_val is None: return False
@@ -119,26 +163,58 @@ class DisplayRuleEngine:
             return False
         return False
 
-    def _matches_rule(self, rule: Dict[str, Any], data: Dict[str, Any], is_edge: bool = False) -> bool:
-        """Checks if a node or edge matches all conditions in a rule (AND logic)."""
+    def _check_conditions(self, conditions_json: Dict[str, Any], objects_to_check: List[Dict[str, Any]]) -> bool:
+        """Helper to evaluate standard CIM conditional logic against a set of objects."""
+        if not conditions_json:
+            return True # No conditions = always match
+
+        rule_conditions = conditions_json.get('conditions', [])
+        if not rule_conditions:
+            return True
+
+        # All conditions in the list must be satisfied (AND logic)
+        # But for each condition, it's satisfied if ANY object in 'objects_to_check' matches it.
+        for cond in rule_conditions:
+            path = cond.get('path')
+            op = cond.get('op', '==')
+            target_val = cond.get('value')
+            
+            condition_met = False
+            for obj in objects_to_check:
+                actual_val = self._get_nested_value(obj, path)
+                if self._check_op(actual_val, op, target_val):
+                    condition_met = True
+                    break
+            
+            if not condition_met:
+                return False
+        
+        return True
+
+    def _matches_rule(self, rule: Dict[str, Any], data: Dict[str, Any], is_edge: bool = False) -> tuple[bool, List[Dict[str, Any]]]:
+        """Checks if a node or edge matches all conditions in a rule (AND logic). 
+        Returns (match_status, [relevant_cim_objects]).
+        """
         # 1. Type-based early exit (Legacy Filters)
         if is_edge:
             allowed_edge_types = rule.get('match_edge_types')
             if allowed_edge_types:
                 if isinstance(allowed_edge_types, str): allowed_edge_types = json.loads(allowed_edge_types)
-                if data.get('edge_type') not in allowed_edge_types: return False
+                if data.get('edge_type') not in allowed_edge_types: return False, []
         else:
             allowed_equip = rule.get('match_equipment')
             if allowed_equip:
                 if isinstance(allowed_equip, str): allowed_equip = json.loads(allowed_equip)
                 attached = data.get('attached_equipment', [])
-                if not any(e.get('type') in allowed_equip for e in attached): return False
+                if not any(e.get('type') in allowed_equip for e in attached): return False, []
 
         # 2. Structured Condition Match
         conditions_json = rule.get('match_conditions', {})
         if isinstance(conditions_json, str):
-            try: conditions_json = json.loads(conditions_json)
-            except: conditions_json = {}
+            try: 
+                conditions_json = json.loads(conditions_json)
+            except: 
+                conditions_json = {}
 
         target_class = conditions_json.get('target_class')
         
@@ -158,25 +234,11 @@ class DisplayRuleEngine:
                 objects_to_check = [data] + attached
 
         if not objects_to_check:
-            return False
+            return False, []
 
-        # All conditions in the list must be satisfied (AND logic)
-        # But for each condition, it's satisfied if ANY object in 'objects_to_check' matches it.
-        rule_conditions = conditions_json.get('conditions', [])
-        for cond in rule_conditions:
-            path = cond.get('path')
-            op = cond.get('op', '==')
-            target_val = cond.get('value')
-            
-            condition_met = False
-            for obj in objects_to_check:
-                actual_val = self._get_nested_value(obj, path)
-                if self._check_op(actual_val, op, target_val):
-                    condition_met = True
-                    break
-            
-            if not condition_met:
-                return False
+        # Evaluate recursive conditions
+        if not self._check_conditions(conditions_json, objects_to_check):
+            return False, []
 
         # 3. Legacy Property Match (match_has_property)
         req_props = rule.get('match_has_property')
@@ -185,6 +247,6 @@ class DisplayRuleEngine:
             node_props = data.get('properties', {})
             for key, val in req_props.items():
                 if node_props.get(key) != val and data.get(key) != val:
-                    return False
+                    return False, []
 
-        return True
+        return True, objects_to_check

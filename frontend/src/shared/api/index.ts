@@ -78,8 +78,8 @@ export interface PhaseBalanceResponse {
 }
 
 const API_BASE = '/api';
-// Point to the main Python backend (port 8000) for Display Rule configuration
-export const ADMIN_API_BASE = 'http://127.0.0.1:8000/api';
+// Use relative path for LAN compatibility (proxied via Vite on port 3001)
+export const ADMIN_API_BASE = API_BASE;
 
 export interface DisplayConfig {
     id: number;
@@ -94,10 +94,17 @@ export interface DisplayRule {
     config_id: number;
     name: string;
     priority: number;
-    match_conditions: string;
     visual_type: string;
     icon?: string;
     color_hex?: string;
+    size?: number;
+    label?: string;
+    css_overrides?: Array<{
+        conditions: any;
+        css: string;
+    }>;
+    radial_offset?: number;
+    match_conditions: any; // Can be string (from inputs) or object (from API)
 }
 
 export const fetchDisplayConfigs = async (): Promise<DisplayConfig[]> => {
@@ -115,17 +122,37 @@ export const setDefaultDisplayConfig = async (configId: number): Promise<void> =
 };
 
 export const saveDisplayRule = async (rule: Partial<DisplayRule>): Promise<DisplayRule> => {
-    const method = rule.id ? 'PUT' : 'POST';
-    const url = rule.id 
-        ? `${ADMIN_API_BASE}/display-rules/rules/${rule.id}` 
-        : `${ADMIN_API_BASE}/display-rules/configs/${rule.config_id}/rules`;
+    const payload = { ...rule };
+    // Ensure match_conditions is an object for the backend (FastAPI expects Dict)
+    if (typeof payload.match_conditions === 'string') {
+        try {
+            payload.match_conditions = JSON.parse(payload.match_conditions);
+        } catch (e) {
+            console.error('Invalid match_conditions JSON in saveDisplayRule', e);
+        }
+    }
+
+    const method = payload.id ? 'PUT' : 'POST';
+    const url = payload.id 
+        ? `${ADMIN_API_BASE}/display-rules/rules/${payload.id}` 
+        : `${ADMIN_API_BASE}/display-rules/configs/${payload.config_id}/rules`;
     
     const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(rule)
+        body: JSON.stringify(payload)
     });
-    return res.json();
+    
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`API Error ${res.status}: ${text.slice(0, 100)}`);
+    }
+
+    const contentType = res.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+        return res.json();
+    }
+    return res.text() as any;
 };
 
 export const deleteDisplayRule = async (ruleId: number): Promise<void> => {

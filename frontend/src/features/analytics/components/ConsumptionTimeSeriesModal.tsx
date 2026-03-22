@@ -29,6 +29,8 @@ interface Props {
     onMinimize?: () => void;
     isPaused?: boolean;
     onConfirm?: () => void;
+    onFocus?: () => void;
+    zIndex?: number;
 }
 
 const MONTH_OPTIONS = [
@@ -62,6 +64,8 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
     onMinimize,
     isPaused,
     onConfirm,
+    onFocus,
+    zIndex,
 }: Props) {
     const [startHour, setStartHour] = useState<string>('0');
     const [endHour, setEndHour] = useState<string>('23');
@@ -408,7 +412,8 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
             isMinimized={isMinimized}
             title={`Grid Analytics: ${nodeName}`}
             storageKey="consumptionWindowPos"
-            zIndex={1000}
+            zIndex={zIndex ?? 1000}
+            onFocus={onFocus}
             filterContent={filterContent}
             onExport={handleExport}
             onCopy={handleCopy}

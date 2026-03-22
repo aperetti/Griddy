@@ -55,6 +55,7 @@ interface AnalysisInstance {
   // Large query handling
   isPaused?: boolean;
   pendingRequest?: { nodeIds: string[], start: string, end: string, degrees?: number | null };
+  zIndex?: number;
 }
 
 const calculateRange = (config: GlobalConfig) => {
@@ -141,6 +142,28 @@ export default function App() {
   const [nodeAverages, setNodeAverages] = useState<Record<string, number> | null>(null);
   const [nodeCurrents, setNodeCurrents] = useState<Record<string, { a: number, b: number, c: number }> | null>(null);
   const [topologyLoading, setTopologyLoading] = useState(false);
+  const [topologyVersion, setTopologyVersion] = useState(0);
+  const refreshTopology = useCallback(() => setTopologyVersion(v => v + 1), []);
+  const [maxZIndex, setMaxZIndex] = useState(1000);
+  const [displayRulesZIndex, setDisplayRulesZIndex] = useState(1005);
+
+  const bringWindowToFront = useCallback((id: string) => {
+    setMaxZIndex(prev => {
+      const newZ = prev + 1;
+      setAnalysisWindows(current => current.map(w =>
+        w.id === id ? { ...w, zIndex: newZ } : w
+      ));
+      return newZ;
+    });
+  }, []);
+
+  const bringDisplayRulesToFront = useCallback(() => {
+    setMaxZIndex(prev => {
+      const newZ = prev + 1;
+      setDisplayRulesZIndex(newZ);
+      return newZ;
+    });
+  }, []);
   const [isSearching, setIsSearching] = useState(false);
   const [mainViewState, setMainViewState] = useState<any>(null);
   const [goToLocation, setGoToLocation] = useState<{ longitude: number; latitude: number } | null>(null);
@@ -287,7 +310,7 @@ export default function App() {
         // Reset searching state after topology is loaded and any potential zooms have triggered
         setTimeout(() => setIsSearching(false), 1500);
       });
-  }, [activeModelIds]);
+  }, [activeModelIds, topologyVersion]);
   const handleShowDiagnostic = async (targetId?: string, targetType?: 'Node' | 'Edge') => {
     const id = targetId || selectedNodes[selectedNodes.length - 1]?.id;
     if (!id) return;
@@ -308,10 +331,13 @@ export default function App() {
 
     const existing = analysisWindows.find(w => w.id === windowId);
     if (existing) {
+      bringWindowToFront(windowId);
       updateWindow(windowId, { isOpen: true, isMinimized: false });
       return;
     }
 
+    const newZ = maxZIndex + 1;
+    setMaxZIndex(newZ);
     const newWindow: AnalysisInstance = {
       id: windowId,
       type: 'diagnostic',
@@ -322,6 +348,7 @@ export default function App() {
       isMinimized: false,
       loading: false,
       data: [],
+      zIndex: newZ
     };
     setAnalysisWindows(prev => [...prev, newWindow]);
   };
@@ -516,7 +543,9 @@ export default function App() {
       loading: true,
       data: [],
       isPaused: false,
+      zIndex: maxZIndex + 1
     };
+    setMaxZIndex(prev => prev + 1);
     setAnalysisWindows(prev => [...prev, newWindow]);
 
     try {
@@ -651,8 +680,12 @@ export default function App() {
     }
 
     if (existing) {
-        updateWindow(windowId, { loading: true, degrees: degreesToUse, isMinimized: false, isOpen: true });
+        const newZ = maxZIndex + 1;
+        setMaxZIndex(newZ);
+        updateWindow(windowId, { loading: true, degrees: degreesToUse, isMinimized: false, isOpen: true, zIndex: newZ });
     } else {
+        const newZ = maxZIndex + 1;
+        setMaxZIndex(newZ);
         const newWindow: AnalysisInstance = {
             id: windowId,
             type: 'voltage',
@@ -664,6 +697,7 @@ export default function App() {
             data: [],
             degrees: degreesToUse,
             isPaused: false,
+            zIndex: newZ
         };
         setAnalysisWindows(prev => [...prev, newWindow]);
     }
@@ -713,30 +747,9 @@ export default function App() {
       <DisplayRulesManager 
         opened={displayRulesOpen} 
         onClose={() => setDisplayRulesOpen(false)} 
-      />
-      <DiagnosticModal
-        isOpen={analysisWindows.some(w => w.type === 'diagnostic' && w.isOpen)}
-        onClose={() => setAnalysisWindows(prev => prev.map(w => w.type === 'diagnostic' ? { ...w, isOpen: false } : w))}
-        id={analysisWindows.find(w => w.type === 'diagnostic' && w.isOpen)?.id || ""}
-        type={analysisWindows.find(w => w.type === 'diagnostic' && w.isOpen)?.assetType || "Node"}
-        title={analysisWindows.find(w => w.type === 'diagnostic' && w.isOpen)?.nodeName || "Diagnostic"}
-        onZoomTo={handleZoomToAsset}
-        onViewConsumption={(nodeIds) => {
-          const id = nodeIds[0];
-          const asset = nodes.find(n => n.id === id) || edges.find(e => e.id === id);
-          if (asset) {
-            const nodePayload = 'position' in asset ? asset : { id: asset.id!, name: asset.name || asset.id! } as Node;
-            handleShowConsumption(undefined, nodePayload);
-          }
-        }}
-        onViewVoltage={(nodeIds) => {
-          const id = nodeIds[0];
-          const asset = nodes.find(n => n.id === id) || edges.find(e => e.id === id);
-          if (asset) {
-            const nodePayload = 'position' in asset ? asset : { id: asset.id!, name: asset.name || asset.id! } as Node;
-            handleShowVoltageDistribution(undefined, nodePayload);
-          }
-        }}
+        onFocus={bringDisplayRulesToFront}
+        zIndex={displayRulesZIndex}
+        onRulesChanged={refreshTopology}
       />
 
       <Box h="100vh" w="100vw" style={{ position: 'relative', overflow: 'hidden' }}>
@@ -772,7 +785,7 @@ export default function App() {
           />
 
           {/* Floating Action Button and Analysis Toolbar */}
-          <Box style={{ position: 'absolute', top: 20, right: 20, zIndex: 100, pointerEvents: 'none' }}>
+          <Box style={{ position: 'absolute', top: 20, right: 20, zIndex: 10000, pointerEvents: 'none' }}>
             <Stack align="flex-end" gap="sm" style={{ pointerEvents: 'none' }}>
               <Group gap="xs" wrap="nowrap" justify="flex-end" style={{ pointerEvents: 'auto' }}>
                 <GlobalSearch 
@@ -831,15 +844,16 @@ export default function App() {
                   </ActionIcon>
                 </Tooltip>
 
-                <Menu 
-                  shadow="md" 
-                  width={200} 
-                  position="bottom-end" 
-                  withArrow 
-                  offset={10}
-                  opened={menuOpened}
-                  onChange={setMenuOpened}
-                >
+                  <Menu 
+                    shadow="md" 
+                    width={200} 
+                    position="bottom-end" 
+                    withArrow 
+                    offset={10}
+                    opened={menuOpened}
+                    onChange={setMenuOpened}
+                    zIndex={11000}
+                  >
                   <Menu.Target>
                     <ActionIcon
                       variant="filled"
@@ -949,13 +963,14 @@ export default function App() {
             </Box>
           )}
 
-          {/* Full Width Bottom Modals */}
           {analysisWindows.map(win => (
             win.type === 'consumption' ? (
               <ConsumptionTimeSeriesModal
                 key={win.id}
                 isOpen={win.isOpen}
                 onClose={() => removeWindow(win.id)}
+                onFocus={() => bringWindowToFront(win.id)}
+                zIndex={win.zIndex}
                 loading={win.loading}
                 data={win.data}
                 estimatedRows={win.estimatedRows}
@@ -970,6 +985,8 @@ export default function App() {
                 key={win.id}
                 isOpen={win.isOpen}
                 onClose={() => removeWindow(win.id)}
+                onFocus={() => bringWindowToFront(win.id)}
+                zIndex={win.zIndex}
                 loading={win.loading}
                 data={win.data}
                 scatterData={win.scatterData || []}
@@ -988,6 +1005,8 @@ export default function App() {
                 key={win.id}
                 isOpen={win.isOpen}
                 onClose={() => removeWindow(win.id)}
+                onFocus={() => bringWindowToFront(win.id)}
+                zIndex={win.zIndex}
                 id={win.nodeIds[0]}
                 type={win.assetType || 'Node'}
                 title={win.nodeName}
@@ -997,7 +1016,7 @@ export default function App() {
           ))}
 
           {/* Minimized Modal Tabs */}
-          <Box style={{ position: 'absolute', bottom: 20, left: 20, zIndex: 110, display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <Box style={{ position: 'absolute', bottom: 20, left: 20, zIndex: 9999, display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
             {analysisWindows.filter(w => w.isOpen && w.isMinimized).map(win => (
               <Paper
                 key={win.id}
@@ -1015,9 +1034,8 @@ export default function App() {
                   border: '1px solid rgba(255,255,255,0.1)'
                 }}
                 onClick={() => {
-                  setAnalysisWindows(prev => prev.map(w =>
-                    w.id === win.id ? { ...w, isMinimized: false } : { ...w, isMinimized: true }
-                  ));
+                  bringWindowToFront(win.id);
+                  updateWindow(win.id, { isMinimized: false });
                 }}
               >
                 <Group gap="xs" wrap="nowrap">

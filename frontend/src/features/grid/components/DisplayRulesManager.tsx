@@ -1,13 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Fragment } from 'react';
+import { useMediaQuery } from '@mantine/hooks';
 import { 
     Table, Button, Group, ActionIcon, 
     Stack, Text, Badge, Select, TextInput, 
     NumberInput, JsonInput, Paper, Divider,
-    Autocomplete, ColorInput, ColorSwatch, Avatar,
-    Alert
+    ColorInput, ColorSwatch, Box,
+    Alert, FileButton, Grid, Textarea
 } from '@mantine/core';
-import { Plus, Trash2, Edit2, X, AlertCircle } from 'lucide-react';
+import {
+    X, Upload, Maximize2, Edit2, Trash2, Plus,
+    AlertCircle, Code, Eye, Info
+} from 'lucide-react';
 import { AnalysisWindow } from '../../analytics/components/AnalysisWindow';
+import {
+    Tooltip
+} from '@mantine/core';
 import {
     fetchDisplayConfigs, fetchDisplayRules,
     saveDisplayRule, deleteDisplayRule,
@@ -19,38 +26,34 @@ import { CimRuleBuilder } from './CimRuleBuilder';
 interface DisplayRulesManagerProps {
     opened: boolean;
     onClose: () => void;
+    onFocus?: () => void;
+    onRulesChanged?: () => void;
+    zIndex?: number;
 }
 
-const ICON_SUGGESTIONS = [
-    'mdi:transformer',
-    'mdi:transmission-tower',
-    'mdi:electric-switch',
-    'mdi:meter-electric',
-    'mdi:factory',
-    'mdi:home',
-    'mdi:office-building',
-    'mdi:lightning-bolt',
-    'mdi:alert-circle',
-    'mdi:check-circle',
-    'mdi:alpha-t-box',
-    'mdi:alpha-s-box',
-    'mdi:alpha-m-box',
-    'mdi:alpha-c-box',
-    'mdi:fuse',
-    'mdi:recloser'
-];
 
-export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({ opened, onClose }) => {
+export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({ 
+    opened, 
+    onClose,
+    onFocus,
+    onRulesChanged,
+    zIndex = 1005
+}) => {
     const [configs, setConfigs] = useState<DisplayConfig[]>([]);
     const [selectedConfigId, setSelectedConfigId] = useState<number | null>(null);
     const [rules, setRules] = useState<DisplayRule[]>([]);
     const [editingRule, setEditingRule] = useState<Partial<DisplayRule> | null>(null);
-    const [useBuilder, setUseBuilder] = useState(true);
     const [configError, setConfigError] = useState<string | null>(null);
+    const [saveError, setSaveError] = useState<string | null>(null);
+    const [useBuilder, setUseBuilder] = useState(true);
+    const [isEditorOpen, setIsEditorOpen] = useState(false);
+    const [editorValue, setEditorValue] = useState('');
+    const isMobile = useMediaQuery('(max-width: 768px)');
 
     useEffect(() => {
         if (opened) {
             loadConfigs();
+            onFocus?.();
         }
     }, [opened]);
 
@@ -92,6 +95,7 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({ opened
         try {
             await setDefaultDisplayConfig(configId);
             loadConfigs();
+            onRulesChanged?.();
         } catch (err) {
             console.error('Failed to set default', err);
         }
@@ -100,11 +104,14 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({ opened
     const handleSaveRule = async () => {
         if (!editingRule || !selectedConfigId) return;
         try {
+            setSaveError(null);
             await saveDisplayRule({ ...editingRule, config_id: selectedConfigId });
             setEditingRule(null);
             loadRules(selectedConfigId);
-        } catch (err) {
+            onRulesChanged?.();
+        } catch (err: any) {
             console.error('Failed to save rule', err);
+            setSaveError(err.message || 'Failed to save rule. Check JSON format and required fields.');
         }
     };
 
@@ -112,10 +119,35 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({ opened
         if (!confirm('Are you sure you want to delete this rule?')) return;
         try {
             await deleteDisplayRule(ruleId);
-            if (selectedConfigId) loadRules(selectedConfigId);
+            if (selectedConfigId) {
+                loadRules(selectedConfigId);
+                onRulesChanged?.();
+            }
         } catch (err) {
             console.error('Failed to delete rule', err);
         }
+    };
+
+    const handleFileUpload = (file: File | null) => {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const content = e.target?.result as string;
+            if (content.trim().startsWith('<svg')) {
+                setEditingRule(prev => prev ? { ...prev, icon: content } : null);
+            }
+        };
+        reader.readAsText(file);
+    };
+
+    const openEditor = () => {
+        setEditorValue(editingRule?.icon || '');
+        setIsEditorOpen(true);
+    };
+
+    const saveFromEditor = () => {
+        setEditingRule(prev => prev ? { ...prev, icon: editorValue } : null);
+        setIsEditorOpen(false);
     };
 
     const handleAddRule = () => {
@@ -124,21 +156,59 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({ opened
             priority: 0,
             match_conditions: '{}',
             visual_type: 'Custom',
-            color_hex: ''
+            color_hex: '',
+            size: 1.0,
+            label: '',
+            css_overrides: []
+        });
+    };
+
+    const addOverride = () => {
+        setEditingRule(prev => {
+            if (!prev) return null;
+            const overrides = [...(prev.css_overrides || [])];
+            overrides.push({ conditions: {}, css: '' });
+            return { ...prev, css_overrides: overrides };
+        });
+    };
+
+    const removeOverride = (index: number) => {
+        setEditingRule(prev => {
+            if (!prev) return null;
+            const overrides = [...(prev.css_overrides || [])];
+            overrides.splice(index, 1);
+            return { ...prev, css_overrides: overrides };
+        });
+    };
+
+    const updateOverride = (index: number, override: any) => {
+        setEditingRule(prev => {
+            if (!prev) return null;
+            const overrides = [...(prev.css_overrides || [])];
+            overrides[index] = override;
+            return { ...prev, css_overrides: overrides };
         });
     };
 
     return (
-        <AnalysisWindow
-            isOpen={opened}
-            onClose={onClose}
-            title="Display Rules Manager"
-            storageKey="display-rules-manager"
-        >
+        <Fragment>
+            <AnalysisWindow
+                isOpen={opened}
+                onClose={onClose}
+                title="Display Rules Manager"
+                storageKey="display-rules-manager"
+                zIndex={zIndex}
+                onFocus={onFocus}
+            >
             <Stack gap="md" h="100%">
                 {configError && (
                     <Alert icon={<AlertCircle size={16} />} title="Backend Error" color="red" variant="light">
                         {configError}
+                    </Alert>
+                )}
+                {saveError && (
+                    <Alert icon={<AlertCircle size={16} />} title="Save Error" color="red" variant="light" withCloseButton onClose={() => setSaveError(null)}>
+                        {saveError}
                     </Alert>
                 )}
                 <Group justify="space-between" align="center" wrap="nowrap">
@@ -150,6 +220,7 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({ opened
                         onChange={(val) => setSelectedConfigId(val ? parseInt(val) : null)}
                         style={{ flex: 1 }}
                         size="xs"
+                        comboboxProps={{ zIndex: zIndex + 1000 }}
                     />
                     <Button
                         variant="light"
@@ -175,7 +246,14 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({ opened
                                 </ActionIcon>
                             </Group>
                             <TextInput
-                                label="Rule Name"
+                                label={
+                                    <Group gap={4} wrap="nowrap">
+                                        <Text size="xs" fw={500}>Rule Name</Text>
+                                        <Tooltip label="Human-readable name for this display rule." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                            <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                        </Tooltip>
+                                    </Group>
+                                }
                                 placeholder="e.g. Substation Regulators"
                                 value={editingRule?.name || ''}
                                 onChange={(e) => setEditingRule(prev => prev ? { ...prev, name: e.target.value } : null)}
@@ -183,21 +261,41 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({ opened
                             />
                             <Group grow>
                                 <TextInput
-                                    label="Visual Type Override"
-                                    placeholder="e.g. Regulator"
+                                    label={
+                                        <Group gap={4} wrap="nowrap">
+                                            <Text size="xs" fw={500}>Visual Type</Text>
+                                            <Tooltip label="The logical category for this rule (e.g., Transformer, Meter). Matches the 'type' field in the topology JSON." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                            </Tooltip>
+                                        </Group>
+                                    }
+                                    placeholder="e.g. Transformer"
                                     value={editingRule?.visual_type || ''}
                                     onChange={(e) => setEditingRule(prev => prev ? { ...prev, visual_type: e.target.value } : null)}
                                     size="xs"
                                 />
                                 <NumberInput
-                                    label="Priority"
+                                    label={
+                                        <Group gap={4} wrap="nowrap">
+                                            <Text size="xs" fw={500}>Priority</Text>
+                                            <Tooltip label="Controls matching order. Higher priority rules are evaluated first." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                            </Tooltip>
+                                        </Group>
+                                    }
                                     value={editingRule?.priority || 0}
                                     onChange={(val) => setEditingRule(prev => prev ? { ...prev, priority: typeof val === 'number' ? val : 0 } : null)}
                                     size="xs"
                                 />
                             </Group>
+
                             <Group justify="space-between" align="center">
-                                <Text size="xs" fw={500}>Match Conditions</Text>
+                                <Group gap={4} wrap="nowrap">
+                                    <Text size="xs" fw={500}>Match Conditions</Text>
+                                    <Tooltip label="Logic used to identify assets from the topology that this rule should apply to." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                        <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                    </Tooltip>
+                                </Group>
                                 <Button
                                     variant="subtle"
                                     size="compact-xs"
@@ -209,7 +307,7 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({ opened
 
                             {useBuilder ? (
                                 <CimRuleBuilder
-                                    value={editingRule?.match_conditions || '{}'}
+                                    value={typeof editingRule?.match_conditions === 'string' ? editingRule.match_conditions : JSON.stringify(editingRule?.match_conditions || {})}
                                     onChange={(val) => setEditingRule(prev => prev ? { ...prev, match_conditions: val } : null)}
                                 />
                             ) : (
@@ -219,52 +317,187 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({ opened
                                     formatOnBlur
                                     autosize
                                     minRows={4}
-                                    value={editingRule?.match_conditions || '{}'}
+                                    value={typeof editingRule?.match_conditions === 'string' ? editingRule.match_conditions : JSON.stringify(editingRule?.match_conditions || {}, null, 2)}
                                     onChange={(val) => setEditingRule(prev => prev ? { ...prev, match_conditions: val } : null)}
                                     size="xs"
                                 />
                             )}
-                            <Group py="sm" align="flex-end">
-                                <Stack gap={4} style={{ flex: 1 }}>
-                                    <Autocomplete
-                                        label="Icon (optional)"
-                                        placeholder="e.g. mdi:transformer"
-                                        data={ICON_SUGGESTIONS}
-                                        value={editingRule?.icon || ''}
-                                        onChange={(val: string) => setEditingRule(prev => prev ? { ...prev, icon: val } : null)}
-                                        size="xs"
-                                        comboboxProps={{ withinPortal: true, zIndex: 1100 }}
-                                        renderOption={({ option }: { option: any }) => (
-                                            <Group gap="xs">
-                                                <Avatar 
-                                                    src={`https://api.iconify.design/${option.value.replace(':', '/')}.svg`} 
-                                                    size="xs" 
-                                                    radius="0"
-                                                    styles={{ image: { filter: 'invert(1)' } }}
-                                                />
-                                                <Text size="xs">{option.value}</Text>
+                            <Grid gutter="xs" align="flex-end" pt="sm">
+                                <Grid.Col span={{ base: 4, sm: 2 }}>
+                                    <NumberInput
+                                        label={
+                                            <Group gap={4} wrap="nowrap">
+                                                <Text size="xs" fw={500}>Size</Text>
+                                                <Tooltip label="Scaling factor applied to icons or line widths." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                    <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                                </Tooltip>
                                             </Group>
+                                        }
+                                        placeholder="1.0"
+                                        step={0.1}
+                                        decimalScale={1}
+                                        value={editingRule?.size || 1.0}
+                                        onChange={(val) => setEditingRule(prev => prev ? { ...prev, size: typeof val === 'number' ? val : 1.0 } : null)}
+                                        size="xs"
+                                    />
+                                </Grid.Col>
+                                <Grid.Col span={{ base: 8, sm: 4 }}>
+                                    <Stack gap={4}>
+                                        <Text size="xs" fw={500}>SVG Icon</Text>
+                                        <Group gap="xs" wrap="nowrap">
+                                            <FileButton onChange={handleFileUpload} accept="image/svg+xml">
+                                                {(props) => (
+                                                    <Button {...props} variant="light" size="xs" leftSection={<Upload size={14} />}>
+                                                        Upload
+                                                    </Button>
+                                                )}
+                                            </FileButton>
+                                            <Button 
+                                                variant="light" 
+                                                size="xs" 
+                                                leftSection={<Maximize2 size={14} />}
+                                                onClick={openEditor}
+                                                style={{ flex: 1 }}
+                                            >
+                                                {isMobile ? "Live" : "Live Editor"}
+                                            </Button>
+                                        </Group>
+                                    </Stack>
+                                </Grid.Col>
+                                
+                                <Grid.Col span={{ base: 4, sm: 'auto' }}>
+                                    <Group justify="center" align="center" h="100%">
+                                        {editingRule?.icon && editingRule.icon.trim().startsWith('<svg') ? (
+                                            <Box style={{ 
+                                                width: 32, 
+                                                height: 32, 
+                                                display: 'flex', 
+                                                alignItems: 'center', 
+                                                justifyContent: 'center',
+                                                background: 'rgba(255,255,255,0.1)',
+                                                borderRadius: 4,
+                                                overflow: 'hidden'
+                                            }}>
+                                                <div 
+                                                    style={{ width: '100%', height: '100%', display: 'flex' }}
+                                                    dangerouslySetInnerHTML={{ __html: editingRule.icon }} 
+                                                />
+                                            </Box>
+                                        ) : (
+                                            <Box style={{ width: 32, height: 32, border: '1px dashed rgba(255,255,255,0.2)', borderRadius: 4 }} />
                                         )}
+                                    </Group>
+                                </Grid.Col>
+
+                                <Grid.Col span={{ base: 8, sm: 3 }}>
+                                    <ColorInput
+                                        label={
+                                            <Group gap={4} wrap="nowrap">
+                                                <Text size="xs" fw={500}>Color</Text>
+                                                <Tooltip label="Sets the primary color for icons and lines matching this rule." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                    <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                                </Tooltip>
+                                            </Group>
+                                        }
+                                        placeholder="#FF..."
+                                        value={editingRule?.color_hex || ''}
+                                        onChange={(val: string) => setEditingRule(prev => prev ? { ...prev, color_hex: val } : null)}
+                                        size="xs"
+                                        popoverProps={{ zIndex: zIndex + 1000 }}
+                                        disallowInput
                                     />
-                                </Stack>
-                                {editingRule?.icon && (
-                                    <Avatar 
-                                        src={`https://api.iconify.design/${editingRule.icon.replace(':', '/')}.svg`} 
-                                        size="sm" 
-                                        radius="0"
-                                        mb={4}
-                                        styles={{ image: { filter: 'invert(1)' } }}
+                                </Grid.Col>
+
+                                <Grid.Col span={{ base: 6, sm: 2 }}>
+                                    <TextInput
+                                        label={
+                                            <Group gap={4} wrap="nowrap">
+                                                <Text size="xs" fw={500}>Label</Text>
+                                                <Tooltip label="Static text that will appear in the node's label on the map view." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                    <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                                </Tooltip>
+                                            </Group>
+                                        }
+                                        placeholder="Label..."
+                                        value={editingRule?.label || ''}
+                                        onChange={(e) => setEditingRule(prev => prev ? { ...prev, label: e.target.value } : null)}
+                                        size="xs"
                                     />
-                                )}
-                                <ColorInput
-                                    label="Color (optional)"
-                                    placeholder="#FF7800"
-                                    value={editingRule?.color_hex || ''}
-                                    onChange={(val: string) => setEditingRule(prev => prev ? { ...prev, color_hex: val } : null)}
-                                    style={{ width: 140 }}
-                                    size="xs"
-                                />
-                            </Group>
+                                </Grid.Col>
+
+                                <Grid.Col span={{ base: 6, sm: 2 }}>
+                                    <NumberInput
+                                        label={
+                                            <Group gap={4} wrap="nowrap">
+                                                <Text size="xs" fw={500}>Radial Offset</Text>
+                                                <Tooltip label="The distance (in degrees) used to push overlapping nodes away from each other. Useful for seeing multiple assets at the same point (e.g. 0.0001)." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                    <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                                </Tooltip>
+                                            </Group>
+                                        }
+                                        placeholder="0.0"
+                                        value={editingRule?.radial_offset || 0}
+                                        onChange={(val) => setEditingRule(prev => prev ? { ...prev, radial_offset: typeof val === 'number' ? val : 0 } : null)}
+                                        size="xs"
+                                        min={0}
+                                        step={0.0001}
+                                        decimalScale={5}
+                                    />
+                                </Grid.Col>
+                            </Grid>
+
+                            <Divider label="SVG CSS Overrides" labelPosition="center" />
+                            
+                            <Stack gap="xs">
+                                {editingRule?.css_overrides?.map((override, index) => (
+                                    <Paper key={index} withBorder p="xs" style={{ background: 'rgba(255,255,255,0.05)' }}>
+                                        <Stack gap="xs">
+                                            <Group justify="space-between">
+                                                <Text size="xs" fw={700}>Override #{index + 1}</Text>
+                                                <ActionIcon color="red" variant="subtle" size="xs" onClick={() => removeOverride(index)}>
+                                                    <Trash2 size={14} />
+                                                </ActionIcon>
+                                            </Group>
+                                            <Group gap={4} wrap="nowrap">
+                                                <Text size="xs" fw={500}>Conditions</Text>
+                                                <Tooltip label="Logic to target specific assets for this CSS override." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                    <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                                </Tooltip>
+                                            </Group>
+                                            <CimRuleBuilder 
+                                                value={typeof override.conditions === 'string' ? override.conditions : JSON.stringify(override.conditions)}
+                                                onChange={(val) => updateOverride(index, { ...override, conditions: val })}
+                                            />
+                                            <Textarea
+                                                label={
+                                                    <Group gap={4} wrap="nowrap">
+                                                        <Text size="xs" fw={500}>CSS</Text>
+                                                        <Tooltip label="Raw CSS rules injected into the SVG icon. Use to change styles based on conditions." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                            <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                                        </Tooltip>
+                                                    </Group>
+                                                }
+                                                placeholder=".my-class { visibility: hidden; }"
+                                                description="Applied when the rule above matches"
+                                                size="xs"
+                                                value={override.css}
+                                                onChange={(e) => updateOverride(index, { ...override, css: e.currentTarget.value })}
+                                                autosize
+                                                minRows={2}
+                                            />
+                                        </Stack>
+                                    </Paper>
+                                ))}
+                                <Button 
+                                    variant="subtle" 
+                                    size="xs" 
+                                    leftSection={<Plus size={14} />} 
+                                    onClick={addOverride}
+                                    fullWidth
+                                >
+                                    Add CSS Override
+                                </Button>
+                            </Stack>
                             <Group justify="flex-end" mt="md">
                                 <Button variant="outline" size="xs" onClick={() => setEditingRule(null)}>Cancel</Button>
                                 <Button color="blue" size="xs" onClick={handleSaveRule}>Save Rule</Button>
@@ -283,8 +516,8 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({ opened
                                 <Table.Thead>
                                     <Table.Tr>
                                         <Table.Th>Name</Table.Th>
+                                        <Table.Th>Visuals</Table.Th>
                                         <Table.Th>Conditions</Table.Th>
-                                        <Table.Th>Visual</Table.Th>
                                         <Table.Th>Pri</Table.Th>
                                         <Table.Th style={{ width: 80 }}>Actions</Table.Th>
                                     </Table.Tr>
@@ -292,25 +525,33 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({ opened
                                 <Table.Tbody>
                                     {rules.map(rule => (
                                         <Table.Tr key={rule.id}>
-                                            <Table.Td style={{ maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            <Table.Td style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                 {rule.name}
                                             </Table.Td>
                                             <Table.Td>
-                                                <Group gap="xs">
-                                                    {rule.color_hex && <ColorSwatch color={rule.color_hex} size={12} />}
-                                                    <Badge color="blue" variant="light" size="xs">{rule.visual_type}</Badge>
+                                                <Group gap={4}>
+                                                    {rule.color_hex && <ColorSwatch color={rule.color_hex} size={10} />}
+                                                    <Badge color="blue" variant="light" size="xs" style={{ textTransform: 'none' }}>
+                                                        {rule.visual_type}
+                                                        {rule.size && ` (${rule.size})`}
+                                                    </Badge>
+                                                    {rule.label && <Badge color="gray" variant="outline" size="xs">{rule.label}</Badge>}
                                                 </Group>
                                             </Table.Td>
                                             <Table.Td>
-                                                <Text size="xs" c="dimmed" truncate="end" style={{ maxWidth: 200 }}>
+                                                <Text size="xs" c="dimmed" truncate="end" style={{ maxWidth: 150 }}>
                                                     {(() => {
                                                         try {
-                                                            const conds = JSON.parse(rule.match_conditions);
-                                                            if (conds.target_class) {
+                                                            const conds = typeof rule.match_conditions === 'string' 
+                                                                ? JSON.parse(rule.match_conditions) 
+                                                                : rule.match_conditions;
+                                                            if (conds && conds.target_class) {
                                                                 const count = conds.conditions?.length || 0;
                                                                 return `${conds.target_class} (+${count})`;
                                                             }
-                                                            return rule.match_conditions;
+                                                            return typeof rule.match_conditions === 'string' 
+                                                                ? rule.match_conditions 
+                                                                : JSON.stringify(rule.match_conditions);
                                                         } catch {
                                                             return 'Invalid JSON';
                                                         }
@@ -332,7 +573,7 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({ opened
                                     ))}
                                     {rules.length === 0 && (
                                         <Table.Tr>
-                                            <Table.Td colSpan={4} align="center" style={{ padding: 20 }}>
+                                            <Table.Td colSpan={5} align="center" style={{ padding: 20 }}>
                                                 <Text size="xs" c="dimmed">No rules defined for this profile.</Text>
                                             </Table.Td>
                                         </Table.Tr>
@@ -344,5 +585,68 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({ opened
                 </Paper>
             </Stack>
         </AnalysisWindow>
+
+        <AnalysisWindow
+            isOpen={isEditorOpen}
+            onClose={() => setIsEditorOpen(false)}
+            title="SVG Live Editor"
+            storageKey="svg-live-editor"
+            zIndex={zIndex + 1}
+            onFocus={onFocus}
+        >
+            <Stack gap="md" h="100%">
+                <Grid gutter="md" style={{ flex: 1, minHeight: 0 }}>
+                    <Grid.Col span={{ base: 12, md: 6 }}>
+                        <Stack gap={5} h="100%">
+                            <Group gap="xs">
+                                <Code size={14} />
+                                <Text size="xs" fw={700}>SVG Code</Text>
+                            </Group>
+                            <Textarea
+                                placeholder='<svg ...>...</svg>'
+                                value={editorValue}
+                                onChange={(e) => setEditorValue(e.currentTarget.value)}
+                                minRows={isMobile ? 8 : 15}
+                                autosize
+                                styles={{ input: { fontFamily: 'monospace', fontSize: '11px', flex: 1 } }}
+                                style={{ flex: 1 }}
+                            />
+                        </Stack>
+                    </Grid.Col>
+                    <Grid.Col span={{ base: 12, md: 6 }}>
+                        <Stack gap={5} h="100%">
+                            <Group gap="xs">
+                                <Eye size={14} />
+                                <Text size="xs" fw={700}>Preview</Text>
+                            </Group>
+                            <Paper 
+                                withBorder 
+                                style={{ 
+                                    width: '100%', 
+                                    flex: 1, 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'center',
+                                    background: 'rgba(255,255,255,0.05)',
+                                    minHeight: 200,
+                                    overflow: 'auto',
+                                    padding: '10px'
+                                }}
+                            >
+                                <div 
+                                    style={{ maxWidth: '100%', maxHeight: '100%', display: 'flex' }}
+                                    dangerouslySetInnerHTML={{ __html: editorValue }} 
+                                />
+                            </Paper>
+                        </Stack>
+                    </Grid.Col>
+                </Grid>
+                <Group justify="flex-end" py="xs" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                    <Button variant="outline" size="xs" onClick={() => setIsEditorOpen(false)}>Discard</Button>
+                    <Button color="blue" size="xs" onClick={saveFromEditor}>Apply to Rule</Button>
+                </Group>
+            </Stack>
+        </AnalysisWindow>
+    </Fragment>
     );
 };

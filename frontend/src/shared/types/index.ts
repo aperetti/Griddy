@@ -31,6 +31,12 @@ export interface Node {
     base_voltage_kv?: number;
     attached_equipment?: AttachedEquipment[];
     display_type?: string;
+    display_icon?: string;
+    display_color?: string;
+    display_size?: number;
+    display_label?: string;
+    display_css?: string;
+    display_offset?: number;
 }
 
 export interface Edge {
@@ -49,4 +55,11 @@ export interface Edge {
     transformer_kva?: number;
     is_regulator?: boolean;
     length_m?: number;
+    display_type?: string;
+    display_icon?: string;
+    display_color?: string;
+    display_size?: number;
+    display_label?: string;
+    display_css?: string;
+    display_offset?: number;
 }

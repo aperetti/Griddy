@@ -38,6 +38,12 @@
   * The consumption view must be split vertically: one graph for total kWh, one for Phase Loading (A, B, C) and Energy Imbalance (|S₂|), and another for Voltage, while maintaining the same total panel height.
   * The Energy Imbalance (|S₂|) must be calculated using symmetrical components based on phase-weighted consumption and plotted on a negative y-axis for visual contrast.
 
+### 3.4 Radial Node Offsets & De-confliction
+* **Overlapping Node Handling**: The system must automatically detect nodes sharing the same geographic coordinates (using a 10cm grouping tolerance).
+* **Configurable Distribution**: Users can define "Radial Offset" values in Display Rules to visually separate overlapping nodes. The administration console provides interactive tooltips for each configuration input.
+* **Automatic Layout**: When an offset is applied, overlapping nodes must be distributed in a circular (radial) pattern around the original coordinate.
+* **Edge Connectivity**: Connecting lines (edges) must dynamically adjust to terminate at the offset node positions to maintain visual integrity.
+
 ## 4. System Administration & DevOps
 ### 4.1 System Management Console
 * **Reactive Configuration**: Ability to persistently override system configuration settings (e.g., API URLs, data paths) via an integrated SQLite-backed key-value store in a shared volume.

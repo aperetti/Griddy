@@ -15,6 +15,7 @@
     *   **Features:** Interactive node clicking, context menu (right-click) for node-specific actions, geospatial zooming, panning.
     *   **Data Fetching:** Standard `fetch` API against FastAPI REST endpoints.
     *   **Rendering Taxonomy:** Switches must be rendered as squares. Open switches should be transparent/hollow; closed switches must be filled.
+    *   **Radial De-confliction**: The frontend must identify overlapping nodes (using a 10cm / 6-decimal grouping tolerance) and apply a radial distribution based on the `display_offset` attribute provided by the rule engine. Edges must be re-calculated to point to these offset coordinates.
 
 *   **Backend (FastAPI & Data Ingestion)**:
     *   **Data Ingestion (CIM):** The CIM ingestor must effectively extract robust asset taxonomy, correctly tagging `Substation`, `Breaker`, `Switch`, `Transformer`, and `Meter` types. Determine the switch 'open' status for visualizations.

@@ -234,6 +234,24 @@ class CimModelRegistry:
                 
         return results
 
+    def get_cim_schema(self) -> dict:
+        """Aggregate CIM schema from all active models."""
+        combined_schema = {}
+        for _mid, mgr in self.get_managers():
+            if hasattr(mgr, 'get_cim_schema'):
+                # Merge schemas (attributes for same class are combined)
+                mgr_schema = mgr.get_cim_schema()
+                for cls_name, cls_info in mgr_schema.items():
+                    if cls_name not in combined_schema:
+                        combined_schema[cls_name] = cls_info
+                    else:
+                        # Merge attributes
+                        existing_attrs = {a['name'] for a in combined_schema[cls_name]['attributes']}
+                        for attr in cls_info['attributes']:
+                            if attr['name'] not in existing_attrs:
+                                combined_schema[cls_name]['attributes'].append(attr)
+        return combined_schema
+
     def get_combined_topology(self, model_ids: list[str] | None = None) -> tuple[list[dict], list[dict]]:
         """Merge topology from requested models.
 
