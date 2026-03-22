@@ -45,6 +45,18 @@
 * **Edge Connectivity**: Connecting lines (edges) must dynamically adjust to terminate at the offset node positions to maintain visual integrity.
 * **View Persistence**: The map's viewport (zoom and position) must be preserved during display rule updates to ensure a non-disruptive user experience.
 
+### 3.5 Display Rule Assistant
+* **Entity Exploration**: Users can select any grid entity to inspect its full CIM attribute set in a dedicated assistant panel.
+* **MRID Link Navigation**: The assistant must detect MRIDs in attribute values and provide "dive" buttons to jump to linked entities (e.g., from a Meter to its parent Transformer).
+* **History & Breadcrumbs**: Support backward navigation through the exploration history.
+* **Attribute Actions**: A context menu on attributes allows users to quickly add conditions to the current rule (e.g., "exists", "matches value", "greater than").
+* **Side-by-Side Workflow**: On desktop displays, the assistant and rule builder should be visible simultaneously to streamline the configuration process.
+
+### 3.6 Advanced Condition Logic
+* **Nested Groups**: Support for multi-level nested condition groups using AND/OR logical operators.
+* **Visual Hierarchy**: The rule builder must visually represent group nesting and provide controls (Add Group/Condition) at each level.
+* **Boolean Evaluation**: The system must correctly evaluate complex logical expressions across both node attributes and attached equipment properties.
+
 ## 4. System Administration & DevOps
 ### 4.1 System Management Console
 * **Reactive Configuration**: Ability to persistently override system configuration settings (e.g., API URLs, data paths) via an integrated SQLite-backed key-value store in a shared volume.

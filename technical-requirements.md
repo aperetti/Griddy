@@ -17,6 +17,13 @@
     *   **Rendering Taxonomy:** Switches must be rendered as squares. Open switches should be transparent/hollow; closed switches must be filled.
     *   **Radial De-confliction**: The frontend must identify overlapping nodes (using a 10cm / 6-decimal grouping tolerance) and apply a radial distribution based on the `display_offset` attribute provided by the rule engine. Edges must be re-calculated to point to these offset coordinates.
     *   **View Persistence**: The `GridMap` must support a `skipGlobalFit` mechanism to suppress automatic zoom-to-extent transitions during state-only refreshes (like display rule updates).
+    *   **Rule Assistant Integration**:
+        *   Implement a side-by-side layout (50/50 split on desktop) between the Rule Assistant and Rule Builder.
+        *   The Assistant must use `lucide-react` icons and Mantine components (`Stack`, `Group`, `Paper`) for a clean, hierarchical display.
+        *   Support for the `length_gt` operator for array-type attributes.
+    *   **Nested Rule Builder UI**:
+        *   Implement `CimRuleBuilder.tsx` as a recursive component that renders `ConditionGroup` components.
+        *   Each group manages its own `logical_op` (AND/OR) and a list of `conditions` (either simple condition objects or nested groups).
 
 *   **Backend (FastAPI & Data Ingestion)**:
     *   **Data Ingestion (CIM):** The CIM ingestor must effectively extract robust asset taxonomy, correctly tagging `Substation`, `Breaker`, `Switch`, `Transformer`, and `Meter` types. Determine the switch 'open' status for visualizations.
@@ -24,6 +31,11 @@
     *   **Time Series Endpoints:** Endpoints to fetch consumption metrics must support dynamic start/end ISO strings and perform phase-weighted aggregation using node phasing attributes.
     *   **Phase Aggregation Logic**: Multi-phase loads are assumed to be balanced. Aggregation must use a weight-based join: `SUM(kwh_dlv * weight_p)` where `weight_p` is `1.0 / count(display_phases)` for each phase present on the node (where display_phases are A, B, or C). If no A, B, or C phases are present, split equally across all three.
     *   **Imbalance Calculation**: Calculate the Negative Sequence Component magnitude ($|S_2|$) using: $|S_2| = \frac{1}{3} \sqrt{(kwh_a - 0.5 \cdot kwh_b - 0.5 \cdot kwh_c)^2 + (0.866 \cdot (kwh_b - kwh_c))^2}$.
+    *   **Nested Rule Evaluation**:
+        *   Implement `DisplayRuleEngine._check_conditions` as a recursive function to evaluate nested `logical_op` groups.
+        *   Ensure support for operators: `==`, `!=`, `>`, `<`, `>=`, `<=`, `exists`, `not_exists`, `contains`, `length_gt`.
+        *   Condition matching must accurately traverse both the node's properties and any `attached_equipment` matching a `target_class`.
+    *   Existing Endpoints: Re-use `/api/analytics/phase-balance/{node_id}` to calculate the downstream aggregations upon node click.
     *   Existing Endpoints: Re-use `/api/analytics/phase-balance/{node_id}` to calculate the downstream aggregations upon node click.
     *   **Analytical Data Export**:
         *   **Client-Side Processing**: Large datasets must be transformed and downloaded directly from the browser to minimize server overhead.
@@ -60,4 +72,9 @@
 
 ## 8. Testing & Quality Assurance
 * **Test-Driven Development (TDD)**: Always follow TDD best practices.
-* **Unit/Functional Tests**: Always create and memorialize functionality in unit or functional tests.
+
+## 9. Deployment & Optimization
+*   **Docker Build Performance**:
+    *   All services must include `.dockerignore` files to exclude `node_modules`, `.venv`, and other build artifacts from the context.
+    *   Dockerfiles should use multi-stage builds where applicable to minimize final image size.
+    *   Verify build integrity for all services (frontend, backend, docs, admin console) from the root `docker-compose.yml`.
