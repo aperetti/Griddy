@@ -35,7 +35,6 @@ class IndexBuilder:
         self.transformer_kva: dict[str, float] = {}                # PT/Tank mRID → kVA
         self.transformer_primary_cn: dict[str, str] = {}           # PT mRID → primary CN mRID
         self.transformer_has_tap_changer: dict[str, bool] = {}     # PT/Tank mRID → bool
-        self.equipment_is_regulator: dict[str, bool] = {}          # mRID → bool
         self.equipment_is_single_phase: dict[str, bool] = {}       # mRID → bool
         self.equipment_current_limits: dict[str, float] = {}       # mRID → Amps
         self.manual_tank_to_info: dict[str, str] = {}              # tank mRID → tankInfo mRID
@@ -184,11 +183,6 @@ class IndexBuilder:
                 if m:
                     self.equipment_types[m] = type_name
                     
-                    # Identify Regulators: PowerTransformers with Tap Changers
-                    if type_name == "PowerTransformer":
-                        if self.transformer_has_tap_changer.get(m) or self.equipment_is_regulator.get(m):
-                            self.equipment_types[m] = "Regulator"
-                            self.equipment_is_regulator[m] = True
 
                     if type_name in ("Breaker", "LoadBreakSwitch", "Fuse",
                                      "Disconnector", "Recloser"):
@@ -407,21 +401,17 @@ class IndexBuilder:
                     pt_id = _mrid_str(pt)
                     if pt_id:
                         self.transformer_has_tap_changer[pt_id] = True
-                        # Re-classify as Regulator
-                        self.equipment_is_regulator[pt_id] = True
                     
                     # TransformerTankEnd -> TransformerTank
                     tank = getattr(pte, "TransformerTank", None)
                     tank_id = _mrid_str(tank)
                     if tank_id:
                         self.transformer_has_tap_changer[tank_id] = True
-                        self.equipment_is_regulator[tank_id] = True
                         # Also flag the parent transformer if it's a tank
                         pt_from_tank = getattr(tank, "PowerTransformer", None)
                         pt_from_tank_id = _mrid_str(pt_from_tank)
                         if pt_from_tank_id:
                             self.transformer_has_tap_changer[pt_from_tank_id] = True
-                            self.equipment_is_regulator[pt_from_tank_id] = True
                     
     def _build_limit_index(self):
         """Map equipment to their associated CurrentLimit values."""
@@ -461,20 +451,6 @@ class IndexBuilder:
                 if eq_id:
                     if eq_id not in self.equipment_current_limits:
                         self.equipment_current_limits[eq_id] = val
-
-        # ── 3c. AssetInfo-based Regulator detection ──
-        # Check if PowerTransformer.AssetInfo points to something that sounds like a regulator
-        pt_cls = getattr(cim, "PowerTransformer", None)
-        if pt_cls:
-            for _pid, pt in graph.get(pt_cls, {}).items():
-                pt_id = _mrid_str(pt)
-                if pt_id and not self.equipment_is_regulator.get(pt_id):
-                    ai = getattr(pt, "AssetInfo", None)
-                    if ai:
-                        ai_name = (_get_name(ai) or "").lower()
-                        if "regulator" in ai_name:
-                            self.equipment_is_regulator[pt_id] = True
-                            self.equipment_types[pt_id] = "Regulator"
 
         # ── 4. Fallback: Manual XML Scan results ──
         tank_count = 0

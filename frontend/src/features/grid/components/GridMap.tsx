@@ -55,7 +55,6 @@ const SVG_DIM_CACHE = new Map<string, { width: number, height: number }>();
 const OPEN_SWITCH_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><line x1="30" y1="10" x2="30" y2="90" stroke="currentColor" stroke-width="8" stroke-linecap="round" /><line x1="70" y1="10" x2="70" y2="90" stroke="currentColor" stroke-width="8" stroke-linecap="round" /></svg>`;
 const CLOSE_SWITCH_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><line x1="30" y1="10" x2="30" y2="90" stroke="currentColor" stroke-width="8" stroke-linecap="round" /><line x1="70" y1="10" x2="70" y2="90" stroke="currentColor" stroke-width="8" stroke-linecap="round" /><line x1="15" y1="65" x2="85" y2="35" stroke="currentColor" stroke-width="8" stroke-linecap="round" /></svg>`;
 const TRANSFORMER_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><polygon points="50,15 15,85 85,85" stroke="currentColor" fill="none" stroke-width="8" stroke-linejoin="round" /></svg>`;
-const REGULATOR_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="currentColor" font-family="Arial, sans-serif" font-weight="bold" font-size="12">R</text></svg>`;
 const CAPACITOR_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="currentColor" font-family="Arial, sans-serif" font-weight="bold" font-size="12">C</text></svg>`;
 
 const getSvgDataUrl = (svg: string, color?: string, css?: string) => {
@@ -446,10 +445,7 @@ export const GridMap = React.memo<GridMapProps>(({
     const switchEdgesOpen = useMemo(() => offsetEdges.filter(e => SWITCH_EDGE_TYPES.has(e.edge_type ?? '') && e.is_open && !e.display_icon), [offsetEdges]);
     const switchEdgesClosed = useMemo(() => offsetEdges.filter(e => SWITCH_EDGE_TYPES.has(e.edge_type ?? '') && !e.is_open && !e.display_icon), [offsetEdges]);
     const transformerEdges = useMemo(() => 
-        offsetEdges.filter(e => (e.edge_type === 'PowerTransformer' || e.edge_type === 'TransformerTank') && !e.is_regulator && !e.display_icon), 
-    [offsetEdges]);
-    const regulatorEdges = useMemo(() => 
-        offsetEdges.filter(e => (e.edge_type === 'PowerTransformer' || e.edge_type === 'TransformerTank') && e.is_regulator && !e.display_icon), 
+        offsetEdges.filter(e => (e.edge_type === 'PowerTransformer' || e.edge_type === 'TransformerTank') && !e.display_icon), 
     [offsetEdges]);
 
     const visualEdgePaths = useMemo(() => {
@@ -725,41 +721,6 @@ export const GridMap = React.memo<GridMapProps>(({
             }
         }),
         new IconLayer({
-            id: 'grid-regulators',
-            data: regulatorEdges,
-            getPosition: (d: Edge) => d.targetPosition,
-            getIcon: (d: Edge) => {
-                const colorArr = getEdgeColor(d, highlightedEdges.has(d.id ?? ''), hoveredEdgeId === d.id, d.circuit_id);
-                const colorHex = `#${colorArr.map(c => c.toString(16).padStart(2, '0')).join('')}`;
-                return {
-                    url: getSvgDataUrl(REGULATOR_SVG, colorHex),
-                    width: 100,
-                    height: 100,
-                    anchorY: 50,
-                    mask: false
-                };
-            },
-            getSize: (d: Edge) => highlightedEdges.has(d.id ?? '') ? 50 : 30,
-            sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
-            sizeMinPixels: 1,
-            updateTriggers: { 
-                getSize: [highlightedEdges],
-                getIcon: [highlightedEdges, hoveredEdgeId]
-            },
-            pickable: true,
-            autoHighlight: false,
-            onHover: (info) => {
-                setHoveredEdgeId(info.object ? (info.object.id ?? null) : null);
-            },
-            onClick: (info, event) => {
-                if (isDraggingRef.current) return;
-                const srcEvent = (event as any).srcEvent as MouseEvent;
-                if (info.object && srcEvent && onEdgeClick) {
-                    onEdgeClick(info.object as Edge, srcEvent.shiftKey || srcEvent.ctrlKey);
-                }
-            }
-        }),
-        new IconLayer({
             id: 'grid-capacitors',
             data: nodes.filter(n => getVisualType(n) === 'Capacitor' && !n.display_icon),
             getPosition: (d: Node) => nodePositions[d.id],
@@ -891,7 +852,7 @@ export const GridMap = React.memo<GridMapProps>(({
                 getColor: [highlightedEdges, hoveredEdgeId, edges]
             }
         })
-    ], [nodes, edges, visualEdgePaths, hoveredNodeId, hoveredEdgeId, highlightedNodes, highlightedEdges, selectedNodeIdsSet, switchEdgesOpen, switchEdgesClosed, transformerEdges, regulatorEdges, nodeAverages, voltageScale, onNodeClick, onEdgeClick, viewState.zoom, nodePositions]);
+    ], [nodes, edges, visualEdgePaths, hoveredNodeId, hoveredEdgeId, highlightedNodes, highlightedEdges, selectedNodeIdsSet, switchEdgesOpen, switchEdgesClosed, transformerEdges, nodeAverages, voltageScale, onNodeClick, onEdgeClick, viewState.zoom, nodePositions]);
 
     const getTooltipContent = (object: any) => {
         if (!object) return null;

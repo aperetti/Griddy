@@ -99,7 +99,6 @@ async def get_topology(
             "name": e.get('name', ''),
             "is_open": e.get('is_open', False),
             "transformer_kva": e.get('transformer_kva'),
-            "is_regulator": e.get('is_regulator', False),
             "display_type": classification.get('visual_type') if classification else None,
             "display_icon": classification.get('icon') if classification else None,
             "display_color": classification.get('color_hex') if classification else None,

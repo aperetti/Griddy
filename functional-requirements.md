@@ -43,6 +43,7 @@
 * **Configurable Distribution**: Users can define "Radial Offset" values in Display Rules to visually separate overlapping nodes. The administration console provides interactive tooltips for each configuration input.
 * **Automatic Layout**: When an offset is applied, overlapping nodes must be distributed in a circular (radial) pattern around the original coordinate.
 * **Edge Connectivity**: Connecting lines (edges) must dynamically adjust to terminate at the offset node positions to maintain visual integrity.
+* **View Persistence**: The map's viewport (zoom and position) must be preserved during display rule updates to ensure a non-disruptive user experience.
 
 ## 4. System Administration & DevOps
 ### 4.1 System Management Console

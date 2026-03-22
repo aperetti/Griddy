@@ -143,7 +143,10 @@ export default function App() {
   const [nodeCurrents, setNodeCurrents] = useState<Record<string, { a: number, b: number, c: number }> | null>(null);
   const [topologyLoading, setTopologyLoading] = useState(false);
   const [topologyVersion, setTopologyVersion] = useState(0);
-  const refreshTopology = useCallback(() => setTopologyVersion(v => v + 1), []);
+  const refreshTopology = useCallback(() => {
+    setIsSearching(true);
+    setTopologyVersion(v => v + 1);
+  }, []);
   const [maxZIndex, setMaxZIndex] = useState(1000);
   const [displayRulesZIndex, setDisplayRulesZIndex] = useState(1005);
 

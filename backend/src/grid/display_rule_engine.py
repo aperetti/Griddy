@@ -159,37 +159,58 @@ class DisplayRuleEngine:
             if op == '>=': return actual_val >= target_val
             if op == '<=': return actual_val <= target_val
             if op == 'contains': return isinstance(actual_val, str) and target_val in actual_val
+            if op == 'length_gt': 
+                return (isinstance(actual_val, (list, dict, str)) and len(actual_val) > int(target_val))
         except:
             return False
         return False
 
     def _check_conditions(self, conditions_json: Dict[str, Any], objects_to_check: List[Dict[str, Any]]) -> bool:
-        """Helper to evaluate standard CIM conditional logic against a set of objects."""
+        """
+        Helper to evaluate complex conditional logic recursively.
+        Supports:
+        {
+            "logical_op": "AND" | "OR",
+            "conditions": [
+                { "path": "...", "op": "...", "value": "..." }, # Simple condition
+                { "logical_op": "...", "conditions": [...] }   # Nested group
+            ]
+        }
+        """
         if not conditions_json:
-            return True # No conditions = always match
+            return True
 
+        logical_op = conditions_json.get('logical_op', 'AND').upper()
         rule_conditions = conditions_json.get('conditions', [])
+        
         if not rule_conditions:
             return True
 
-        # All conditions in the list must be satisfied (AND logic)
-        # But for each condition, it's satisfied if ANY object in 'objects_to_check' matches it.
-        for cond in rule_conditions:
-            path = cond.get('path')
-            op = cond.get('op', '==')
-            target_val = cond.get('value')
-            
-            condition_met = False
-            for obj in objects_to_check:
-                actual_val = self._get_nested_value(obj, path)
-                if self._check_op(actual_val, op, target_val):
-                    condition_met = True
-                    break
-            
-            if not condition_met:
-                return False
+        # Results for each condition or sub-group
+        results = []
         
-        return True
+        for cond in rule_conditions:
+            if 'conditions' in cond:
+                # Nested group
+                results.append(self._check_conditions(cond, objects_to_check))
+            else:
+                # Simple condition
+                path = cond.get('path')
+                op = cond.get('op', '==')
+                target_val = cond.get('value')
+                
+                condition_met = False
+                for obj in objects_to_check:
+                    actual_val = self._get_nested_value(obj, path)
+                    if self._check_op(actual_val, op, target_val):
+                        condition_met = True
+                        break
+                results.append(condition_met)
+
+        if logical_op == 'OR':
+            return any(results)
+        else: # Default AND
+            return all(results)
 
     def _matches_rule(self, rule: Dict[str, Any], data: Dict[str, Any], is_edge: bool = False) -> tuple[bool, List[Dict[str, Any]]]:
         """Checks if a node or edge matches all conditions in a rule (AND logic). 

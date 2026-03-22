@@ -181,5 +181,50 @@ class TestDisplayRuleEngine(unittest.TestCase):
         node_with_name = {"name": "Test Node", "attached_equipment": []}
         self.assertIsNone(self.engine.classify_node(node_with_name))
 
+    def test_logical_operators(self):
+        # 1. OR logic: (A OR B)
+        self.add_rule("A or B", 10, {
+            "logical_op": "OR",
+            "conditions": [
+                {"path": "name", "op": "==", "value": "Alpha"},
+                {"path": "name", "op": "==", "value": "Beta"}
+            ]
+        }, "MatchAB")
+        
+        self.assertEqual(self.engine.classify_node({"name": "Alpha", "attached_equipment": []})["visual_type"], "MatchAB")
+        self.assertEqual(self.engine.classify_node({"name": "Beta", "attached_equipment": []})["visual_type"], "MatchAB")
+        self.assertIsNone(self.engine.classify_node({"name": "Gamma", "attached_equipment": []}))
+        
+        # 2. Nested logic: A AND (B OR C)
+        self.add_rule("A and (B or C)", 20, {
+            "logical_op": "AND",
+            "conditions": [
+                {"path": "class", "op": "==", "value": "VoltageLevel"},
+                {
+                    "logical_op": "OR",
+                    "conditions": [
+                        {"path": "voltage", "op": ">", "value": 100},
+                        {"path": "name", "op": "contains", "value": "High"}
+                    ]
+                }
+            ]
+        }, "MatchComplex")
+        
+        # Match class + voltage
+        res = self.engine.classify_node({"class": "VoltageLevel", "voltage": 115, "attached_equipment": []})
+        self.assertIsNotNone(res)
+        self.assertEqual(res["visual_type"], "MatchComplex")
+        
+        # Match class + name
+        res = self.engine.classify_node({"class": "VoltageLevel", "voltage": 50, "name": "High Volt", "attached_equipment": []})
+        self.assertIsNotNone(res)
+        self.assertEqual(res["visual_type"], "MatchComplex")
+        
+        # Fail class
+        self.assertIsNone(self.engine.classify_node({"class": "Substation", "voltage": 115, "attached_equipment": []}))
+        
+        # Fail both OR conditions
+        self.assertIsNone(self.engine.classify_node({"class": "VoltageLevel", "voltage": 50, "name": "Low", "attached_equipment": []}))
+
 if __name__ == '__main__':
     unittest.main()

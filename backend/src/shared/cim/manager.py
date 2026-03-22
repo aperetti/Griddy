@@ -281,7 +281,6 @@ class CimModelManager:
             enricher(detail, obj)
 
         # Apply specific identification flags
-        detail["is_regulator"] = self._idx.equipment_is_regulator.get(mrid, False)
         if cls_name == "Fuse":
             detail["is_fuse"] = True
         elif cls_name == "Recloser":
