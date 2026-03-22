@@ -1,0 +1,11 @@
+node_modules
+.venv
+venv
+dist
+build
+.git
+.vscode
+.agents
+.gemini
+.next
+.DS_Store
