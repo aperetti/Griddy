@@ -64,8 +64,10 @@ class CalculateAggregateConsumptionUseCase:
         nodes_to_query = list(all_downstream_nodes)
         node_phases = self.graph_engine.get_node_phases(nodes_to_query)
         
+        # Security enhancement: Use parameterized query to prevent SQL Injection
         # Build weight mapping for phase aggregation
-        weight_values = []
+        weight_placeholders = []
+        weight_params = []
         for nid in nodes_to_query:
             p_raw = node_phases.get(nid, ["A", "B", "C"]) or ["A", "B", "C"]
             # Only count phases we display (A, B, C) for energy balance in the graph
@@ -82,11 +84,12 @@ class CalculateAggregateConsumptionUseCase:
                 # 0.3333333333333333 * 3 = 1.0 (Python float precision handles this well)
                 w = {"A": 1.0/3.0, "B": 1.0/3.0, "C": 1.0/3.0}
             
-            weight_values.append(f"('{nid}', {w['A']}, {w['B']}, {w['C']})")
+            weight_placeholders.append("(?, ?, ?, ?)")
+            weight_params.extend([nid, w['A'], w['B'], w['C']])
 
-        values_clause = ",".join(weight_values)
-        placeholders = ",".join(["?"] * len(nodes_to_query))
-        query_params = nodes_to_query + [start_time, end_time]
+        values_clause = ",".join(weight_placeholders)
+        # Combine weight params with the time params
+        query_params = weight_params + [start_time, end_time]
         
         query = f"""
             WITH phase_weights(node_id, wa, wb, wc) AS (
@@ -115,7 +118,7 @@ class CalculateAggregateConsumptionUseCase:
         try:
             with duckdb.connect(self.db_path, read_only=True) as conn:
                 print(f"DEBUG: SQL: {query}")
-                results = conn.execute(query, [start_time, end_time]).fetchall()
+                results = conn.execute(query, query_params).fetchall()
                 
             time_series = [
                 {
