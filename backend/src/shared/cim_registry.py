@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from src.shared.cim_model import CimModelManager, _mrid_str
+from src.shared.cim_model import CimModelManager
 
 logger = logging.getLogger(__name__)
 
@@ -37,12 +37,14 @@ def _discover_xml_files() -> list[dict]:
     for xml_path in sorted(glob.glob(os.path.join(search_dir, "*.xml"))):
         p = Path(xml_path)
         model_id = p.stem  # e.g. "IEEE8500_3subs"
-        results.append({
-            "model_id": model_id,
-            "filename": p.name,
-            "path": str(p),
-            "size_mb": round(p.stat().st_size / 1_048_576, 1),
-        })
+        results.append(
+            {
+                "model_id": model_id,
+                "filename": p.name,
+                "path": str(p),
+                "size_mb": round(p.stat().st_size / 1_048_576, 1),
+            }
+        )
 
     return results
 
@@ -51,6 +53,7 @@ def _discover_xml_files() -> list[dict]:
 # CimModelRegistry
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class CimModelRegistry:
     """Singleton registry that holds multiple named CimModelManager instances."""
 
@@ -58,9 +61,13 @@ class CimModelRegistry:
 
     def __init__(self):
         self._managers: dict[str, CimModelManager] = {}  # model_id → manager
-        self._available: list[dict] = []                  # discovered XML metadata
-        self._active_models: set[str] = set()             # currently loaded model_ids
-        self._coordinate_offsets: dict[str, tuple[float, float]] = {}  # model_id → (lat_offset, lon_offset)
+        self._available: list[dict] = []  # discovered XML metadata
+        self._active_models: set[str] = set()  # currently loaded model_ids
+        self._coordinate_offsets: dict[
+            str, tuple[float, float]
+        ] = {}  # model_id → (lat_offset, lon_offset)
+        self._mrid_to_model: dict[str, str] = {}  # mrid → model_id
+        self._node_to_model: dict[str, str] = {}  # node_id → model_id
 
     @classmethod
     def get_instance(cls) -> "CimModelRegistry":
@@ -103,10 +110,19 @@ class CimModelRegistry:
         # Assign coordinate offsets so combined models don't overlap
         self._recalculate_offsets()
 
-        logger.info("Model '%s' loaded (%d nodes, %d edges)",
-                     model_id,
-                     len(manager.get_topology_nodes()),
-                     len(manager.get_topology_edges()))
+        # Populate fast-lookup indexes
+        if manager._idx is not None:
+            for mrid in manager._idx.equipment_index.keys():
+                self._mrid_to_model[mrid] = model_id
+            for node_id in manager._idx.cn_equipment.keys():
+                self._node_to_model[node_id] = model_id
+
+        logger.info(
+            "Model '%s' loaded (%d nodes, %d edges)",
+            model_id,
+            len(manager.get_topology_nodes()),
+            len(manager.get_topology_edges()),
+        )
         return manager
 
     def unload_model(self, model_id: str):
@@ -115,6 +131,15 @@ class CimModelRegistry:
             del self._managers[model_id]
             self._active_models.discard(model_id)
             self._recalculate_offsets()
+
+            # Remove from fast-lookup indexes
+            self._mrid_to_model = {
+                k: v for k, v in self._mrid_to_model.items() if v != model_id
+            }
+            self._node_to_model = {
+                k: v for k, v in self._node_to_model.items() if v != model_id
+            }
+
             logger.info("Model '%s' unloaded", model_id)
 
     def load_all(self):
@@ -138,12 +163,18 @@ class CimModelRegistry:
         for meta in self._available:
             mid = meta["model_id"]
             mgr = self._managers.get(mid)
-            result.append({
-                **meta,
-                "loaded": mid in self._active_models,
-                "node_count": len(mgr.get_topology_nodes()) if mgr and mgr.is_loaded else 0,
-                "edge_count": len(mgr.get_topology_edges()) if mgr and mgr.is_loaded else 0,
-            })
+            result.append(
+                {
+                    **meta,
+                    "loaded": mid in self._active_models,
+                    "node_count": len(mgr.get_topology_nodes())
+                    if mgr and mgr.is_loaded
+                    else 0,
+                    "edge_count": len(mgr.get_topology_edges())
+                    if mgr and mgr.is_loaded
+                    else 0,
+                }
+            )
         return result
 
     def get_active_model_ids(self) -> list[str]:
@@ -154,16 +185,22 @@ class CimModelRegistry:
         """Get a specific loaded manager, or None."""
         return self._managers.get(model_id)
 
-    def get_managers(self, model_ids: list[str] | None = None) -> list[tuple[str, CimModelManager]]:
+    def get_managers(
+        self, model_ids: list[str] | None = None
+    ) -> list[tuple[str, CimModelManager]]:
         """Get (model_id, manager) pairs for requested models.
 
         If model_ids is None or empty, returns all active managers.
         """
         if not model_ids:
-            return [(mid, mgr) for mid, mgr in self._managers.items()
-                    if mid in self._active_models]
-        return [(mid, self._managers[mid]) for mid in model_ids
-                if mid in self._managers]
+            return [
+                (mid, mgr)
+                for mid, mgr in self._managers.items()
+                if mid in self._active_models
+            ]
+        return [
+            (mid, self._managers[mid]) for mid in model_ids if mid in self._managers
+        ]
 
     # ── Combined topology ─────────────────────────────────────────
 
@@ -171,43 +208,53 @@ class CimModelRegistry:
         """Search across all loaded models for nodes or equipment matching the query."""
         results = []
         lower_query = query.lower()
-        
+
         for mid, mgr in self.get_managers():
             # Search nodes
             for node in mgr.get_topology_nodes():
                 name = (node.get("name") or "").lower()
                 node_id = node.get("node_id", "").lower()
                 node_type = (node.get("node_type") or "").lower()
-                
-                if (lower_query in name or 
-                    lower_query in node_id or 
-                    lower_query in node_type):
-                    results.append({
-                        "id": node["node_id"],
-                        "name": node.get("name") or node["node_id"],
-                        "type": "node",
-                        "model_id": mid,
-                        "cim_type": node.get("node_type", "ConnectivityNode")
-                    })
-                
+
+                if (
+                    lower_query in name
+                    or lower_query in node_id
+                    or lower_query in node_type
+                ):
+                    results.append(
+                        {
+                            "id": node["node_id"],
+                            "name": node.get("name") or node["node_id"],
+                            "type": "node",
+                            "model_id": mid,
+                            "cim_type": node.get("node_type", "ConnectivityNode"),
+                        }
+                    )
+
                 # Search attached equipment within nodes
                 for eq in node.get("attached_equipment", []):
                     eq_name = (eq.get("name") or "").lower()
                     eq_id = eq.get("mrid", "").lower()
                     eq_type = (eq.get("type") or "").lower()
-                    
-                    if (lower_query in eq_name or 
-                        lower_query in eq_id or 
-                        lower_query in eq_type):
-                        results.append({
-                            "id": eq["mrid"],
-                            "name": eq.get("name") or eq["mrid"],
-                            "type": "equipment",
-                            "model_id": mid,
-                            "cim_type": eq.get("type", "Equipment")
-                        })
-                    if len(results) >= 50: break
-                if len(results) >= 50: break
+
+                    if (
+                        lower_query in eq_name
+                        or lower_query in eq_id
+                        or lower_query in eq_type
+                    ):
+                        results.append(
+                            {
+                                "id": eq["mrid"],
+                                "name": eq.get("name") or eq["mrid"],
+                                "type": "equipment",
+                                "model_id": mid,
+                                "cim_type": eq.get("type", "Equipment"),
+                            }
+                        )
+                    if len(results) >= 50:
+                        break
+                if len(results) >= 50:
+                    break
 
             # Search edges
             if len(results) < 50:
@@ -215,30 +262,35 @@ class CimModelRegistry:
                     name = (edge.get("name") or "").lower()
                     edge_id = edge.get("edge_id", "").lower()
                     edge_type = (edge.get("edge_type") or "").lower()
-                    
-                    if (lower_query in name or 
-                        lower_query in edge_id or 
-                        lower_query in edge_type):
-                        results.append({
-                            "id": edge["edge_id"],
-                            "name": edge.get("name") or edge["edge_id"],
-                            "type": "edge",
-                            "model_id": mid,
-                            "cim_type": edge.get("edge_type", "Edge")
-                        })
-                    if len(results) >= 50: break
-            
+
+                    if (
+                        lower_query in name
+                        or lower_query in edge_id
+                        or lower_query in edge_type
+                    ):
+                        results.append(
+                            {
+                                "id": edge["edge_id"],
+                                "name": edge.get("name") or edge["edge_id"],
+                                "type": "edge",
+                                "model_id": mid,
+                                "cim_type": edge.get("edge_type", "Edge"),
+                            }
+                        )
+                    if len(results) >= 50:
+                        break
+
             # Limit search results to avoid massive responses
             if len(results) >= 50:
                 break
-                
+
         return results
 
     def get_cim_schema(self) -> dict:
         """Aggregate CIM schema from all active models."""
         combined_schema = {}
         for _mid, mgr in self.get_managers():
-            if hasattr(mgr, 'get_cim_schema'):
+            if hasattr(mgr, "get_cim_schema"):
                 # Merge schemas (attributes for same class are combined)
                 mgr_schema = mgr.get_cim_schema()
                 for cls_name, cls_info in mgr_schema.items():
@@ -246,13 +298,17 @@ class CimModelRegistry:
                         combined_schema[cls_name] = cls_info
                     else:
                         # Merge attributes
-                        existing_attrs = {a['name'] for a in combined_schema[cls_name]['attributes']}
-                        for attr in cls_info['attributes']:
-                            if attr['name'] not in existing_attrs:
-                                combined_schema[cls_name]['attributes'].append(attr)
+                        existing_attrs = {
+                            a["name"] for a in combined_schema[cls_name]["attributes"]
+                        }
+                        for attr in cls_info["attributes"]:
+                            if attr["name"] not in existing_attrs:
+                                combined_schema[cls_name]["attributes"].append(attr)
         return combined_schema
 
-    def get_combined_topology(self, model_ids: list[str] | None = None) -> tuple[list[dict], list[dict]]:
+    def get_combined_topology(
+        self, model_ids: list[str] | None = None
+    ) -> tuple[list[dict], list[dict]]:
         """Merge topology from requested models.
 
         Each node/edge gets a ``model_id`` tag. When multiple models are
