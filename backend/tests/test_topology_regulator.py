@@ -1,5 +1,3 @@
-import pytest
-from src.shared.cim.topology import TopologyBuilder
 from src.shared.cim.indexes import IndexBuilder
 
 class MockIndex:
