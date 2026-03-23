@@ -2,10 +2,17 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies (needed for duckdb/networkx if any wheels are missing)
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
+    libfreetype6-dev \
+    libfontconfig1 \
+    fontconfig \
+    libxrender1 \
+    libxext6 \
+    libx11-6 \
+    fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install

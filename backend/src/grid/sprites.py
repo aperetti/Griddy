@@ -11,6 +11,20 @@ import xml.etree.ElementTree as ET
 
 from src.shared.dependencies import ADMIN_SQLITE_PATH
 
+# Linux/Docker font registration for ReportLab
+if os.name != 'nt':
+    try:
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        font_dir = "/usr/share/fonts/truetype/liberation"
+        if os.path.exists(font_dir):
+            pdfmetrics.registerFont(TTFont('Arial', os.path.join(font_dir, 'LiberationSans-Regular.ttf')))
+            pdfmetrics.registerFont(TTFont('Helvetica', os.path.join(font_dir, 'LiberationSans-Regular.ttf')))
+            pdfmetrics.registerFont(TTFont('Arial-Bold', os.path.join(font_dir, 'LiberationSans-Bold.ttf')))
+            print("Registered Liberation fonts as Arial/Helvetica fallbacks for Linux.")
+    except Exception as e:
+        print(f"Warning: Could not register Liberation fonts: {e}")
+
 # Standard SVGs from GridMap.tsx frontend
 DEFAULT_SVGS = {
     "open_switch": '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><line x1="30" y1="10" x2="30" y2="90" stroke="currentColor" stroke-width="8" stroke-linecap="round" /><line x1="70" y1="10" x2="70" y2="90" stroke="currentColor" stroke-width="8" stroke-linecap="round" /></svg>',
@@ -48,6 +62,10 @@ class SpriteGenerator:
             # We trust the user provided good SVGs or we use basic replacement
             if 'fill="' not in svg_str and 'stroke="' not in svg_str:
                  svg_str = svg_str.replace("<svg", f'<svg fill="{color}" stroke="{color}"')
+
+        # Linux/Docker compatibility: Replace Arial with a built-in font ReportLab knows
+        if "Arial" in svg_str:
+            svg_str = svg_str.replace("Arial", "Helvetica")
 
         return svg_str
 
@@ -105,10 +123,20 @@ class SpriteGenerator:
             return final_img
 
         except Exception as e:
+            if "cannot open resource" in str(e).lower() and "<text" in svg_str:
+                print(f"Font rendering failed, retrying without text elements...")
+                # Simple regex-less stripping of <text>...</text>
+                # (A better way would be using ET, but for a fallback this is safe)
+                import re
+                svg_no_text = re.sub(r'<text.*?</text>', '', svg_str, flags=re.DOTALL)
+                return self._render_svg_to_image(svg_no_text)
+
+            import traceback
             print(f"Error rendering SVG: {e}")
+            print(f"FAILED SVG CONTENT: {svg_str}")
+            traceback.print_exc()
             # Return a red square on error
-            img = Image.new("RGBA", (self.item_size, self.item_size), (255, 0, 0, 100))
-            return img
+            return Image.new("RGBA", (self.item_size, self.item_size), (255, 0, 0, 100))
 
     def generate(self) -> Tuple[bytes, Dict[str, Any]]:
         """Generate sprite sheet and metadata."""
