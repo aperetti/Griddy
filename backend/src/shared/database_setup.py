@@ -23,7 +23,7 @@ if os.path.exists("/data") and os.access("/data", os.W_OK):
 SQLITE_PATH = os.getenv("TOPOLOGY_DB_PATH", str(DEFAULT_SQLITE))
 # Find project root for admin database (which lives in admin-console/admin-backend)
 _PROJECT_ROOT = BASE_DIR if (BASE_DIR / "admin-console").exists() else BASE_DIR.parent
-ADMIN_SQLITE_PATH = os.getenv("ADMIN_DB_PATH", str(_PROJECT_ROOT / "admin-console" / "admin-backend" / "admin.sqlite"))
+ADMIN_SQLITE_PATH = os.getenv("ADMIN_DB_PATH") or os.getenv("CONFIG_DB_PATH") or str(_PROJECT_ROOT / "admin-console" / "admin-backend" / "admin.sqlite")
 
 # ── DuckDB: analytics engine (weather_recordings + parquet reads) ─
 DB_PATH = os.getenv("DB_PATH", str(BASE_DIR / "grid_data_cim.duckdb"))
