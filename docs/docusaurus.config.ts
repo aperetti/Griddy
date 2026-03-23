@@ -69,13 +69,18 @@ const config: Config = {
       },
       items: [
         {
-          type: 'docSidebar',
-          sidebarId: 'tutorialSidebar',
+          type: 'doc',
+          docId: 'getting-started/installation',
           position: 'left',
           label: 'Documentation',
         },
         {
-          to: '/',
+          to: '/releases',
+          label: 'Releases',
+          position: 'left',
+        },
+        {
+          href: '/',
           label: 'Back to App',
           position: 'left',
           target: '_self',
@@ -95,7 +100,7 @@ const config: Config = {
           items: [
             {
               label: 'Documentation',
-              to: 'docker-installation',
+              to: '/',
             },
           ],
         },

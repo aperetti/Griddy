@@ -34,7 +34,22 @@ The Rule Builder supports recursive nesting for complex logical requirements.
 ### CSS Overrides
 You can inject custom CSS snippets when specific conditions are met. This is useful for dynamic styling like highlighting overloaded transformers or coloring phases differently.
 
-## 3. Best Practices
+## 3. Common CIM Attributes for Rules
+When building rules for specific equipment types, you can target these attributes using dot notation.
+
+### Transformers (PowerTransformer, Regulator, TransformerTank)
+- `transformer_kva`: Basic rating for the transformer.
+- `ratio_tap_changer`: Nested object for tap changer details (if present).
+    - `step`: Current tap position (e.g., `16.0`).
+    - `neutralStep`: The neutral position (e.g., `16.0`).
+    - `lowStep`: Minimum possible tap (e.g., `1.0`).
+    - `highStep`: Maximum possible tap (e.g., `32.0`).
+    - `stepVoltageIncrement`: % voltage change per step.
+
+**Example Rule**: Highlight transformers at their maximum tap:
+`ratio_tap_changer.step == ratio_tap_changer.highStep`
+
+## 4. Best Practices
 1. **Specificity**: Place more specific rules at the top (highest priority) and general defaults at the bottom.
 2. **Efficiency**: Use `Exists` checks for high-level filtering before doing value comparisons.
 3. **Exploration**: Use the MRID navigation to understand the relationships between assets before building rules that traverse the hierarchy.
