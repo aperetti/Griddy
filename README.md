@@ -91,12 +91,12 @@ docker compose --profile tools run generator
 To wipe all databases and configurations (recommended if you encounter breaking schema changes during alpha):
 
 > [!IMPORTANT]
-> **Best Practice**: Stop all services first using `docker-compose down` before running the refresh. This ensures database files are not locked by active processes.
+> **Best Practice**: Stop all services first using `docker compose down` before running the refresh. This ensures database files are not locked by active processes.
 
 ```bash
-docker-compose down
+docker compose down
 npm run refresh:data
-docker-compose up -d
+docker compose up -d
 ```
 
 ---
