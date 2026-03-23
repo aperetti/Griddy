@@ -75,7 +75,8 @@
 * **Reactive Configuration**: Ability to persistently override system configuration settings (e.g., API URLs, data paths) via an integrated SQLite-backed key-value store in a shared volume.
 * **Service Hot-Reloading**: The Analytical Backend must monitor the shared configuration and reload settings dynamically without downtime.
 * **Data Lifecycle Management**: 
-  * Trigger synthetic data generation tasks.
-  * Trigger CIM graph ingestion manually.
+  * **Complete Data Refresh**: The system must provide a mechanism to completely wipe all database files (DuckDB, SQLite topology, and Parquet data) and trigger a clean data generation process within the Docker environment.
+  * **Trigger Synthetic Generation**: Trigger synthetic data generation tasks.
+  * **Trigger CIM Ingestion**: Trigger CIM graph ingestion manually.
 * **Security**: The Admin Console must operate without direct access to the host's Docker socket, ensuring architectural isolation.
 * **Schema Mapping**: Manage and visualize the mapping between CIM classes and the internal graph representation.

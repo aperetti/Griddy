@@ -73,6 +73,9 @@
     *   All services must include `.dockerignore` files to exclude `node_modules`, `.venv`, and other build artifacts from the context.
     *   Dockerfiles should use multi-stage builds where applicable to minimize final image size.
     *   Verify build integrity for all services (frontend, backend, docs, admin console) from the root `docker-compose.yml`.
+*   **Data Lifecycle Tools**:
+    *   The `generator` service must support a `REFRESH_DB` environment variable.
+    *   When `REFRESH_DB=true`, the service must clear all databases (DuckDB, SQLite topology, and Admin configuration) and Parquet files in the shared volume before starting the ingestion/generation process.
 
 ## 10. Graph Search Engine
 * **Edge Indexing**: The search service must index edge entities (conductors, lines) in addition to nodes.

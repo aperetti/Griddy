@@ -6,6 +6,18 @@ mkdir -p /data
 
 echo "Starting dedicated data generation..."
 
+if [ "$REFRESH_DB" = "true" ]; then
+    echo "!!! REFRESH_DB=true detected. Clearing all database and parquet files !!!"
+    # Clear DuckDB and SQLite files in /data
+    rm -f /data/*.duckdb /data/*.sqlite /data/*.db
+    # Clear Parquet directories
+    rm -rf /data/cim_readings/*
+    rm -rf /data/cim_alarms/*
+    # Clear Admin configuration
+    rm -f /data/config/admin_config.db
+    echo "Cleanup complete. Starting from a fresh state."
+fi
+
 # Ensure PYTHONPATH is set so scripts can find src if needed
 export PYTHONPATH=$PYTHONPATH:/app
 
