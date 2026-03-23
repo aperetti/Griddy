@@ -1,6 +1,6 @@
 """DuckDB repository implementation."""
 import duckdb
-from typing import List, Optional, Any
+from typing import List, Optional
 from src.shared.repository import AssetRepository
 from src.grid.asset import Asset, Edge
 from src.grid.alarm import Alarm
