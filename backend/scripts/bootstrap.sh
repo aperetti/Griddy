@@ -13,8 +13,6 @@ if [ "$REFRESH_DB" = "true" ]; then
     # Clear Parquet directories
     rm -rf /data/cim_readings/*
     rm -rf /data/cim_alarms/*
-    # Clear Admin configuration
-    rm -f /data/config/admin_config.db
     echo "Cleanup complete. Starting from a fresh state."
 fi
 

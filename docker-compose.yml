@@ -5,7 +5,7 @@ services:
     container_name: grid-backend
     volumes:
       - grid_data:/data
-      - grid_config:/data/config:ro
+      - grid_config:/data/config
       - ./backend:/app
       - ./backend/cim:/app/cim
     environment:
@@ -47,7 +47,7 @@ services:
     container_name: grid-generator
     volumes:
       - grid_data:/data
-      - grid_config:/data/config:ro
+      - grid_config:/data/config
       - ./backend:/app
       - ./backend/cim:/app/cim
     entrypoint: [ "sh", "./scripts/bootstrap.sh" ]
