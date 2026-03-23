@@ -12,6 +12,7 @@ services:
       - BOOTSTRAP_DATA=${BOOTSTRAP_DATA:-true}
       - DB_PATH=/data/grid_data_cim.duckdb
       - PARQUET_DIR=/data/cim_readings
+      - ADMIN_DB_PATH=/data/config/admin_config.db
       - CONFIG_DB_PATH=/data/config/admin_config.db
       - CIM_MODEL_PATH=/app/cim/IEEE8500.xml
       - WEATHER_DATA_PATH=/app/cim/weather.epw
@@ -54,6 +55,7 @@ services:
     environment:
       - DB_PATH=/data/grid_data_cim.duckdb
       - PARQUET_DIR=/data/cim_readings
+      - ADMIN_DB_PATH=/data/config/admin_config.db
       - CONFIG_DB_PATH=/data/config/admin_config.db
       - CIM_MODEL_PATH=/app/cim/IEEE8500.xml
       - WEATHER_DATA_PATH=/app/cim/weather.epw
@@ -73,6 +75,7 @@ services:
       - grid_config:/data/config
     environment:
       - ADMIN_CONSOLE_PORT=8090
+      - ADMIN_DB_PATH=/data/config/admin_config.db
       - DB_PATH=/data/config/admin_config.db
     ports:
       - "${ADMIN_BACKEND_PORT:-8090}:8090"
