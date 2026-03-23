@@ -17,6 +17,10 @@
 * **Alarm Attributes**: Each alarm record should include a timestamp, alarm code (e.g., 'OV_VOLT', 'UV_VOLT', 'TAMPER'), severity level (Low, Medium, High, Critical), and status (Active/Cleared).
 * **Spatial Correlation**: Ability to visualize alarms geospatially to identify cluster failures (e.g., a transformer outage affecting all downstream meters).
 
+### 1.4 Grid Entity Search
+* **Multi-Entity Search**: The search engine must support finding both Nodes and Edges by name or CIM mRID.
+* **Direct Navigation**: Selecting a search result (Node or Edge) must center the map on that entity and highlight it.
+
 ## 2. Analytical Agent Capabilities
 ### 2.1 Graph Navigation & Discovery
 * **Downstream Discovery**: Given a Device_ID (e.g., a specific Fuse), the agent must identify all downstream Transformers and their associated Meters.
@@ -61,6 +65,10 @@
 * **Nested Groups**: Support for multi-level nested condition groups using AND/OR logical operators.
 * **Visual Hierarchy**: The rule builder must visually represent group nesting and provide controls (Add Group/Condition) at each level.
 * **Boolean Evaluation**: The system must correctly evaluate complex logical expressions across both node attributes and attached equipment properties.
+
+### 3.10 Display Rule Management
+* **Rule Toggling**: Users can enable/disable individual display rules via a toggle switch in the Rule Manager to quickly test different visualization configurations without deleting rules.
+* **Rule Duplication**: One-click duplication of existing rules to facilitate creating variants with minor modifications.
 
 ## 4. System Administration & DevOps
 ### 4.1 System Management Console

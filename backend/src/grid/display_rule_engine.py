@@ -37,7 +37,7 @@ class DisplayRuleEngine:
             # Load rules for this config, ordered by priority (descending)
             cursor.execute("""
                 SELECT * FROM display_config_rules 
-                WHERE config_id = ? 
+                WHERE config_id = ? AND enabled = 1
                 ORDER BY priority DESC
             """, (config_id,))
             
@@ -88,6 +88,7 @@ class DisplayRuleEngine:
                         active_css.append(override.get('css', ""))
                 
                 return {
+                    "rule_id": rule.get('id'),
                     "visual_type": rule['visual_type'],
                     "size": rule.get('size', 1.0),
                     "label": rule.get('label', ""),
@@ -123,6 +124,7 @@ class DisplayRuleEngine:
                         active_css.append(override.get('css', ""))
                         
                 return {
+                    "rule_id": rule.get('id'),
                     "visual_type": rule['visual_type'],
                     "size": rule.get('size', 1.0),
                     "label": rule.get('label', ""),

@@ -211,6 +211,8 @@ class TopologyBuilder:
             # Transformer kVA
             if eq_type in ("PowerTransformer", "Regulator", "TransformerTank"):
                 edge["transformer_kva"] = idx.transformer_kva.get(eq_mrid)
+                if eq_mrid in idx.transformer_tap_changers:
+                    edge["ratio_tap_changer"] = idx.transformer_tap_changers[eq_mrid]
 
             # Line length
             if eq_type == "ACLineSegment" and obj is not None:

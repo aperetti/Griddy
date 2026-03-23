@@ -39,7 +39,8 @@ export const GridExplorerPanel = memo(function GridExplorerPanel({
             setLoadingAlarms(true);
             setLoadingCim(true);
             
-            const nodeType = (primaryNode.id.includes('_') || primaryNode.id.length > 20) ? 'Edge' : 'Node';
+            const nodeType = primaryNode.type === 'ConnectivityNode' ? 'Node' : 
+                             (primaryNode.type === 'Equipment' || primaryNode.id.includes('_') || primaryNode.id.length > 20) ? 'Edge' : 'Node';
             
             Promise.all([
                 fetchAlarms(primaryNode.id),
@@ -178,7 +179,8 @@ export const GridExplorerPanel = memo(function GridExplorerPanel({
                             {!isMultiSelect && primaryNode ? (
                                 <AssetIntegratedExplorer 
                                     id={primaryNode.id} 
-                                    type={(primaryNode.id.includes('_') || primaryNode.id.length > 20) ? 'Edge' : 'Node'}
+                                     type={primaryNode.type === 'ConnectivityNode' ? 'Node' : 
+                                           (primaryNode.type === 'Equipment' || primaryNode.id.includes('_') || primaryNode.id.length > 20) ? 'Edge' : 'Node'}
                                     onNavigate={onNavigate}
                                     onZoomTo={onNavigate} // Use onNavigate for zoom too for now
                                 />

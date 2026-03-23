@@ -1,10 +1,11 @@
-from fastapi import APIRouter, HTTPException
+import sqlite3
+import json
+from fastapi import APIRouter, HTTPException, Response
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
-import sqlite3
-import json
 from src.shared.dependencies import ADMIN_SQLITE_PATH, display_engine
+from src.grid.sprites import generator as sprite_generator
 
 router = APIRouter(prefix="/api/display-rules", tags=["display-rules"])
 
@@ -29,7 +30,7 @@ class RuleUpdate(BaseModel):
     cluster_min_points: Optional[int] = 2
     min_zoom: Optional[float] = 0.0
     max_zoom: Optional[float] = 24.0
-    css_overrides: Optional[str] = "[]"
+    css_overrides: Optional[List[Any]] = []
     enabled: bool = True
 
 # ── Helpers ───────────────────────────────────────────────────────
@@ -109,7 +110,7 @@ async def add_config_rule(config_id: int, rule: RuleUpdate):
                  rule.icon, rule.color_hex, rule.size, rule.label,
                  1 if rule.cluster_enabled else 0, rule.cluster_radius, rule.cluster_max_zoom, rule.cluster_min_points,
                  rule.min_zoom, rule.max_zoom,
-                 rule.css_overrides, # css_overrides is now a string
+                 json.dumps(rule.css_overrides) if rule.css_overrides is not None else "[]",
                  1 if rule.enabled else 0)
             )
             display_engine.load_rules()
@@ -133,7 +134,7 @@ async def update_config_rule(rule_id: int, rule: RuleUpdate):
                  rule.icon, rule.color_hex, rule.size, rule.label,
                  1 if rule.cluster_enabled else 0, rule.cluster_radius, rule.cluster_max_zoom, rule.cluster_min_points,
                  rule.min_zoom, rule.max_zoom,
-                 rule.css_overrides, # css_overrides is now a string
+                 json.dumps(rule.css_overrides) if rule.css_overrides is not None else "[]",
                  1 if rule.enabled else 0, rule_id)
             )
             display_engine.load_rules()
@@ -148,6 +149,35 @@ async def delete_config_rule(rule_id: int):
             display_engine.load_rules()
             return {"success": True}
     return await run_in_threadpool(_delete)
+
+@router.post("/rules/{rule_id}/duplicate")
+async def duplicate_config_rule(rule_id: int):
+    def _duplicate():
+        with _get_admin_conn() as conn:
+            # 1. Fetch existing rule
+            old_rule = conn.execute("SELECT * FROM display_config_rules WHERE id = ?", (rule_id,)).fetchone()
+            if not old_rule:
+                raise HTTPException(status_code=404, detail="Rule not found")
+            
+            d = dict(old_rule)
+            # 2. Insert new rule with modified name
+            new_name = f"{d['name']} (Copy)"
+            cursor = conn.execute(
+                """INSERT INTO display_config_rules
+                   (config_id, name, visual_type, priority, match_conditions, icon, color_hex, size, label,
+                    cluster_enabled, cluster_radius, cluster_max_zoom, cluster_min_points,
+                    min_zoom, max_zoom,
+                    css_overrides, enabled, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
+                (d['config_id'], new_name, d['visual_type'], d['priority'],
+                 d['match_conditions'], d['icon'], d['color_hex'], d['size'], d['label'],
+                 d['cluster_enabled'], d['cluster_radius'], d['cluster_max_zoom'], d['cluster_min_points'],
+                 d['min_zoom'], d['max_zoom'],
+                 d['css_overrides'], d['enabled'])
+            )
+            display_engine.load_rules()
+            return {"id": cursor.lastrowid, "name": new_name}
+    return await run_in_threadpool(_duplicate)
 
 @router.get("/active")
 async def get_active_config():
@@ -179,3 +209,30 @@ async def get_active_config():
                 "rules": rule_list
             }
     return await run_in_threadpool(_get)
+
+# ── Sprite Map Routes ──────────────────────────────────────────────
+
+@router.get("/sprites/map.png")
+async def get_sprite_map_png():
+    """Generate and return the sprite sheet PNG."""
+    def _generate():
+        try:
+            png_bytes, _ = sprite_generator.generate()
+            return png_bytes
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Sprite generation failed: {str(e)}")
+            
+    content = await run_in_threadpool(_generate)
+    return Response(content=content, media_type="image/png")
+
+@router.get("/sprites/map.json")
+async def get_sprite_map_json():
+    """Generate and return the sprite mapping JSON."""
+    def _generate():
+        try:
+            _, mapping = sprite_generator.generate()
+            return mapping
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Sprite mapping generation failed: {str(e)}")
+            
+    return await run_in_threadpool(_generate)

@@ -32,6 +32,9 @@
     *   **Data Ingestion (CIM):** The CIM ingestor must effectively extract robust asset taxonomy, correctly tagging `Substation`, `Breaker`, `Switch`, `Transformer`, and `Meter` types. Determine the switch 'open' status for visualizations.
     *   **Graph Export Endpoint:** An endpoint to export the full grid (or a simplified version) as JSON (nodes and links) for the frontend visualization library.
     *   **Time Series Endpoints:** Endpoints to fetch consumption metrics must support dynamic start/end ISO strings and perform phase-weighted aggregation using node phasing attributes.
+    *   **Display Rule Management API**:
+        *   **Duplicate Rule**: `POST /api/display-rules/rules/{rule_id}/duplicate` duplicates a rule and its configuration.
+        *   **Enable/Disable**: Rules carry an `enabled` flag (Boolean) to control their application at runtime.
     *   **Phase Aggregation Logic**: Multi-phase loads are assumed to be balanced. Aggregation must use a weight-based join: `SUM(kwh_dlv * weight_p)` where `weight_p` is `1.0 / count(display_phases)` for each phase present on the node (where display_phases are A, B, or C). If no A, B, or C phases are present, split equally across all three.
     *   **Imbalance Calculation**: Calculate the Negative Sequence Component magnitude ($|S_2|$) using: $|S_2| = \frac{1}{3} \sqrt{(kwh_a - 0.5 \cdot kwh_b - 0.5 \cdot kwh_c)^2 + (0.866 \cdot (kwh_b - kwh_c))^2}$.
     *   **Nested Rule Evaluation**:
@@ -39,12 +42,6 @@
         *   Ensure support for operators: `==`, `!=`, `>`, `<`, `>=`, `<=`, `exists`, `not_exists`, `contains`, `length_gt`.
         *   Condition matching must accurately traverse both the node's properties and any `attached_equipment` matching a `target_class`.
     *   Existing Endpoints: Re-use `/api/analytics/phase-balance/{node_id}` to calculate the downstream aggregations upon node click.
-    *   Existing Endpoints: Re-use `/api/analytics/phase-balance/{node_id}` to calculate the downstream aggregations upon node click.
-    *   **Analytical Data Export**:
-        *   **Client-Side Processing**: Large datasets must be transformed and downloaded directly from the browser to minimize server overhead.
-        *   **Format Support**: 
-            - Automated format selection (CSV for tabular/flat data, JSON for nested diagnostic data).
-            - Filename generation must include standardized ISO timestamps.
 
 ## 4. Admin Console Service (Node.js/Fastify)
 * **Core**: Use Fastify for high-performance Node.js service implementation.
@@ -59,7 +56,6 @@
 * **Synthetic AMI Generation**: Generate synthetic AMI time-series metrics traversing from 2025 through 2027.
 * **Alarms Dataset Integration**:
     * **Relational Storage**: Active alarms and metadata stored in a dedicated `alarms` table in DuckDB.
-    * **Log Storage**: Historical alarm logs should be stored in Parquet format in `cim_alarms/` directory for high-performance temporal queries.
 
 ## 6. Technology Stack
 * **Language**: Python (Backend), TypeScript/JavaScript (Frontend & Admin Console).
@@ -67,11 +63,7 @@
 * **Libraries**: Minimize the number of external libraries. Use only well-established libraries that will be supported long-term.
 
 ## 7. Environment Configuration
-* **Port Mapping**: Docker Compose services must use environment variables for host port mapping with sensible defaults:
-    * `BACKEND_PORT`: Default `8000`
-    * `FRONTEND_PORT`: Default `8080`
-    * `WEBSITE_PORT`: Default `3000`
-    * `ADMIN_CONSOLE_PORT`: Default `8090`
+* **Port Mapping**: Docker Compose services must use environment variables for host port mapping with sensible defaults.
 
 ## 8. Testing & Quality Assurance
 * **Test-Driven Development (TDD)**: Always follow TDD best practices.
@@ -81,3 +73,7 @@
     *   All services must include `.dockerignore` files to exclude `node_modules`, `.venv`, and other build artifacts from the context.
     *   Dockerfiles should use multi-stage builds where applicable to minimize final image size.
     *   Verify build integrity for all services (frontend, backend, docs, admin console) from the root `docker-compose.yml`.
+
+## 10. Graph Search Engine
+* **Edge Indexing**: The search service must index edge entities (conductors, lines) in addition to nodes.
+* **Fast Lookup**: Search should use efficient string matching (contains/starts-with) across both device names and IDs.

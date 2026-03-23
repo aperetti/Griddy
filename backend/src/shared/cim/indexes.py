@@ -37,6 +37,7 @@ class IndexBuilder:
         self.transformer_has_tap_changer: dict[str, bool] = {}     # PT/Tank mRID → bool
         self.equipment_is_single_phase: dict[str, bool] = {}       # mRID → bool
         self.equipment_current_limits: dict[str, float] = {}       # mRID → Amps
+        self.transformer_tap_changers: dict[str, dict] = {}        # PT/Tank mRID → dict of attributes
         self.manual_tank_to_info: dict[str, str] = {}              # tank mRID → tankInfo mRID
         self.manual_info_to_kva: dict[str, float] = {}             # tankInfo mRID → VA
 
@@ -396,22 +397,43 @@ class IndexBuilder:
                 # RatioTapChanger can be linked to PowerTransformerEnd or TransformerTankEnd
                 pte = getattr(rtc, "TransformerEnd", None) # Often just "TransformerEnd" in CIM
                 if pte:
-                    # PowerTransformerEnd -> PowerTransformer
-                    pt = getattr(pte, "PowerTransformer", None)
-                    pt_id = _mrid_str(pt)
-                    if pt_id:
-                        self.transformer_has_tap_changer[pt_id] = True
-                    
                     # TransformerTankEnd -> TransformerTank
                     tank = getattr(pte, "TransformerTank", None)
                     tank_id = _mrid_str(tank)
                     if tank_id:
                         self.transformer_has_tap_changer[tank_id] = True
+                        # Store properties
+                        rtc_data = {
+                            "step": _safe_float(getattr(rtc, "step", None)),
+                            "neutralStep": _safe_float(getattr(rtc, "neutralStep", None)),
+                            "lowStep": _safe_float(getattr(rtc, "lowStep", None)),
+                            "highStep": _safe_float(getattr(rtc, "highStep", None)),
+                            "neutralU": _safe_float(getattr(rtc, "neutralU", None)),
+                            "stepVoltageIncrement": _safe_float(getattr(rtc, "stepVoltageIncrement", None)),
+                        }
+                        self.transformer_tap_changers[tank_id] = rtc_data
+
                         # Also flag the parent transformer if it's a tank
                         pt_from_tank = getattr(tank, "PowerTransformer", None)
                         pt_from_tank_id = _mrid_str(pt_from_tank)
                         if pt_from_tank_id:
                             self.transformer_has_tap_changer[pt_from_tank_id] = True
+                            self.transformer_tap_changers[pt_from_tank_id] = rtc_data
+                    
+                    # PowerTransformerEnd -> PowerTransformer
+                    pt = getattr(pte, "PowerTransformer", None)
+                    pt_id = _mrid_str(pt)
+                    if pt_id:
+                        self.transformer_has_tap_changer[pt_id] = True
+                        rtc_data = {
+                            "step": _safe_float(getattr(rtc, "step", None)),
+                            "neutralStep": _safe_float(getattr(rtc, "neutralStep", None)),
+                            "lowStep": _safe_float(getattr(rtc, "lowStep", None)),
+                            "highStep": _safe_float(getattr(rtc, "highStep", None)),
+                            "neutralU": _safe_float(getattr(rtc, "neutralU", None)),
+                            "stepVoltageIncrement": _safe_float(getattr(rtc, "stepVoltageIncrement", None)),
+                        }
+                        self.transformer_tap_changers[pt_id] = rtc_data
                     
     def _build_limit_index(self):
         """Map equipment to their associated CurrentLimit values."""

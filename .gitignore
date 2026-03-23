@@ -1,5 +1,10 @@
 # Data Assets
-grid_data*.duckdb
+*.db
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.duckdb
+*.duckdb.wal
 cim_readings/
 cim_alarms/
 readings/
@@ -29,9 +34,6 @@ yarn-error.log*
 # OS
 .DS_Store
 Thumbs.db
-grid_data_cim.duckdb.wal
 
 .jules/
-grid_topology.sqlite
-grid_topology.sqlite-wal
-grid_topology.sqlite-shm
+admin-console/admin-backend/admin.sqlite

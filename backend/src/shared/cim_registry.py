@@ -114,8 +114,12 @@ class CimModelRegistry:
         if manager._idx is not None:
             for mrid in manager._idx.equipment_index.keys():
                 self._mrid_to_model[mrid] = model_id
-            for node_id in manager._idx.cn_equipment.keys():
-                self._node_to_model[node_id] = model_id
+            
+            # Index EVERY node in the topology, even those without equipment
+            for node in manager.get_topology_nodes():
+                node_id = node.get("node_id")
+                if node_id:
+                    self._node_to_model[node_id] = model_id
 
         logger.info(
             "Model '%s' loaded (%d nodes, %d edges)",
@@ -208,6 +212,11 @@ class CimModelRegistry:
         """Search across all loaded models for nodes or equipment matching the query."""
         results = []
         lower_query = query.lower()
+        # Strip common suffixes used in UI display (e.g. " (node)", " (edge)")
+        clean_query = lower_query
+        for suffix in [" (node)", " (edge)", " (equipment)", " (bus)", " (line)"]:
+            clean_query = clean_query.replace(suffix, "")
+        clean_query = clean_query.strip()
 
         for mid, mgr in self.get_managers():
             # Search nodes
@@ -217,9 +226,9 @@ class CimModelRegistry:
                 node_type = (node.get("node_type") or "").lower()
 
                 if (
-                    lower_query in name
-                    or lower_query in node_id
-                    or lower_query in node_type
+                    clean_query in name
+                    or clean_query in node_id
+                    or clean_query in node_type
                 ):
                     results.append(
                         {
@@ -236,11 +245,13 @@ class CimModelRegistry:
                     eq_name = (eq.get("name") or "").lower()
                     eq_id = eq.get("mrid", "").lower()
                     eq_type = (eq.get("type") or "").lower()
+                    eq_class = (eq.get("cim_class") or "").lower()
 
                     if (
-                        lower_query in eq_name
-                        or lower_query in eq_id
-                        or lower_query in eq_type
+                        clean_query in eq_name
+                        or clean_query in eq_id
+                        or clean_query in eq_type
+                        or clean_query in eq_class
                     ):
                         results.append(
                             {
@@ -248,7 +259,7 @@ class CimModelRegistry:
                                 "name": eq.get("name") or eq["mrid"],
                                 "type": "equipment",
                                 "model_id": mid,
-                                "cim_type": eq.get("type", "Equipment"),
+                                "cim_type": eq.get("cim_class") or eq.get("type", "Equipment"),
                             }
                         )
                     if len(results) >= 50:
@@ -264,9 +275,9 @@ class CimModelRegistry:
                     edge_type = (edge.get("edge_type") or "").lower()
 
                     if (
-                        lower_query in name
-                        or lower_query in edge_id
-                        or lower_query in edge_type
+                        clean_query in name
+                        or clean_query in edge_id
+                        or clean_query in edge_type
                     ):
                         results.append(
                             {

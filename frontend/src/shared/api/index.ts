@@ -111,6 +111,7 @@ export interface DisplayRule {
         css: string;
     }>;
     match_conditions: any; // Can be string (from inputs) or object (from API)
+    enabled: boolean;
 }
 
 export const fetchDisplayConfigs = async (): Promise<DisplayConfig[]> => {
@@ -163,6 +164,11 @@ export const saveDisplayRule = async (rule: Partial<DisplayRule>): Promise<Displ
 
 export const deleteDisplayRule = async (ruleId: number): Promise<void> => {
     await fetch(`${ADMIN_API_BASE}/display-rules/rules/${ruleId}`, { method: 'DELETE' });
+};
+
+export const duplicateDisplayRule = async (ruleId: number): Promise<{id: number, name: string}> => {
+    const res = await fetch(`${ADMIN_API_BASE}/display-rules/rules/${ruleId}/duplicate`, { method: 'POST' });
+    return res.json();
 };
 
 export const fetchTopology = async (models?: string[]): Promise<TopologyResponse> => {

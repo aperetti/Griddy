@@ -224,9 +224,14 @@ export default function App() {
       // The useEffect for activeModelIds will trigger topology reload
     }
 
-    if (item.type === 'node' || !('source' in item)) {
+    if (item.type === 'node') {
       // Node selected
-      setSelectedNodes([item as Node]);
+      setSelectedNodes([{ ...item, type: 'ConnectivityNode' }]);
+      setHighlightedNodes(new Set([item.id]));
+      setHighlightedEdges(new Set());
+    } else if (item.type === 'equipment') {
+      // Equipment selected - find parent node if possible, otherwise select as node
+      setSelectedNodes([{ ...item, type: 'Equipment' }]);
       setHighlightedNodes(new Set([item.id]));
       setHighlightedEdges(new Set());
     } else {

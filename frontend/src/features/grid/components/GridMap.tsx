@@ -5,6 +5,7 @@ import { PathStyleExtension } from '@deck.gl/extensions';
 import { WebMercatorViewport } from '@deck.gl/core';
 import Supercluster from 'supercluster';
 import type { Node, Edge } from '../../../shared/types';
+import { useSpriteMap } from '../hooks/useSpriteMap';
 
 interface GridMapProps {
     nodes: Node[];
@@ -50,41 +51,39 @@ const stringToColor = (str: string): [number, number, number] => {
 // Switch and breaker edge_type values
 const SWITCH_EDGE_TYPES = new Set(['Breaker', 'LoadBreakSwitch', 'Fuse', 'Disconnector', 'Recloser']);
 
+// ──────────────────────────────────────────────────────────────────────────
+// Default fallback icons for switches, transformers, and capacitors.
+// These use per-datum SVG data URLs since they are static inline shapes.
+// Rule-matched icons use the sprite atlas (SpriteMap) instead.
+// ──────────────────────────────────────────────────────────────────────────
+
 const SVG_CACHE = new Map<string, string>();
-const SVG_DIM_CACHE = new Map<string, { width: number, height: number }>();
 
 const OPEN_SWITCH_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><line x1="30" y1="10" x2="30" y2="90" stroke="currentColor" stroke-width="8" stroke-linecap="round" /><line x1="70" y1="10" x2="70" y2="90" stroke="currentColor" stroke-width="8" stroke-linecap="round" /></svg>`;
 const CLOSE_SWITCH_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><line x1="30" y1="10" x2="30" y2="90" stroke="currentColor" stroke-width="8" stroke-linecap="round" /><line x1="70" y1="10" x2="70" y2="90" stroke="currentColor" stroke-width="8" stroke-linecap="round" /><line x1="15" y1="65" x2="85" y2="35" stroke="currentColor" stroke-width="8" stroke-linecap="round" /></svg>`;
 const TRANSFORMER_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><polygon points="50,15 15,85 85,85" stroke="currentColor" fill="none" stroke-width="8" stroke-linejoin="round" /></svg>`;
 const CAPACITOR_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="currentColor" font-family="Arial, sans-serif" font-weight="bold" font-size="12">C</text></svg>`;
 
-const getSvgDataUrl = (svg: string, color?: string, css?: string) => {
+const getSvgDataUrl = (svg: string, color?: string, css?: string): string => {
     if (!svg) return '';
     const cacheKey = `${svg}_${color || ''}_${css || ''}`;
     if (SVG_CACHE.has(cacheKey)) return SVG_CACHE.get(cacheKey)!;
-    
+
     let processedSvg = svg;
 
-    // Inject CSS if provided
     if (css && css.trim()) {
         const styleBlock = `<style>${css}</style>`;
-        if (processedSvg.includes('</svg>')) {
-            processedSvg = processedSvg.replace('</svg>', `${styleBlock}</svg>`);
-        } else {
-            processedSvg = `${processedSvg}${styleBlock}`;
-        }
+        processedSvg = processedSvg.includes('</svg>')
+            ? processedSvg.replace('</svg>', `${styleBlock}</svg>`)
+            : `${processedSvg}${styleBlock}`;
     }
 
     if (color) {
-        // Replace currentColor with actual color
-        processedSvg = processedSvg.replace(/currentColor/g, color);
-        
-        // Inject color into fill and stroke attributes, skipping "none"
-        processedSvg = processedSvg.replace(/fill=["'](?!none)[^"']+["']/g, `fill="${color}"`)
-                                   .replace(/stroke=["'](?!none)[^"']+["']/g, `stroke="${color}"`);
-                          
-        // Also handle cases where there's no fill/stroke (use defaults)
-        if (processedSvg === svg && !css) { // Don't force-inject if we added custom CSS which might handle its own colors
+        processedSvg = processedSvg
+            .replace(/currentColor/g, color)
+            .replace(/fill=["'](?!none)[^"']+["']/g, `fill="${color}"`)
+            .replace(/stroke=["'](?!none)[^"']+["']/g, `stroke="${color}"`);
+        if (processedSvg === svg && !css) {
             processedSvg = processedSvg.replace('<svg', `<svg fill="${color}" stroke="${color}"`);
         }
     }
@@ -94,36 +93,6 @@ const getSvgDataUrl = (svg: string, color?: string, css?: string) => {
     return url;
 };
 
-const getSvgDimensions = (svg: string): { width: number, height: number } => {
-    if (!svg) return { width: 128, height: 128 };
-    if (SVG_DIM_CACHE.has(svg)) return SVG_DIM_CACHE.get(svg)!;
-    
-    try {
-        // Try to find width/height attributes
-        const widthMatch = svg.match(/width=["']([\d.]+)/);
-        const heightMatch = svg.match(/height=["']([\d.]+)/);
-        
-        // Try to find viewBox
-        const viewBoxMatch = svg.match(/viewBox=["'][\d.]+\s+[\d.]+\s+([\d.]+)\s+([\d.]+)/);
-        
-        let width = 24;
-        let height = 24;
-        
-        if (widthMatch && heightMatch) {
-            width = parseFloat(widthMatch[1]);
-            height = parseFloat(heightMatch[1]);
-        } else if (viewBoxMatch) {
-            width = parseFloat(viewBoxMatch[1]);
-            height = parseFloat(viewBoxMatch[2]);
-        }
-        
-        const res = { width, height };
-        SVG_DIM_CACHE.set(svg, res);
-        return res;
-    } catch (e) {
-        return { width: 24, height: 24 };
-    }
-};
 
 // Derive a visual category from node.type and attached_equipment.
 // After the CIM refactor, node.type is only "Bus" | "Substation"; richer
@@ -234,6 +203,11 @@ export const GridMap = React.memo<GridMapProps>(({
     const lastDragTime = useRef(0);
     const mouseDownPos = useRef<{x: number, y: number} | null>(null);
     const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+
+    // Load sprite atlas from backend.
+    // Increment spriteVersion (via _setSpriteVersion) after saving display rules to force a refetch.
+    const [spriteVersion, _setSpriteVersion] = useState(0);
+    const spriteMap = useSpriteMap(spriteVersion);
 
     const [viewState, setViewState] = useState<any>({
         longitude: -118.2437,
@@ -842,34 +816,21 @@ export const GridMap = React.memo<GridMapProps>(({
                 }
             }
         }),
-        new IconLayer<Node>({
+        spriteMap && new IconLayer<Node>({
             id: 'grid-nodes-custom',
-            data: clusteredData.nodesToRender.filter(n => !!n.display_icon),
+            data: clusteredData.nodesToRender.filter(n => !!n.display_icon && !!spriteMap.mapping[n.display_icon!]),
             getPosition: (d: Node) => d.position,
-            getIcon: (d: Node) => {
-                const dims = getSvgDimensions(d.display_icon!);
-                const isHighlighted = highlightedNodes.has(d.id);
-                const isSelected = selectedNodeIdsSet.has(d.id);
-                const colorArr = getNodeColor(d, getVisualType(d), isHighlighted, isSelected, d.circuit_id);
-                const colorHex = `#${colorArr.map(c => c.toString(16).padStart(2, '0')).join('')}`;
-                
-                return {
-                    url: getSvgDataUrl(d.display_icon!, colorHex, d.display_css),
-                    width: dims.width,
-                    height: dims.height,
-                    anchorY: dims.height / 2,
-                    mask: false
-                };
-            },
+            // Sprite atlas mode — one shared texture, no per-datum image loading
+            iconAtlas: spriteMap.atlasUrl,
+            iconMapping: spriteMap.mapping,
+            getIcon: (d: Node) => d.display_icon!,
             getColor: (d: Node) => getNodeColor(d, getVisualType(d), highlightedNodes.has(d.id), selectedNodeIdsSet.has(d.id), d.circuit_id),
             getSize: (d: Node) => {
                 const isHovered = hoveredNodeId === d.id;
                 const isHighlighted = highlightedNodes.has(d.id);
                 const sizeAttr = d.display_size ?? 1.0;
-                const baseSize = sizeAttr;
-                let size = isHovered ? baseSize * 1.5 : baseSize;
+                let size = isHovered ? sizeAttr * 1.5 : sizeAttr;
                 if (isHighlighted) size *= 1.2;
-                
                 return size;
             },
             sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
@@ -887,36 +848,24 @@ export const GridMap = React.memo<GridMapProps>(({
             },
             updateTriggers: {
                 getSize: [hoveredNodeId, highlightedNodes, nodes],
-                getIcon: [highlightedNodes, selectedNodeIdsSet, nodes],
-                getColor: [highlightedNodes, selectedNodeIdsSet, nodes]
+                getIcon: [nodes, spriteMap],
+                getColor: [highlightedNodes, selectedNodeIdsSet, nodes],
             }
         }),
-        new IconLayer({
+        spriteMap && new IconLayer({
             id: 'grid-custom-edge-icons',
-            data: edges.filter(e => e.display_icon),
+            data: edges.filter(e => e.display_icon && !!spriteMap.mapping[e.display_icon!]),
             getPosition: (d: Edge) => edgeMidpoint(d),
-            getIcon: (d: Edge) => {
-                const dims = getSvgDimensions(d.display_icon!);
-                const isHighlighted = highlightedEdges.has(d.id || '') || highlightedEdges.has(`${d.source}-${d.target}`);
-                const isHovered = hoveredEdgeId === d.id;
-                const colorArr = getEdgeColor(d, isHighlighted, isHovered, d.circuit_id);
-                const colorHex = `#${colorArr.map(c => c.toString(16).padStart(2, '0')).join('')}`;
-
-                return {
-                    url: getSvgDataUrl(d.display_icon!, colorHex, d.display_css),
-                    width: dims.width,
-                    height: dims.height,
-                    anchorY: dims.height / 2,
-                    mask: false
-                };
-            },
+            // Sprite atlas mode — one shared texture, no per-datum image loading
+            iconAtlas: spriteMap.atlasUrl,
+            iconMapping: spriteMap.mapping,
+            getIcon: (d: Edge) => d.display_icon!,
             getColor: (d: Edge) => getEdgeColor(d, highlightedEdges.has(d.id || ''), hoveredEdgeId === d.id, d.circuit_id),
             getSize: (d: Edge) => {
                 const isHovered = hoveredEdgeId === d.id;
                 const isHighlighted = highlightedEdges.has(d.id || '');
                 const sizeAttr = d.display_size ?? 1.0;
-                const baseSize = sizeAttr;
-                let size = isHovered ? baseSize * 1.5 : baseSize;
+                let size = isHovered ? sizeAttr * 1.5 : sizeAttr;
                 if (isHighlighted) size *= 1.2;
                 return size;
             },
@@ -935,8 +884,8 @@ export const GridMap = React.memo<GridMapProps>(({
             },
             updateTriggers: {
                 getSize: [hoveredEdgeId, highlightedEdges, edges],
-                getIcon: [highlightedEdges, hoveredEdgeId, edges],
-                getColor: [highlightedEdges, hoveredEdgeId, edges]
+                getIcon: [edges, spriteMap],
+                getColor: [highlightedEdges, hoveredEdgeId, edges],
             }
         }),
         new ScatterplotLayer({

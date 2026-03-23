@@ -70,7 +70,10 @@ async def get_topology(
             "base_voltage_kv": n.get('base_voltage_kv'),
             "attached_equipment": n.get('attached_equipment', []),
             "display_type": classification.get('visual_type') if classification else None,
-            "display_icon": classification.get('icon') if classification else None,
+            "display_icon": f"rule_{classification.get('rule_id')}" if classification and classification.get('rule_id') else (
+                "default_transformer" if n.get('node_type') == 'PowerTransformer' else 
+                "default_capacitor" if n.get('node_type') == 'Capacitor' else None
+            ),
             "display_color": classification.get('color_hex') if classification else None,
             "display_size": classification.get('size', 1.0) if classification else 1.0,
             "display_label": classification.get('label') if classification else None,
@@ -107,7 +110,10 @@ async def get_topology(
             "is_open": e.get('is_open', False),
             "transformer_kva": e.get('transformer_kva'),
             "display_type": classification.get('visual_type') if classification else None,
-            "display_icon": classification.get('icon') if classification else None,
+            "display_icon": f"rule_{classification.get('rule_id')}" if classification and classification.get('rule_id') else (
+                "default_open_switch" if e.get('is_open') else "default_closed_switch" if e.get('edge_type') in ('Fuse', 'Switch', 'Breaker', 'Disconnector', 'LoadBreakSwitch') else 
+                "default_transformer" if e.get('edge_type') == 'PowerTransformer' else None
+            ),
             "display_color": classification.get('color_hex') if classification else None,
             "display_size": classification.get('size', 1.0) if classification else 1.0,
             "display_label": classification.get('label') if classification else None,

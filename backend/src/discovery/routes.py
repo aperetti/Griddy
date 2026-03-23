@@ -17,6 +17,15 @@ def _find_manager_for_mrid(mrid: str):
             if detail is not None:
                 detail["model_id"] = model_id
                 return detail
+    
+    # Fallback: Search all active managers (robustness for GUIDs not in index)
+    for mid, mgr in registry.get_managers():
+        detail = mgr.get_equipment_detail(mrid)
+        if detail is not None:
+            detail["model_id"] = mid
+            registry._mrid_to_model[mrid] = mid # Self-heal index
+            return detail
+            
     return None
 
 
@@ -30,7 +39,17 @@ def _find_manager_for_node(node_id: str):
             if detail is not None:
                 detail["model_id"] = model_id
                 return detail
-    return None
+
+    # Fallback: Search all active managers
+    for mid, mgr in registry.get_managers():
+        detail = mgr.get_node_cim_details(node_id)
+        if detail is not None:
+            detail["model_id"] = mid
+            registry._node_to_model[node_id] = mid # Self-heal index
+            return detail
+            
+    # Additional Fallback: Check if this was an equipment/edge ID (for Rule Assistant robustness)
+    return _find_manager_for_mrid(node_id)
 
 
 @router.get("/classes")

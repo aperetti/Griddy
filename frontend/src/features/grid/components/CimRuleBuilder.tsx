@@ -32,15 +32,22 @@ const genId = () => Math.random().toString(36).substr(2, 9);
 // Helper to ensure every node has an ID
 const ensureIds = (node: any): any => {
     if (!node || typeof node !== 'object') return node;
-    const newNode = { 
-        ...node, 
-        id: node.id || genId(),
-        logical_op: node.logical_op || 'AND',
-        conditions: Array.isArray(node.conditions) ? node.conditions : []
-    };
-    if (newNode.conditions) {
-        newNode.conditions = newNode.conditions.map((c: any) => ensureIds(c));
+
+    const isLeaf = 'path' in node;
+    const newNode = { ...node, id: node.id || genId() };
+
+    if (isLeaf) {
+        // Strip accidental group properties from leaf conditions
+        delete newNode.logical_op;
+        delete newNode.conditions;
+    } else {
+        // Ensure group properties are present and consistent
+        newNode.logical_op = newNode.logical_op || 'AND';
+        newNode.conditions = Array.isArray(newNode.conditions) 
+            ? newNode.conditions.map((c: any) => ensureIds(c)) 
+            : [];
     }
+    
     return newNode;
 };
 

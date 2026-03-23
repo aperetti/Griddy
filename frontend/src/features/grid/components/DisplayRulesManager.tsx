@@ -9,7 +9,7 @@ import {
 } from '@mantine/core';
 import {
     X, Upload, Maximize2, Trash2, Plus,
-    AlertCircle, Code, Eye, Info
+    AlertCircle, Code, Eye, Info, Copy
 } from 'lucide-react';
 import { AnalysisWindow } from '../../analytics/components/AnalysisWindow';
 import {
@@ -18,6 +18,7 @@ import {
 import {
     fetchDisplayConfigs, fetchDisplayRules,
     saveDisplayRule, deleteDisplayRule,
+    duplicateDisplayRule,
     setDefaultDisplayConfig,
     type DisplayConfig, type DisplayRule
 } from '../../../shared/api';
@@ -128,6 +129,18 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
         }
     };
 
+    const handleDuplicateRule = async (ruleId: number) => {
+        try {
+            await duplicateDisplayRule(ruleId);
+            if (selectedConfigId) {
+                loadRules(selectedConfigId);
+                onRulesChanged?.();
+            }
+        } catch (err) {
+            console.error('Failed to duplicate rule', err);
+        }
+    };
+
     const handleFileUpload = (file: File | null) => {
         if (!file) return;
         const reader = new FileReader();
@@ -153,6 +166,7 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
     const handleAddRule = () => {
         setEditingRule({
             name: 'New Rule',
+            enabled: true,
             priority: 0,
             match_conditions: '{}',
             visual_type: 'Custom',
@@ -472,6 +486,22 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                 </Grid.Col>
 
                             </Grid>
+
+                            <Paper withBorder p="xs" style={{ background: 'rgba(255,255,255,0.05)' }}>
+                                <Group justify="space-between">
+                                    <Group gap="xs">
+                                        <Text size="xs" fw={500}>Rule Enabled</Text>
+                                        <Tooltip label="If disabled, this rule will be ignored when rendering the map." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                            <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                        </Tooltip>
+                                    </Group>
+                                    <Switch 
+                                        checked={editingRule?.enabled ?? true}
+                                        onChange={(e) => setEditingRule(prev => prev ? { ...prev, enabled: e.currentTarget.checked } : null)}
+                                        size="xs"
+                                    />
+                                </Group>
+                            </Paper>
                             
                             <Divider label="Geospatial Clustering" labelPosition="center" />
                             <Paper withBorder p="xs" style={{ background: 'rgba(255,255,255,0.05)' }}>
@@ -607,16 +637,22 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                             p="xs" 
                                             style={{ 
                                                 background: 'rgba(255,255,255,0.02)', 
-                                                cursor: 'pointer',
                                                 transition: 'background 0.2s ease'
                                             }}
-                                            onClick={() => setEditingRule(rule)}
                                             onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
                                             onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
                                         >
                                             <Stack gap={5}>
                                                 <Group justify="space-between" wrap="nowrap">
-                                                    <Text fw={700} size="sm" truncate="end">{rule.name}</Text>
+                                                    <Text 
+                                                        fw={700} 
+                                                        size="sm" 
+                                                        truncate="end" 
+                                                        onClick={() => setEditingRule(rule)}
+                                                        style={{ cursor: 'pointer', flex: 1 }}
+                                                    >
+                                                        {rule.name}
+                                                    </Text>
                                                     <ActionIcon 
                                                         size="md" 
                                                         variant="subtle" 
@@ -631,16 +667,36 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                                 </Group>
                                                 <Group justify="space-between">
                                                     <Group gap={4}>
-                                                        {rule.color_hex && <ColorSwatch color={rule.color_hex} size={10} />}
-                                                        <Badge color="blue" variant="light" size="xs" style={{ textTransform: 'none' }}>
-                                                            {rule.visual_type}
-                                                            {rule.size && ` (${rule.size})`}
-                                                        </Badge>
-                                                        {rule.label && <Badge color="gray" variant="outline" size="xs">{rule.label}</Badge>}
+                                                        <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+                                                            <Switch 
+                                                                size="xs" 
+                                                                checked={rule.enabled}
+                                                                onChange={async (e) => {
+                                                                    const updatedRule = { ...rule, enabled: e.currentTarget.checked };
+                                                                    await saveDisplayRule(updatedRule);
+                                                                    if (selectedConfigId) loadRules(selectedConfigId);
+                                                                    onRulesChanged?.();
+                                                                }}
+                                                            />
+                                                        </div>
+                                                        <Group gap={4} onClick={() => setEditingRule(rule)} style={{ cursor: 'pointer' }}>
+                                                            {rule.color_hex && <ColorSwatch color={rule.color_hex} size={10} />}
+                                                            <Badge color="blue" variant="light" size="xs" style={{ textTransform: 'none' }}>
+                                                                {rule.visual_type}
+                                                                {rule.size && ` (${rule.size})`}
+                                                            </Badge>
+                                                            {rule.label && <Badge color="gray" variant="outline" size="xs">{rule.label}</Badge>}
+                                                        </Group>
                                                     </Group>
-                                                    <Text size="xs" c="dimmed">Pri: {rule.priority}</Text>
+                                                    <Text size="xs" c="dimmed" onClick={() => setEditingRule(rule)} style={{ cursor: 'pointer' }}>Pri: {rule.priority}</Text>
                                                 </Group>
-                                                <Text size="xs" c="dimmed" fs="italic">
+                                                <Text 
+                                                    size="xs" 
+                                                    c="dimmed" 
+                                                    fs="italic"
+                                                    onClick={() => setEditingRule(rule)}
+                                                    style={{ cursor: 'pointer' }}
+                                                >
                                                     {(() => {
                                                         try {
                                                             const conds = typeof rule.match_conditions === 'string' 
@@ -681,15 +737,14 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                     </Table.Thead>
                                     <Table.Tbody>
                                         {rules.map(rule => (
-                                            <Table.Tr 
-                                                key={rule.id} 
-                                                style={{ cursor: 'pointer' }}
-                                                onClick={() => setEditingRule(rule)}
-                                            >
-                                                <Table.Td style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            <Table.Tr key={rule.id}>
+                                                <Table.Td 
+                                                    onClick={() => setEditingRule(rule)}
+                                                    style={{ cursor: 'pointer', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                                >
                                                     {rule.name}
                                                 </Table.Td>
-                                                <Table.Td>
+                                                <Table.Td onClick={() => setEditingRule(rule)} style={{ cursor: 'pointer' }}>
                                                     <Group gap={4}>
                                                         {rule.color_hex && <ColorSwatch color={rule.color_hex} size={10} />}
                                                         <Badge color="blue" variant="light" size="xs" style={{ textTransform: 'none' }}>
@@ -699,7 +754,7 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                                         {rule.label && <Badge color="gray" variant="outline" size="xs">{rule.label}</Badge>}
                                                     </Group>
                                                 </Table.Td>
-                                                <Table.Td>
+                                                <Table.Td onClick={() => setEditingRule(rule)} style={{ cursor: 'pointer' }}>
                                                     <Text size="xs" c="dimmed" truncate="end" style={{ maxWidth: 150 }}>
                                                         {(() => {
                                                             try {
@@ -720,9 +775,36 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                                         })()}
                                                     </Text>
                                                 </Table.Td>
-                                                <Table.Td>{rule.priority}</Table.Td>
+                                                <Table.Td onClick={() => setEditingRule(rule)} style={{ cursor: 'pointer' }}>
+                                                    {rule.priority}
+                                                </Table.Td>
                                                 <Table.Td>
                                                     <Group gap={4} wrap="nowrap" justify="flex-end">
+                                                        <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+                                                            <Switch 
+                                                                size="xs" 
+                                                                checked={rule.enabled}
+                                                                onChange={async (e) => {
+                                                                    const updatedRule = { ...rule, enabled: e.currentTarget.checked };
+                                                                    await saveDisplayRule(updatedRule);
+                                                                    if (selectedConfigId) loadRules(selectedConfigId);
+                                                                    onRulesChanged?.();
+                                                                }}
+                                                                title="Toggle Enabled"
+                                                            />
+                                                        </div>
+                                                        <ActionIcon 
+                                                            size="md" 
+                                                            variant="subtle" 
+                                                            color="blue" 
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleDuplicateRule(rule.id);
+                                                            }}
+                                                            title="Duplicate rule"
+                                                        >
+                                                            <Copy size={18} />
+                                                        </ActionIcon>
                                                         <ActionIcon 
                                                             size="md" 
                                                             variant="subtle" 

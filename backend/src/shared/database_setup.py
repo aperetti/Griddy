@@ -104,6 +104,11 @@ def init_admin_db():
         conn.execute("ALTER TABLE display_config_rules ADD COLUMN max_zoom REAL DEFAULT 24.0")
     except sqlite3.OperationalError:
         pass # Already exists
+
+    try:
+        conn.execute("ALTER TABLE display_config_rules ADD COLUMN enabled INTEGER DEFAULT 1")
+    except sqlite3.OperationalError:
+        pass # Already exists
     
     # Ensure at least one default config exists
     cursor = conn.cursor()

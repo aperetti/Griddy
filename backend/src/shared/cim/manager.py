@@ -109,6 +109,7 @@ class CimModelManager:
             getattr(cim, "TapChangerInfo", None),
             getattr(cim, "OperationalLimitSet", None),
             getattr(cim, "OperationalLimitValue", None),
+            getattr(cim, "LinearShuntCompensator", None),
             getattr(cim, "CurrentLimit", None),
         ]:
             if cls_type:
