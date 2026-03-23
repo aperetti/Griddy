@@ -1,5 +1,3 @@
-import pytest
-from src.shared.cim.topology import TopologyBuilder
 from src.shared.cim.indexes import IndexBuilder
 
 class MockIndex:
@@ -34,11 +32,13 @@ def test_index_builder_regulator():
     try:
         from src.shared.cim.manager import cim
     except ImportError:
-        pass
+        class MockCim:
+            RatioTapChanger = "RatioTapChanger"
+        cim = MockCim()
     
     class MockGraph:
         def get(self, cls, default):
-            if cls == cim.RatioTapChanger:
+            if cls == getattr(cim, 'RatioTapChanger', None):
                 return {"rtc1": type('RTC', (), {
                     "TransformerEnd": type('TE', (), {
                         "PowerTransformer": type('PT', (), {"mRID": "pt1"}),
@@ -47,7 +47,7 @@ def test_index_builder_regulator():
                 })}
             return default
 
-    idx = IndexBuilder()
+    idx = IndexBuilder(cim, MockGraph())
     # We can't easily run the full build_indexes here without a real CIM model,
     # but we've verified the code logic.
     
