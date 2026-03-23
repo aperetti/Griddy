@@ -24,6 +24,8 @@ def _load_topology_into_duckdb(conn):
     print("  Fetching node metadata...")
     conn.execute("INSTALL sqlite")
     conn.execute("LOAD sqlite")
+    conn.execute("INSTALL parquet")
+    conn.execute("LOAD parquet")
     # Use as_posix() for Windows path compatibility in SQL
     sqlite_posix = Path(SQLITE_PATH).as_posix()
     conn.execute(f"ATTACH '{sqlite_posix}' AS topology (TYPE SQLITE)")
