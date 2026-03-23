@@ -2,7 +2,7 @@
 set -e
 
 # Data directory
-mkdir -p /data
+mkdir -p /data /data/config
 
 # Bootstrapping logic
 if [ "$BOOTSTRAP_DATA" = "true" ]; then

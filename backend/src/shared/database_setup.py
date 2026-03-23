@@ -35,6 +35,15 @@ PARQUET_ALARMS_DIR = os.getenv("PARQUET_ALARMS_DIR", str(BASE_DIR / "cim_alarms"
 
 def init_admin_db():
     """Initialises the admin database schema (display rules)."""
+    # Ensure the parent directory exists
+    admin_db_dir = os.path.dirname(ADMIN_SQLITE_PATH)
+    if admin_db_dir and not os.path.exists(admin_db_dir):
+        try:
+            os.makedirs(admin_db_dir, exist_ok=True)
+            print(f"Created directory for admin database: {admin_db_dir}")
+        except Exception as e:
+            print(f"Warning: Could not create directory {admin_db_dir}: {e}")
+
     conn = sqlite3.connect(ADMIN_SQLITE_PATH)
     
     # Tables for display configurations (profiles)
