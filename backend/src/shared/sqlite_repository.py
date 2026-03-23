@@ -138,6 +138,31 @@ class SqliteRepository(AssetRepository):
                 for r in rows
             ]
 
+    def get_active_alarms_by_nodes(self, node_ids: List[str]) -> List[Alarm]:
+        if not node_ids:
+            return []
+
+        with self._connect() as conn:
+            placeholders = ','.join(['?'] * len(node_ids))
+            query = f"""
+                SELECT alarm_id, node_id, timestamp, alarm_code,
+                severity, message, is_active
+                FROM alarms WHERE is_active = 1 AND node_id IN ({placeholders})
+            """
+            rows = conn.execute(query, node_ids).fetchall()
+            return [
+                Alarm(
+                    alarm_id=r['alarm_id'],
+                    node_id=r['node_id'],
+                    timestamp=r['timestamp'],
+                    alarm_code=r['alarm_code'],
+                    severity=r['severity'],
+                    message=r['message'],
+                    is_active=bool(r['is_active']),
+                )
+                for r in rows
+            ]
+
     def save_alarm(self, alarm: Alarm) -> None:
         with self._connect() as conn:
             conn.execute(

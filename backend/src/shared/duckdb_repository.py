@@ -108,6 +108,28 @@ class DuckDBRepository(AssetRepository):
                 for row in results
             ]
 
+    def get_active_alarms_by_nodes(self, node_ids: List[str]) -> List[Alarm]:
+        if not node_ids:
+            return []
+
+        with duckdb.connect(self.db_path, read_only=True) as conn:
+            placeholders = ','.join(['?'] * len(node_ids))
+            query = f"SELECT alarm_id, node_id, timestamp, alarm_code, severity, message, is_active FROM alarms WHERE is_active = TRUE AND node_id IN ({placeholders})"
+
+            results = conn.execute(query, node_ids).fetchall()
+            return [
+                Alarm(
+                    alarm_id=row[0],
+                    node_id=row[1],
+                    timestamp=row[2],
+                    alarm_code=row[3],
+                    severity=row[4],
+                    message=row[5],
+                    is_active=row[6]
+                )
+                for row in results
+            ]
+
     def save_alarm(self, alarm: Alarm) -> None:
         with duckdb.connect(self.db_path) as conn:
             conn.execute(

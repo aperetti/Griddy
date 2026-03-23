@@ -27,6 +27,11 @@ class AssetRepository(ABC):
         pass
 
     @abstractmethod
+    def get_active_alarms_by_nodes(self, node_ids: List[str]) -> List[Alarm]:
+        """Returns active alarms for a list of node IDs."""
+        pass
+
+    @abstractmethod
     def save_alarm(self, alarm: Alarm) -> None:
         """Saves or updates an alarm."""
         pass

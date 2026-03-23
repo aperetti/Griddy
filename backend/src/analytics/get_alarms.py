@@ -27,10 +27,5 @@ class GetActiveAlarmsUseCase:
         # Deduplicate
         target_node_ids = list(set(target_node_ids))
         
-        # In a real high-scale system, we'd have a repository method that takes a list of IDs.
-        # For now, we'll fetch all active alarms and filter in memory, 
-        # or add a better method to DuckDBRepository if needed.
-        # Actually, let's just fetch all active alarms for the target IDs.
-        
-        all_active = self.repository.get_active_alarms()
-        return [a for a in all_active if a.node_id in target_node_ids]
+        # We now use the optimized repository method to fetch alarms using an IN clause.
+        return self.repository.get_active_alarms_by_nodes(target_node_ids)
