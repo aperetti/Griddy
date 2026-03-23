@@ -8,7 +8,7 @@
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "refresh:data": "docker compose run --rm --profile tools -e REFRESH_DB=true generator"
+    "refresh:data": "docker compose --profile tools run --rm -e REFRESH_DB=true generator"
   },
   "repository": {
     "type": "git",
