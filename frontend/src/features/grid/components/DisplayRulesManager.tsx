@@ -146,8 +146,11 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
         const reader = new FileReader();
         reader.onload = (e) => {
             const content = e.target?.result as string;
-            if (content.trim().startsWith('<svg')) {
+            const trimmed = content.trim();
+            if (trimmed.startsWith('<svg') || trimmed.includes('<svg')) {
                 setEditingRule(prev => prev ? { ...prev, icon: content } : null);
+            } else {
+                console.warn('Uploaded file does not appear to be an SVG');
             }
         };
         reader.readAsText(file);
@@ -387,7 +390,7 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                 
                                 <Grid.Col span={{ base: 4, sm: 'auto' }}>
                                     <Group justify="center" align="center" h="100%">
-                                        {editingRule?.icon && editingRule.icon.trim().startsWith('<svg') ? (
+                                        {editingRule?.icon && (editingRule.icon.trim().startsWith('<svg') || editingRule.icon.includes('<svg')) ? (
                                             <Box style={{ 
                                                 width: 32, 
                                                 height: 32, 

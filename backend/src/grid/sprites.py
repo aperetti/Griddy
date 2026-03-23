@@ -33,7 +33,7 @@ class SpriteGenerator:
             svg_str = f'<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">{svg_str}</svg>'
 
         # Inject CSS
-        if css and css.strip():
+        if css and css.strip() and css.strip() not in ('[]', '{}'):
             style_block = f'<style>{css}</style>'
             if "</svg>" in svg_str:
                 svg_str = svg_str.replace("</svg>", f"{style_block}</svg>")
@@ -59,29 +59,51 @@ class SpriteGenerator:
                 return Image.new("RGBA", (self.item_size, self.item_size), (0, 0, 0, 0))
 
             drawing = svg2rlg(BytesIO(svg_str.encode("utf-8")))
-            if drawing is None:
+            if drawing is None or drawing.width <= 0 or drawing.height <= 0:
                 return Image.new("RGBA", (self.item_size, self.item_size), (255, 0, 0, 50))
 
-            # Scale drawing to fit item_size
-            scale_x = self.item_size / drawing.width
-            scale_y = self.item_size / drawing.height
-            scale = min(scale_x, scale_y) * 0.9 # Leave some padding
-            
-            drawing.scale(scale, scale)
-            # Center it
-            drawing.shift((self.item_size - drawing.width * scale) / 2, (self.item_size - drawing.height * scale) / 2)
+            # 1. Render raw reportlab drawing into B and W backgrounds for Alpha extraction
+            img_b = renderPM.drawToPIL(drawing, bg=0x000000)
+            img_w = renderPM.drawToPIL(drawing, bg=0xFFFFFF)
 
-            # Render to PNG in memory
-            img_data = renderPM.drawToString(drawing, fmt="PNG")
-            img = Image.open(BytesIO(img_data)).convert("RGBA")
+            data_b = img_b.getdata()
+            data_w = img_w.getdata()
+            out_data = bytearray(img_b.width * img_b.height * 4)
+
+            for i, ((rb, gb, bb), (rw, gw, bw)) in enumerate(zip(data_b, data_w)):
+                # Averaged difference
+                a_f = 255.0 - ((rw - rb) + (gw - gb) + (bw - bb)) / 3.0
+                a = int(round(a_f))
+                idx = i * 4
+                if a <= 0:
+                    out_data[idx:idx+4] = b'\x00\x00\x00\x00'
+                else:
+                    r = min(255, int(rb * 255.0 / a))
+                    g = min(255, int(gb * 255.0 / a))
+                    b = min(255, int(bb * 255.0 / a))
+                    out_data[idx:idx+4] = bytes((r, g, b, a))
+
+            parsed_img = Image.frombytes("RGBA", img_b.size, bytes(out_data))
+
+            # 2. Scale and center using PIL to avoid ReportLab shifting bugs
+            scale_x = self.item_size / parsed_img.width
+            scale_y = self.item_size / parsed_img.height
+            scale = min(scale_x, scale_y) * 0.9 # Leave padding
+
+            new_w = max(1, int(parsed_img.width * scale))
+            new_h = max(1, int(parsed_img.height * scale))
             
-            # Ensure it is exactly the right size
-            if img.size != (self.item_size, self.item_size):
-                final_img = Image.new("RGBA", (self.item_size, self.item_size), (0, 0, 0, 0))
-                final_img.paste(img, (0, 0))
-                return final_img
+            # Resampling filter: LANCZOS is best for high quality downsizing/upsizing
+            resized_img = parsed_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+            # Center on final transparent canvas
+            final_img = Image.new("RGBA", (self.item_size, self.item_size), (0, 0, 0, 0))
+            offset_x = (self.item_size - new_w) // 2
+            offset_y = (self.item_size - new_h) // 2
+            final_img.paste(resized_img, (offset_x, offset_y), resized_img) # use itself as mask
             
-            return img
+            return final_img
+
         except Exception as e:
             print(f"Error rendering SVG: {e}")
             # Return a red square on error
@@ -107,9 +129,19 @@ class SpriteGenerator:
                 rules = conn.execute("SELECT * FROM display_config_rules WHERE enabled = 1 AND icon IS NOT NULL").fetchall()
                 for rule in rules:
                     d = dict(rule)
+                    
+                    css_str = ""
+                    if d.get('css_overrides') and d['css_overrides'].strip() != '[]':
+                        try:
+                            overrides = json.loads(d['css_overrides'])
+                            if isinstance(overrides, list):
+                                css_str = "\n".join(o.get('css', '') for o in overrides if isinstance(o, dict))
+                        except json.JSONDecodeError:
+                            pass
+
                     items.append({
                         "id": f"rule_{d['id']}",
-                        "svg": self._process_svg(d['icon'], color=d.get('color_hex'), css=d.get('css_overrides')),
+                        "svg": self._process_svg(d['icon'], color=d.get('color_hex'), css=css_str),
                         "name": d['name']
                     })
         except Exception as e:
