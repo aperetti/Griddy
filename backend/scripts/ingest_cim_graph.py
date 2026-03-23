@@ -43,6 +43,7 @@ def setup_sqlite(db_path: str) -> sqlite3.Connection:
     conn.execute("""
         CREATE TABLE grid_nodes (
             node_id   TEXT PRIMARY KEY,
+            model_id  TEXT NOT NULL,
             node_type TEXT NOT NULL,
             name      TEXT,
             phases_present TEXT DEFAULT '["A","B","C"]',
@@ -54,6 +55,7 @@ def setup_sqlite(db_path: str) -> sqlite3.Connection:
     conn.execute("""
         CREATE TABLE grid_edges (
             edge_id      TEXT PRIMARY KEY,
+            model_id     TEXT NOT NULL,
             from_node_id TEXT NOT NULL REFERENCES grid_nodes(node_id),
             to_node_id   TEXT NOT NULL REFERENCES grid_nodes(node_id),
             conductor_type TEXT,
@@ -99,9 +101,10 @@ def main():
     for n in nodes_raw:
         nodes_to_insert.append((
             n["node_id"],
+            manager.model_id,
             n["node_type"],
             n.get("name", ""),
-            json.dumps(n.get("phases_present", ["A", "B", "C"])),
+            json.dumps(n.get("phases", ["A", "B", "C"])),
             n.get("latitude", 0.0),
             n.get("longitude", 0.0),
             int(n.get("is_open", False)),
@@ -111,6 +114,7 @@ def main():
     for e in edges_raw:
         edges_to_insert.append((
             e["edge_id"],
+            manager.model_id,
             e["from_node_id"],
             e["to_node_id"],
             e.get("conductor_type", "Unknown"),
@@ -125,14 +129,14 @@ def main():
 
     conn.executemany(
         "INSERT INTO grid_nodes "
-        "(node_id, node_type, name, phases_present, latitude, longitude, is_open) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "(node_id, model_id, node_type, name, phases_present, latitude, longitude, is_open) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         nodes_to_insert
     )
     conn.executemany(
         "INSERT INTO grid_edges "
-        "(edge_id, from_node_id, to_node_id, conductor_type, phases) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "(edge_id, model_id, from_node_id, to_node_id, conductor_type, phases) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
         edges_to_insert
     )
 
