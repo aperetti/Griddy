@@ -602,7 +602,7 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
                                             smooth: true,
                                             showSymbol: false,
                                             itemStyle: { color: '#ffd43b' },
-                                            lineStyle: { width: 2, type: 'dashed' }
+                                            lineStyle: { width: 1.5, type: 'solid' }
                                         },
                                         {
                                             name: 'Temp (24h Avg)',

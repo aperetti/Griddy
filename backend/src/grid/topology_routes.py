@@ -74,6 +74,13 @@ async def get_topology(
             "display_color": classification.get('color_hex') if classification else None,
             "display_size": classification.get('size', 1.0) if classification else 1.0,
             "display_label": classification.get('label') if classification else None,
+            "display_css": classification.get('display_css', '') if classification else '',
+            "cluster_enabled": classification.get('cluster_enabled', False) if classification else False,
+            "cluster_radius": classification.get('cluster_radius', 40.0) if classification else 40.0,
+            "cluster_max_zoom": classification.get('cluster_max_zoom', 20.0) if classification else 20.0,
+            "cluster_min_points": classification.get('cluster_min_points', 2) if classification else 2,
+            "display_min_zoom": classification.get('min_zoom', 0.0) if classification else 0.0,
+            "display_max_zoom": classification.get('max_zoom', 24.0) if classification else 24.0,
             "model_id": n.get('model_id', 'unknown'),
         })
 
@@ -104,6 +111,9 @@ async def get_topology(
             "display_color": classification.get('color_hex') if classification else None,
             "display_size": classification.get('size', 1.0) if classification else 1.0,
             "display_label": classification.get('label') if classification else None,
+            "display_css": classification.get('display_css', '') if classification else '',
+            "display_min_zoom": classification.get('min_zoom', 0.0) if classification else 0.0,
+            "display_max_zoom": classification.get('max_zoom', 24.0) if classification else 24.0,
             "model_id": e.get('model_id', 'unknown'),
         })
 

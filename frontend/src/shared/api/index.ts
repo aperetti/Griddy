@@ -99,11 +99,17 @@ export interface DisplayRule {
     color_hex?: string;
     size?: number;
     label?: string;
+    cluster_enabled?: boolean;
+    cluster_radius?: number;
+    cluster_max_zoom?: number;
+    cluster_min_points?: number;
+    min_zoom?: number;
+    max_zoom?: number;
+    display_css?: string;
     css_overrides?: Array<{
         conditions: any;
         css: string;
     }>;
-    radial_offset?: number;
     match_conditions: any; // Can be string (from inputs) or object (from API)
 }
 

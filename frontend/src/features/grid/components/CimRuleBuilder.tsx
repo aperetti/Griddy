@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Button, Group, Text, ActionIcon, Stack, SegmentedControl, Box, Badge, Tooltip } from '@mantine/core';
+import { Button, Group, Text, ActionIcon, Stack, SegmentedControl, Box, Badge, Tooltip, Collapse } from '@mantine/core';
 import { Sparkles, Plus, Trash2, FolderPlus, Info } from 'lucide-react';
 import { fetchCimSchema } from '../../../shared/api';
 import { RuleAssistant } from './RuleAssistant';
@@ -31,8 +31,13 @@ const genId = () => Math.random().toString(36).substr(2, 9);
 
 // Helper to ensure every node has an ID
 const ensureIds = (node: any): any => {
-    if (!node) return node;
-    const newNode = { ...node, id: node.id || genId() };
+    if (!node || typeof node !== 'object') return node;
+    const newNode = { 
+        ...node, 
+        id: node.id || genId(),
+        logical_op: node.logical_op || 'AND',
+        conditions: Array.isArray(node.conditions) ? node.conditions : []
+    };
     if (newNode.conditions) {
         newNode.conditions = newNode.conditions.map((c: any) => ensureIds(c));
     }
@@ -280,14 +285,14 @@ export const CimRuleBuilder: React.FC<CimRuleBuilderProps> = ({ value, onChange 
                 </Group>
 
                 <Stack gap="xs">
-                    {group.conditions.length === 0 && (
+                    {(group.conditions || []).length === 0 && (
                         <Text size="xs" c="dimmed" ta="center" py="sm">Empty Group. Add something!</Text>
                     )}
-                    {group.conditions.map((c: any) => (
-                        'conditions' in c ? (
+                    {(group.conditions || []).map((c: any) => (
+                        c && 'conditions' in c ? (
                             <ConditionGroupUI key={c.id} group={c as ConditionGroup} depth={depth + 1} />
                         ) : (
-                            <ConditionRow key={c.id} condition={c as Condition} />
+                            c ? <ConditionRow key={c.id} condition={c as Condition} /> : null
                         )
                     ))}
                 </Stack>
@@ -319,7 +324,12 @@ export const CimRuleBuilder: React.FC<CimRuleBuilderProps> = ({ value, onChange 
                 {/* Left Side: Rule Builder */}
                 <Box style={{ flex: (isWide && showAssistant) ? '1 1 50%' : '1 1 0', width: '100%', minWidth: 0 }}>
                     <Box mb="md">
-                        <Text size="12px" c="dimmed" mb={4}>Target CIM Class</Text>
+                        <Group gap={4} mb={4}>
+                            <Text size="12px" fw={700}>Target CIM Class</Text>
+                            <Tooltip label="The type of CIM object this rule applies to (e.g. PowerTransformer). Use 'Any Class' for cross-cutting rules." position="top-start" withArrow withinPortal zIndex={10000}>
+                                <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                            </Tooltip>
+                        </Group>
                         <select
                             value={config.target_class}
                             onChange={(e) => updateConfig({ ...config, target_class: e.target.value })}
@@ -337,11 +347,23 @@ export const CimRuleBuilder: React.FC<CimRuleBuilderProps> = ({ value, onChange 
 
                     <ConditionGroupUI group={config} depth={0} />
 
-                    <Box mt="md" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', pt: 'md' }}>
+                    <Box mt="md" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px' }}>
                          <Text size="10px" c="dimmed" mb={8}>
                             <Info size={10} style={{ verticalAlign: 'middle', marginRight: 4 }} />
                             To add from Assistant: Select a group (blue border) and click "Add" in the Assistant.
                          </Text>
+                         
+                         <Collapse in={true}>
+                            <Box mt="sm" p="xs" style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '4px' }}>
+                                <Group justify="space-between" mb={4}>
+                                    <Text size="10px" fw={700} c="dimmed">RESOLVED JSON</Text>
+                                    <Badge size="xs" variant="light" color="gray">Read-only</Badge>
+                                </Group>
+                                <Text size="10px" component="pre" style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'monospace', opacity: 0.7 }}>
+                                    {JSON.stringify(config, (key, value) => key === 'id' ? undefined : value, 2)}
+                                </Text>
+                            </Box>
+                         </Collapse>
                     </Box>
                 </Box>
 

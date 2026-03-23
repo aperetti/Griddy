@@ -68,6 +68,12 @@ def init_admin_db():
             label               TEXT,
             css_overrides       TEXT,
             radial_offset       REAL DEFAULT 0.0,
+            cluster_enabled     INTEGER DEFAULT 0,
+            cluster_radius      REAL DEFAULT 40.0,
+            cluster_max_zoom    REAL DEFAULT 20.0,
+            cluster_min_points  INTEGER DEFAULT 2,
+            min_zoom            REAL DEFAULT 0.0,
+            max_zoom            REAL DEFAULT 24.0,
             enabled             INTEGER DEFAULT 1,
             created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -82,6 +88,20 @@ def init_admin_db():
     
     try:
         conn.execute("ALTER TABLE display_config_rules ADD COLUMN radial_offset REAL DEFAULT 0.0")
+    except sqlite3.OperationalError:
+        pass # Already exists
+
+    try:
+        conn.execute("ALTER TABLE display_config_rules ADD COLUMN cluster_enabled INTEGER DEFAULT 0")
+        conn.execute("ALTER TABLE display_config_rules ADD COLUMN cluster_radius REAL DEFAULT 40.0")
+        conn.execute("ALTER TABLE display_config_rules ADD COLUMN cluster_max_zoom REAL DEFAULT 20.0")
+        conn.execute("ALTER TABLE display_config_rules ADD COLUMN cluster_min_points INTEGER DEFAULT 2")
+    except sqlite3.OperationalError:
+        pass # Already exists
+
+    try:
+        conn.execute("ALTER TABLE display_config_rules ADD COLUMN min_zoom REAL DEFAULT 0.0")
+        conn.execute("ALTER TABLE display_config_rules ADD COLUMN max_zoom REAL DEFAULT 24.0")
     except sqlite3.OperationalError:
         pass # Already exists
     

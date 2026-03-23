@@ -5,10 +5,10 @@ import {
     Stack, Text, Badge, Select, TextInput, 
     NumberInput, JsonInput, Paper, Divider,
     ColorInput, ColorSwatch, Box,
-    Alert, FileButton, Grid, Textarea
+    Alert, FileButton, Grid, Textarea, Switch
 } from '@mantine/core';
 import {
-    X, Upload, Maximize2, Edit2, Trash2, Plus,
+    X, Upload, Maximize2, Trash2, Plus,
     AlertCircle, Code, Eye, Info
 } from 'lucide-react';
 import { AnalysisWindow } from '../../analytics/components/AnalysisWindow';
@@ -159,6 +159,12 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
             color_hex: '',
             size: 1.0,
             label: '',
+            cluster_enabled: false,
+            cluster_radius: 40,
+            cluster_max_zoom: 20,
+            cluster_min_points: 2,
+            min_zoom: 0,
+            max_zoom: 24,
             css_overrides: []
         });
     };
@@ -424,27 +430,107 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                         size="xs"
                                     />
                                 </Grid.Col>
+                                
+                                <Grid.Col span={{ base: 6, sm: 2 }}>
+                                    <NumberInput
+                                        label={
+                                            <Group gap={4} wrap="nowrap">
+                                                <Text size="xs" fw={500}>Min Zoom</Text>
+                                                <Tooltip label="Minimum zoom level at which these assets are visible." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                    <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                                </Tooltip>
+                                            </Group>
+                                        }
+                                        placeholder="0"
+                                        min={0}
+                                        max={24}
+                                        step={0.5}
+                                        value={editingRule?.min_zoom ?? 0}
+                                        onChange={(val) => setEditingRule(prev => prev ? { ...prev, min_zoom: typeof val === 'number' ? val : 0 } : null)}
+                                        size="xs"
+                                    />
+                                </Grid.Col>
 
                                 <Grid.Col span={{ base: 6, sm: 2 }}>
                                     <NumberInput
                                         label={
                                             <Group gap={4} wrap="nowrap">
-                                                <Text size="xs" fw={500}>Radial Offset</Text>
-                                                <Tooltip label="The distance (in degrees) used to push overlapping nodes away from each other. Useful for seeing multiple assets at the same point (e.g. 0.0001)." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                <Text size="xs" fw={500}>Max Zoom</Text>
+                                                <Tooltip label="Maximum zoom level at which these assets are visible." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
                                                     <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
                                                 </Tooltip>
                                             </Group>
                                         }
-                                        placeholder="0.0"
-                                        value={editingRule?.radial_offset || 0}
-                                        onChange={(val) => setEditingRule(prev => prev ? { ...prev, radial_offset: typeof val === 'number' ? val : 0 } : null)}
-                                        size="xs"
+                                        placeholder="24"
                                         min={0}
-                                        step={0.0001}
-                                        decimalScale={5}
+                                        max={24}
+                                        step={0.5}
+                                        value={editingRule?.max_zoom ?? 24}
+                                        onChange={(val) => setEditingRule(prev => prev ? { ...prev, max_zoom: typeof val === 'number' ? val : 24 } : null)}
+                                        size="xs"
                                     />
                                 </Grid.Col>
+
                             </Grid>
+                            
+                            <Divider label="Geospatial Clustering" labelPosition="center" />
+                            <Paper withBorder p="xs" style={{ background: 'rgba(255,255,255,0.05)' }}>
+                                <Stack gap="sm">
+                                    <Group justify="space-between">
+                                        <Group gap="xs">
+                                            <Switch 
+                                                label="Enable Clustering" 
+                                                size="xs"
+                                                checked={editingRule?.cluster_enabled || false}
+                                                onChange={(e) => setEditingRule(prev => prev ? { ...prev, cluster_enabled: e.currentTarget.checked } : null)}
+                                            />
+                                            <Tooltip label="Automatically group nearby nodes into clusters at lower zoom levels to reduce map clutter." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                            </Tooltip>
+                                        </Group>
+                                    </Group>
+
+                                    {editingRule?.cluster_enabled && (
+                                        <Grid gutter="xs">
+                                            <Grid.Col span={4}>
+                                                <NumberInput
+                                                    label="Radius"
+                                                    description="Pixels"
+                                                    step={5}
+                                                    min={10}
+                                                    max={200}
+                                                    value={editingRule?.cluster_radius || 40}
+                                                    onChange={(val) => setEditingRule(prev => prev ? { ...prev, cluster_radius: typeof val === 'number' ? val : 40 } : null)}
+                                                    size="xs"
+                                                />
+                                            </Grid.Col>
+                                            <Grid.Col span={4}>
+                                                <NumberInput
+                                                    label="Max Zoom"
+                                                    description="Stop at level"
+                                                    step={1}
+                                                    min={1}
+                                                    max={22}
+                                                    value={editingRule?.cluster_max_zoom || 20}
+                                                    onChange={(val) => setEditingRule(prev => prev ? { ...prev, cluster_max_zoom: typeof val === 'number' ? val : 20 } : null)}
+                                                    size="xs"
+                                                />
+                                            </Grid.Col>
+                                            <Grid.Col span={4}>
+                                                <NumberInput
+                                                    label="Min Points"
+                                                    description="To form cluster"
+                                                    step={1}
+                                                    min={2}
+                                                    value={editingRule?.cluster_min_points || 2}
+                                                    onChange={(val) => setEditingRule(prev => prev ? { ...prev, cluster_min_points: typeof val === 'number' ? val : 2 } : null)}
+                                                    size="xs"
+                                                />
+                                            </Grid.Col>
+                                        </Grid>
+                                    )}
+                                </Stack>
+                            </Paper>
 
                             <Divider label="SVG CSS Overrides" labelPosition="center" />
                             
@@ -512,74 +598,157 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                 </Button>
                             </Group>
 
-                            <Table striped highlightOnHover verticalSpacing="xs">
-                                <Table.Thead>
-                                    <Table.Tr>
-                                        <Table.Th>Name</Table.Th>
-                                        <Table.Th>Visuals</Table.Th>
-                                        <Table.Th>Conditions</Table.Th>
-                                        <Table.Th>Pri</Table.Th>
-                                        <Table.Th style={{ width: 80 }}>Actions</Table.Th>
-                                    </Table.Tr>
-                                </Table.Thead>
-                                <Table.Tbody>
+                            {isMobile ? (
+                                <Stack gap="xs">
                                     {rules.map(rule => (
-                                        <Table.Tr key={rule.id}>
-                                            <Table.Td style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                {rule.name}
-                                            </Table.Td>
-                                            <Table.Td>
-                                                <Group gap={4}>
-                                                    {rule.color_hex && <ColorSwatch color={rule.color_hex} size={10} />}
-                                                    <Badge color="blue" variant="light" size="xs" style={{ textTransform: 'none' }}>
-                                                        {rule.visual_type}
-                                                        {rule.size && ` (${rule.size})`}
-                                                    </Badge>
-                                                    {rule.label && <Badge color="gray" variant="outline" size="xs">{rule.label}</Badge>}
+                                        <Paper 
+                                            key={rule.id} 
+                                            withBorder 
+                                            p="xs" 
+                                            style={{ 
+                                                background: 'rgba(255,255,255,0.02)', 
+                                                cursor: 'pointer',
+                                                transition: 'background 0.2s ease'
+                                            }}
+                                            onClick={() => setEditingRule(rule)}
+                                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                                            onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
+                                        >
+                                            <Stack gap={5}>
+                                                <Group justify="space-between" wrap="nowrap">
+                                                    <Text fw={700} size="sm" truncate="end">{rule.name}</Text>
+                                                    <ActionIcon 
+                                                        size="md" 
+                                                        variant="subtle" 
+                                                        color="red" 
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleDeleteRule(rule.id);
+                                                        }}
+                                                    >
+                                                        <Trash2 size={18} />
+                                                    </ActionIcon>
                                                 </Group>
-                                            </Table.Td>
-                                            <Table.Td>
-                                                <Text size="xs" c="dimmed" truncate="end" style={{ maxWidth: 150 }}>
+                                                <Group justify="space-between">
+                                                    <Group gap={4}>
+                                                        {rule.color_hex && <ColorSwatch color={rule.color_hex} size={10} />}
+                                                        <Badge color="blue" variant="light" size="xs" style={{ textTransform: 'none' }}>
+                                                            {rule.visual_type}
+                                                            {rule.size && ` (${rule.size})`}
+                                                        </Badge>
+                                                        {rule.label && <Badge color="gray" variant="outline" size="xs">{rule.label}</Badge>}
+                                                    </Group>
+                                                    <Text size="xs" c="dimmed">Pri: {rule.priority}</Text>
+                                                </Group>
+                                                <Text size="xs" c="dimmed" fs="italic">
                                                     {(() => {
                                                         try {
                                                             const conds = typeof rule.match_conditions === 'string' 
                                                                 ? JSON.parse(rule.match_conditions) 
                                                                 : rule.match_conditions;
-                                                            if (conds && conds.target_class) {
-                                                                const count = conds.conditions?.length || 0;
-                                                                return `${conds.target_class} (+${count})`;
-                                                            }
-                                                            return typeof rule.match_conditions === 'string' 
-                                                                ? rule.match_conditions 
-                                                                : JSON.stringify(rule.match_conditions);
+                                                             if (conds && conds.target_class) {
+                                                                 const count = (conds.conditions || []).length;
+                                                                 return `${conds.target_class}${count > 0 ? ` (+${count})` : ''}`;
+                                                             }
+                                                             if (conds && conds.conditions && conds.conditions.length > 0) {
+                                                                 return `All Classes (${conds.conditions.length})`;
+                                                             }
+                                                             return 'All Classes';
                                                         } catch {
                                                             return 'Invalid JSON';
                                                         }
                                                     })()}
                                                 </Text>
-                                            </Table.Td>
-                                            <Table.Td>{rule.priority}</Table.Td>
-                                            <Table.Td>
-                                                <Group gap={4} wrap="nowrap">
-                                                    <ActionIcon size="sm" variant="subtle" onClick={() => setEditingRule(rule)}>
-                                                        <Edit2 size={14} />
-                                                    </ActionIcon>
-                                                    <ActionIcon size="sm" variant="subtle" color="red" onClick={() => handleDeleteRule(rule.id)}>
-                                                        <Trash2 size={14} />
-                                                    </ActionIcon>
-                                                </Group>
-                                            </Table.Td>
-                                        </Table.Tr>
+                                            </Stack>
+                                        </Paper>
                                     ))}
                                     {rules.length === 0 && (
-                                        <Table.Tr>
-                                            <Table.Td colSpan={5} align="center" style={{ padding: 20 }}>
-                                                <Text size="xs" c="dimmed">No rules defined for this profile.</Text>
-                                            </Table.Td>
-                                        </Table.Tr>
+                                        <Paper withBorder p="xl" style={{ borderStyle: 'dashed', background: 'transparent' }}>
+                                            <Text size="xs" c="dimmed" ta="center">No rules defined for this profile.</Text>
+                                        </Paper>
                                     )}
-                                </Table.Tbody>
-                            </Table>
+                                </Stack>
+                            ) : (
+                                <Table striped highlightOnHover verticalSpacing="xs">
+                                    <Table.Thead>
+                                        <Table.Tr>
+                                            <Table.Th>Name</Table.Th>
+                                            <Table.Th>Visuals</Table.Th>
+                                            <Table.Th>Conditions</Table.Th>
+                                            <Table.Th>Pri</Table.Th>
+                                            <Table.Th style={{ width: 120, textAlign: 'right' }}>Actions</Table.Th>
+                                        </Table.Tr>
+                                    </Table.Thead>
+                                    <Table.Tbody>
+                                        {rules.map(rule => (
+                                            <Table.Tr 
+                                                key={rule.id} 
+                                                style={{ cursor: 'pointer' }}
+                                                onClick={() => setEditingRule(rule)}
+                                            >
+                                                <Table.Td style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {rule.name}
+                                                </Table.Td>
+                                                <Table.Td>
+                                                    <Group gap={4}>
+                                                        {rule.color_hex && <ColorSwatch color={rule.color_hex} size={10} />}
+                                                        <Badge color="blue" variant="light" size="xs" style={{ textTransform: 'none' }}>
+                                                            {rule.visual_type}
+                                                            {rule.size && ` (${rule.size})`}
+                                                        </Badge>
+                                                        {rule.label && <Badge color="gray" variant="outline" size="xs">{rule.label}</Badge>}
+                                                    </Group>
+                                                </Table.Td>
+                                                <Table.Td>
+                                                    <Text size="xs" c="dimmed" truncate="end" style={{ maxWidth: 150 }}>
+                                                        {(() => {
+                                                            try {
+                                                                const conds = typeof rule.match_conditions === 'string' 
+                                                                    ? JSON.parse(rule.match_conditions) 
+                                                                    : rule.match_conditions;
+                                                                 if (conds && conds.target_class) {
+                                                                     const count = (conds.conditions || []).length;
+                                                                     return `${conds.target_class}${count > 0 ? ` (+${count})` : ''}`;
+                                                                 }
+                                                                 if (conds && conds.conditions && conds.conditions.length > 0) {
+                                                                     return `All Classes (${conds.conditions.length})`;
+                                                                 }
+                                                                 return 'All Classes';
+                                                            } catch {
+                                                                return 'Invalid JSON';
+                                                            }
+                                                        })()}
+                                                    </Text>
+                                                </Table.Td>
+                                                <Table.Td>{rule.priority}</Table.Td>
+                                                <Table.Td>
+                                                    <Group gap={4} wrap="nowrap" justify="flex-end">
+                                                        <ActionIcon 
+                                                            size="md" 
+                                                            variant="subtle" 
+                                                            color="red" 
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleDeleteRule(rule.id);
+                                                            }}
+                                                            title="Delete rule"
+                                                        >
+                                                            <Trash2 size={18} />
+                                                        </ActionIcon>
+                                                    </Group>
+                                                </Table.Td>
+                                            </Table.Tr>
+                                        ))}
+                                        {rules.length === 0 && (
+                                            <Table.Tr>
+                                                <Table.Td colSpan={5} align="center" style={{ padding: 20 }}>
+                                                    <Text size="xs" c="dimmed">No rules defined for this profile.</Text>
+                                                </Table.Td>
+                                            </Table.Tr>
+                                        )}
+                                    </Table.Tbody>
+                                </Table>
+                            )}
                         </Stack>
                     )}
                 </Paper>

@@ -36,8 +36,14 @@ export interface Node {
     display_size?: number;
     display_label?: string;
     display_css?: string;
-    display_offset?: number;
+    cluster_enabled?: boolean;
+    cluster_radius?: number;
+    cluster_max_zoom?: number;
+    cluster_min_points?: number;
+    display_min_zoom?: number;
+    display_max_zoom?: number;
 }
+
 
 export interface Edge {
     source: string;
@@ -61,5 +67,7 @@ export interface Edge {
     display_size?: number;
     display_label?: string;
     display_css?: string;
-    display_offset?: number;
+    display_min_zoom?: number;
+    display_max_zoom?: number;
 }
+

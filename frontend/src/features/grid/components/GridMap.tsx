@@ -1,8 +1,9 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import DeckGL from '@deck.gl/react';
-import { ScatterplotLayer, PathLayer, IconLayer } from '@deck.gl/layers';
+import { ScatterplotLayer, PathLayer, IconLayer, TextLayer } from '@deck.gl/layers';
 import { PathStyleExtension } from '@deck.gl/extensions';
 import { WebMercatorViewport } from '@deck.gl/core';
+import Supercluster from 'supercluster';
 import type { Node, Edge } from '../../../shared/types';
 
 interface GridMapProps {
@@ -382,6 +383,8 @@ export const GridMap = React.memo<GridMapProps>(({
         }
     }, [fitHighlightedNodesTrigger, highlightedNodes, nodes, dimensions]);
 
+    // The original `useEffect` for mounting and dimensions.
+    // This `useEffect` should remain as is.
     useEffect(() => {
         setMounted(true);
         const updateSize = () => {
@@ -394,41 +397,11 @@ export const GridMap = React.memo<GridMapProps>(({
         window.addEventListener('resize', updateSize);
         return () => window.removeEventListener('resize', updateSize);
     }, []);
-
+    
     const nodePositions = useMemo(() => {
-        const groups: Record<string, Node[]> = {};
-        nodes.forEach(node => {
-            // Using toFixed(6) to handle floating point precision for grouping (~10cm)
-            const key = `${node.position[0].toFixed(6)},${node.position[1].toFixed(6)}`;
-            if (!groups[key]) groups[key] = [];
-            groups[key].push(node);
-        });
-
         const posMap: Record<string, [number, number]> = {};
-        Object.values(groups).forEach(group => {
-            if (group.length <= 1) {
-                group.forEach(node => {
-                    posMap[node.id] = node.position;
-                });
-                return;
-            }
-
-            const magnitude = Math.max(...group.map(n => n.display_offset || 0));
-            if (magnitude === 0) {
-                group.forEach(node => {
-                    posMap[node.id] = node.position;
-                });
-                return;
-            }
-
-            group.forEach((node, i) => {
-                const angle = (i / group.length) * 2 * Math.PI;
-                const latRad = (node.position[1] * Math.PI) / 180;
-                posMap[node.id] = [
-                    node.position[0] + (Math.cos(angle) * magnitude) / Math.cos(latRad),
-                    node.position[1] + Math.sin(angle) * magnitude
-                ];
-            });
+        nodes.forEach(node => {
+            posMap[node.id] = node.position;
         });
         return posMap;
     }, [nodes]);
@@ -442,15 +415,34 @@ export const GridMap = React.memo<GridMapProps>(({
     }, [edges, nodePositions]);
 
     // Edges that carry switch/breaker equipment (for icon rendering)
-    const switchEdgesOpen = useMemo(() => offsetEdges.filter(e => SWITCH_EDGE_TYPES.has(e.edge_type ?? '') && e.is_open && !e.display_icon), [offsetEdges]);
-    const switchEdgesClosed = useMemo(() => offsetEdges.filter(e => SWITCH_EDGE_TYPES.has(e.edge_type ?? '') && !e.is_open && !e.display_icon), [offsetEdges]);
+    const switchEdgesOpen = useMemo(() => offsetEdges.filter(e => 
+        SWITCH_EDGE_TYPES.has(e.edge_type ?? '') && e.is_open && !e.display_icon &&
+        (e.display_min_zoom === undefined || viewState.zoom >= e.display_min_zoom) &&
+        (e.display_max_zoom === undefined || viewState.zoom <= e.display_max_zoom)
+    ), [offsetEdges, viewState.zoom]);
+
+    const switchEdgesClosed = useMemo(() => offsetEdges.filter(e => 
+        SWITCH_EDGE_TYPES.has(e.edge_type ?? '') && !e.is_open && !e.display_icon &&
+        (e.display_min_zoom === undefined || viewState.zoom >= e.display_min_zoom) &&
+        (e.display_max_zoom === undefined || viewState.zoom <= e.display_max_zoom)
+    ), [offsetEdges, viewState.zoom]);
+
     const transformerEdges = useMemo(() => 
-        offsetEdges.filter(e => (e.edge_type === 'PowerTransformer' || e.edge_type === 'TransformerTank') && !e.display_icon), 
-    [offsetEdges]);
+        offsetEdges.filter(e => 
+            (e.edge_type === 'PowerTransformer' || e.edge_type === 'TransformerTank') && !e.display_icon &&
+            (e.display_min_zoom === undefined || viewState.zoom >= e.display_min_zoom) &&
+            (e.display_max_zoom === undefined || viewState.zoom <= e.display_max_zoom)
+        ), 
+    [offsetEdges, viewState.zoom]);
 
     const visualEdgePaths = useMemo(() => {
         const OFFSET = 0.00004; // ~4-5 meters
-        return offsetEdges.flatMap(e => {
+        const visibleEdges = offsetEdges.filter(e => 
+            (e.display_min_zoom === undefined || viewState.zoom >= e.display_min_zoom) &&
+            (e.display_max_zoom === undefined || viewState.zoom <= e.display_max_zoom)
+        );
+
+        return visibleEdges.flatMap(e => {
             const isSwitch = (e.edge_type && SWITCH_EDGE_TYPES.has(e.edge_type));
             if (!isSwitch) return [{ ...e, path: [e.sourcePosition, e.targetPosition] }];
 
@@ -468,12 +460,107 @@ export const GridMap = React.memo<GridMapProps>(({
                 { ...e, path: [[mid[0] + ux * (OFFSET / Math.cos((mid[1] * Math.PI) / 180)), mid[1] + uy * OFFSET], e.targetPosition] }
             ];
         });
-    }, [offsetEdges]);
+    }, [offsetEdges, viewState.zoom]);
+    
+    // Clustering Logic
+    const clusteredData = useMemo(() => {
+        const zoom = Math.floor(viewState.zoom);
+        
+        const visibleNodes = nodes.filter(n =>
+            (n.display_min_zoom === undefined || viewState.zoom >= n.display_min_zoom) &&
+            (n.display_max_zoom === undefined || viewState.zoom <= n.display_max_zoom)
+        );
+
+        // Group nodes by their clustering configuration
+        // We use a key like "radius-maxZoom-minPoints"
+        const configs = new Map<string, { nodes: Node[], radius: number, maxZoom: number, minPoints: number }>();
+
+        visibleNodes.forEach(node => {
+            if (!node.cluster_enabled) return;
+            const key = `${node.cluster_radius}-${node.cluster_max_zoom}-${node.cluster_min_points}`;
+            if (!configs.has(key)) {
+                configs.set(key, { 
+                    nodes: [], 
+                    radius: node.cluster_radius || 40, 
+                    maxZoom: node.cluster_max_zoom || 20, 
+                    minPoints: node.cluster_min_points || 2 
+                });
+            }
+            configs.get(key)!.nodes.push(node);
+        });
+
+        const allClusteredNodes = new Set<string>();
+        const clusters: any[] = [];
+        const unclusteredNodes: Node[] = [];
+
+        // For each unique configuration, perform clustering
+        configs.forEach((cfg) => {
+            const sc = new Supercluster({
+                radius: cfg.radius,
+                maxZoom: cfg.maxZoom,
+                minPoints: cfg.minPoints
+            });
+
+            const points = cfg.nodes.map((n: Node) => ({
+                type: 'Feature' as const,
+                properties: { nodeId: n.id, node: n },
+                geometry: {
+                    type: 'Point' as const,
+                    coordinates: n.position
+                }
+            }));
+
+            sc.load(points);
+
+            // Get viewport bounds for clustering if possible, otherwise use full data
+            let bounds: any = [-180, -85, 180, 85];
+            if (dimensions.width > 0) {
+                try {
+                    const viewport = new WebMercatorViewport({
+                        width: dimensions.width,
+                        height: dimensions.height,
+                        ...viewState
+                    });
+                    bounds = viewport.getBounds();
+                } catch (e) {}
+            }
+
+            const results = sc.getClusters(bounds, zoom);
+            
+            results.forEach(feat => {
+                if (feat.properties.cluster) {
+                    clusters.push({
+                        id: `cluster-${feat.id}`,
+                        position: feat.geometry.coordinates,
+                        pointCount: feat.properties.point_count,
+                        pointCountAbbreviated: feat.properties.point_count_abbreviated,
+                        // Use properties of the first node for styling if needed, or defaults
+                        config: cfg
+                    });
+                } else {
+                    unclusteredNodes.push(feat.properties.node);
+                }
+            });
+            
+            // Track which nodes are technically handled by this cluster config
+            cfg.nodes.forEach(n => allClusteredNodes.add(n.id));
+        });
+
+        // Final list of nodes to render:
+        // 1. Nodes that had clustering disabled
+        // 2. Nodes that had clustering enabled but were returned as unclustered by supercluster
+        const staticNodes = visibleNodes.filter(n => !n.cluster_enabled);
+        
+        return {
+            nodesToRender: [...staticNodes, ...unclusteredNodes],
+            clusters
+        };
+    }, [nodes, viewState.zoom, viewState.longitude, viewState.latitude, dimensions]);
 
     const layers = useMemo(() => [
         new ScatterplotLayer({
             id: 'selection-halo',
-            data: nodes.filter(n => selectedNodeIdsSet.has(n.id)),
+            data: clusteredData.nodesToRender.filter(n => selectedNodeIdsSet.has(n.id)),
             getPosition: (d: Node) => nodePositions[d.id],
             getFillColor: [255, 255, 255, 80],
             getRadius: (d: Node) => {
@@ -562,7 +649,7 @@ export const GridMap = React.memo<GridMapProps>(({
         }),
         new ScatterplotLayer({
             id: 'grid-nodes',
-            data: nodes.filter(n => getVisualType(n) !== 'Bus' && !n.display_icon),
+            data: clusteredData.nodesToRender.filter(n => getVisualType(n) !== 'Bus' && !n.display_icon),
             getPosition: (d: Node) => nodePositions[d.id],
             getFillColor: (d: Node) => {
                 if (selectedNodeIdsSet.has(d.id)) return [255, 200, 50, 255];
@@ -720,10 +807,10 @@ export const GridMap = React.memo<GridMapProps>(({
                 }
             }
         }),
-        new IconLayer({
+        new IconLayer<Node>({
             id: 'grid-capacitors',
-            data: nodes.filter(n => getVisualType(n) === 'Capacitor' && !n.display_icon),
-            getPosition: (d: Node) => nodePositions[d.id],
+            data: clusteredData.nodesToRender.filter(n => getVisualType(n) === 'Capacitor' && !n.display_icon),
+            getPosition: (d: Node) => d.position,
             getIcon: (d: Node) => {
                 const colorArr = getNodeColor(d, getVisualType(d), highlightedNodes.has(d.id), selectedNodeIdsSet.has(d.id), d.circuit_id);
                 const colorHex = `#${colorArr.map(c => c.toString(16).padStart(2, '0')).join('')}`;
@@ -755,10 +842,10 @@ export const GridMap = React.memo<GridMapProps>(({
                 }
             }
         }),
-        new IconLayer({
-            id: 'grid-custom-node-icons',
-            data: nodes.filter(n => n.display_icon),
-            getPosition: (d: Node) => nodePositions[d.id],
+        new IconLayer<Node>({
+            id: 'grid-nodes-custom',
+            data: clusteredData.nodesToRender.filter(n => !!n.display_icon),
+            getPosition: (d: Node) => d.position,
             getIcon: (d: Node) => {
                 const dims = getSvgDimensions(d.display_icon!);
                 const isHighlighted = highlightedNodes.has(d.id);
@@ -800,7 +887,7 @@ export const GridMap = React.memo<GridMapProps>(({
             },
             updateTriggers: {
                 getSize: [hoveredNodeId, highlightedNodes, nodes],
-                getIcon: [highlightedNodes, selectedNodeIdsSet, nodes, nodes.map(n => n.display_css)],
+                getIcon: [highlightedNodes, selectedNodeIdsSet, nodes],
                 getColor: [highlightedNodes, selectedNodeIdsSet, nodes]
             }
         }),
@@ -848,14 +935,72 @@ export const GridMap = React.memo<GridMapProps>(({
             },
             updateTriggers: {
                 getSize: [hoveredEdgeId, highlightedEdges, edges],
-                getIcon: [highlightedEdges, hoveredEdgeId, edges, edges.map(e => e.display_css)],
+                getIcon: [highlightedEdges, hoveredEdgeId, edges],
                 getColor: [highlightedEdges, hoveredEdgeId, edges]
             }
+        }),
+        new ScatterplotLayer({
+            id: 'clusters',
+            data: clusteredData.clusters,
+            getPosition: (d: any) => d.position,
+            getFillColor: [40, 40, 40, 220],
+            getLineColor: [100, 100, 100, 255],
+            getLineWidth: 2,
+            lineWidthUnits: 'pixels',
+            getRadius: (d: any) => {
+                const count = d.pointCount;
+                if (count < 10) return 15;
+                if (count < 100) return 20;
+                return 25;
+            },
+            radiusUnits: 'pixels',
+            pickable: true,
+            onClick: (info) => {
+                if (info.object && info.object.position) {
+                    setViewState((prev: any) => ({
+                        ...prev,
+                        longitude: info.object.position[0],
+                        latitude: info.object.position[1],
+                        zoom: prev.zoom + 2,
+                        transitionDuration: 500
+                    }));
+                }
+            }
+        }),
+        new TextLayer({
+            id: 'cluster-counts',
+            data: clusteredData.clusters,
+            getPosition: (d: any) => d.position,
+            getText: (d: any) => d.pointCountAbbreviated.toString(),
+            getSize: 12,
+            getColor: [255, 255, 255],
+            getAngle: 0,
+            getTextAnchor: 'middle',
+            getAlignmentBaseline: 'center',
+            updateTriggers: {
+                getPosition: [clusteredData.clusters]
+            }
         })
-    ], [nodes, edges, visualEdgePaths, hoveredNodeId, hoveredEdgeId, highlightedNodes, highlightedEdges, selectedNodeIdsSet, switchEdgesOpen, switchEdgesClosed, transformerEdges, nodeAverages, voltageScale, onNodeClick, onEdgeClick, viewState.zoom, nodePositions]);
+    ], [clusteredData, visualEdgePaths, hoveredNodeId, hoveredEdgeId, highlightedNodes, highlightedEdges, selectedNodeIdsSet, switchEdgesOpen, switchEdgesClosed, transformerEdges, nodeAverages, voltageScale, onNodeClick, onEdgeClick, viewState.zoom, nodePositions]);
 
     const getTooltipContent = (object: any) => {
         if (!object) return null;
+        
+        // Cluster detected
+        if (object.pointCount) {
+            return {
+                html: `
+                <div class="grid-map-tooltip" style="padding: 10px; background: #1A1B1E; border: 1px solid #373A40; border-radius: 8px; color: #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.5); min-width: 150px; pointer-events: auto;">
+                    <div style="font-size: 14px; font-weight: 700; margin-bottom: 5px; color: #4dabf7;">Cluster</div>
+                    <div style="font-size: 13px;">
+                        <span><strong>Aggregated nodes:</strong> ${object.pointCount}</span>
+                    </div>
+                    <div style="margin-top: 8px; font-size: 11px; opacity: 0.6;">Click to expand</div>
+                </div>
+                `,
+                style: { backgroundColor: 'transparent', fontSize: '12px' }
+            };
+        }
         
         // Node detected (Nodes have 'position' and 'type', but not 'source')
         if ('position' in object && !('source' in object)) {

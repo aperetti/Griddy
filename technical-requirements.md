@@ -15,7 +15,7 @@
     *   **Features:** Interactive node clicking, context menu (right-click) for node-specific actions, geospatial zooming, panning.
     *   **Data Fetching:** Standard `fetch` API against FastAPI REST endpoints.
     *   **Rendering Taxonomy:** Switches must be rendered as squares. Open switches should be transparent/hollow; closed switches must be filled.
-    *   **Radial De-confliction**: The frontend must identify overlapping nodes (using a 10cm / 6-decimal grouping tolerance) and apply a radial distribution based on the `display_offset` attribute provided by the rule engine. Edges must be re-calculated to point to these offset coordinates.
+    *   **Clustering**: The frontend must implement geospatial clustering (e.g. using `supercluster`) to aggregate overlapping or nearby nodes based on rules. This replaces the legacy radial de-confliction mechanism.
     *   **View Persistence**: The `GridMap` must support a `skipGlobalFit` mechanism to suppress automatic zoom-to-extent transitions during state-only refreshes (like display rule updates).
     *   **Rule Assistant Integration**:
         *   Implement a side-by-side layout (50/50 split on desktop) between the Rule Assistant and Rule Builder.
@@ -24,6 +24,9 @@
     *   **Nested Rule Builder UI**:
         *   Implement `CimRuleBuilder.tsx` as a recursive component that renders `ConditionGroup` components.
         *   Each group manages its own `logical_op` (AND/OR) and a list of `conditions` (either simple condition objects or nested groups).
+    *   **Zoom-Level Rendering**:
+        *   The frontend must filter rendered nodes and edges based on the `min_zoom` and `max_zoom` properties of the matching display rule.
+        *   This filtering should happen in real-time in the `GridMap` based on `viewState.zoom`.
 
 *   **Backend (FastAPI & Data Ingestion)**:
     *   **Data Ingestion (CIM):** The CIM ingestor must effectively extract robust asset taxonomy, correctly tagging `Substation`, `Breaker`, `Switch`, `Transformer`, and `Meter` types. Determine the switch 'open' status for visualizations.

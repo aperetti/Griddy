@@ -59,7 +59,8 @@ class DisplayRuleEngine:
                 # Ensure size and label have safe defaults if missing from DB
                 rule['size'] = rule.get('size', 1.0)
                 rule['label'] = rule.get('label', "")
-                rule['radial_offset'] = rule.get('radial_offset', 0.0)
+                rule['min_zoom'] = rule.get('min_zoom', 0.0)
+                rule['max_zoom'] = rule.get('max_zoom', 24.0)
                 
                 self._rules.append(rule)
 
@@ -93,6 +94,12 @@ class DisplayRuleEngine:
                     "icon": rule.get('icon'),
                     "color_hex": rule.get('color_hex'),
                     "radial_offset": rule.get('radial_offset', 0.0),
+                    "cluster_enabled": bool(rule.get('cluster_enabled', 0)),
+                    "cluster_radius": rule.get('cluster_radius', 40.0),
+                    "cluster_max_zoom": rule.get('cluster_max_zoom', 20.0),
+                    "cluster_min_points": rule.get('cluster_min_points', 2),
+                    "min_zoom": rule.get('min_zoom', 0.0),
+                    "max_zoom": rule.get('max_zoom', 24.0),
                     "display_css": "\n".join(active_css) if active_css else ""
                 }
         
@@ -122,6 +129,12 @@ class DisplayRuleEngine:
                     "icon": rule.get('icon'),
                     "color_hex": rule.get('color_hex'),
                     "radial_offset": rule.get('radial_offset', 0.0),
+                    "cluster_enabled": bool(rule.get('cluster_enabled', 0)),
+                    "cluster_radius": rule.get('cluster_radius', 40.0),
+                    "cluster_max_zoom": rule.get('cluster_max_zoom', 20.0),
+                    "cluster_min_points": rule.get('cluster_min_points', 2),
+                    "min_zoom": rule.get('min_zoom', 0.0),
+                    "max_zoom": rule.get('max_zoom', 24.0),
                     "display_css": "\n".join(active_css) if active_css else ""
                 }
         

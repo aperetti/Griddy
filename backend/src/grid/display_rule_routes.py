@@ -21,10 +21,15 @@ class RuleUpdate(BaseModel):
     match_conditions: Optional[Dict[str, Any]] = None
     icon: Optional[str] = None
     color_hex: Optional[str] = None
-    size: float = 1.0
-    label: str = ""
-    css_overrides: Optional[List[Dict[str, Any]]] = None
-    radial_offset: float = 0.0
+    size: Optional[float] = 1.0
+    label: Optional[str] = ""
+    cluster_enabled: Optional[bool] = False
+    cluster_radius: Optional[float] = 40.0
+    cluster_max_zoom: Optional[float] = 20.0
+    cluster_min_points: Optional[int] = 2
+    min_zoom: Optional[float] = 0.0
+    max_zoom: Optional[float] = 24.0
+    css_overrides: Optional[str] = "[]"
     enabled: bool = True
 
 # ── Helpers ───────────────────────────────────────────────────────
@@ -80,6 +85,7 @@ async def list_config_rules(config_id: int):
                 if d.get('match_conditions'):
                     try: d['match_conditions'] = json.loads(d['match_conditions'])
                     except: pass
+                # css_overrides is now stored as a string, so parse it
                 if d.get('css_overrides'):
                     try: d['css_overrides'] = json.loads(d['css_overrides'])
                     except: pass
@@ -93,13 +99,18 @@ async def add_config_rule(config_id: int, rule: RuleUpdate):
         with _get_admin_conn() as conn:
             cursor = conn.execute(
                 """INSERT INTO display_config_rules
-                   (config_id, name, visual_type, priority, match_conditions, icon, color_hex, size, label, css_overrides, radial_offset, enabled, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
+                   (config_id, name, visual_type, priority, match_conditions, icon, color_hex, size, label,
+                    cluster_enabled, cluster_radius, cluster_max_zoom, cluster_min_points,
+                    min_zoom, max_zoom,
+                    css_overrides, enabled, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
                 (config_id, rule.name, rule.visual_type, rule.priority,
                  json.dumps(rule.match_conditions) if rule.match_conditions else None,
                  rule.icon, rule.color_hex, rule.size, rule.label,
-                 json.dumps(rule.css_overrides) if rule.css_overrides else None,
-                 rule.radial_offset, 1 if rule.enabled else 0)
+                 1 if rule.cluster_enabled else 0, rule.cluster_radius, rule.cluster_max_zoom, rule.cluster_min_points,
+                 rule.min_zoom, rule.max_zoom,
+                 rule.css_overrides, # css_overrides is now a string
+                 1 if rule.enabled else 0)
             )
             display_engine.load_rules()
             return {"id": cursor.lastrowid, "config_id": config_id, **rule.dict()}
@@ -112,14 +123,18 @@ async def update_config_rule(rule_id: int, rule: RuleUpdate):
             conn.execute(
                 """UPDATE display_config_rules SET
                    name = ?, visual_type = ?, priority = ?, match_conditions = ?, icon = ?, color_hex = ?,
-                   size = ?, label = ?, css_overrides = ?, radial_offset = ?, enabled = ?,
-                   updated_at = CURRENT_TIMESTAMP
+                   size = ?, label = ?,
+                   cluster_enabled = ?, cluster_radius = ?, cluster_max_zoom = ?, cluster_min_points = ?,
+                   min_zoom = ?, max_zoom = ?,
+                   css_overrides = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
                    WHERE id = ?""",
                 (rule.name, rule.visual_type, rule.priority,
                  json.dumps(rule.match_conditions) if rule.match_conditions else None,
                  rule.icon, rule.color_hex, rule.size, rule.label,
-                 json.dumps(rule.css_overrides) if rule.css_overrides else None,
-                 rule.radial_offset, 1 if rule.enabled else 0, rule_id)
+                 1 if rule.cluster_enabled else 0, rule.cluster_radius, rule.cluster_max_zoom, rule.cluster_min_points,
+                 rule.min_zoom, rule.max_zoom,
+                 rule.css_overrides, # css_overrides is now a string
+                 1 if rule.enabled else 0, rule_id)
             )
             display_engine.load_rules()
             return {"id": rule_id, **rule.dict()}

@@ -38,12 +38,17 @@
   * The consumption view must be split vertically: one graph for total kWh, one for Phase Loading (A, B, C) and Energy Imbalance (|S₂|), and another for Voltage, while maintaining the same total panel height.
   * The Energy Imbalance (|S₂|) must be calculated using symmetrical components based on phase-weighted consumption and plotted on a negative y-axis for visual contrast.
 
-### 3.4 Radial Node Offsets & De-confliction
-* **Overlapping Node Handling**: The system must automatically detect nodes sharing the same geographic coordinates (using a 10cm grouping tolerance).
-* **Configurable Distribution**: Users can define "Radial Offset" values in Display Rules to visually separate overlapping nodes. The administration console provides interactive tooltips for each configuration input.
-* **Automatic Layout**: When an offset is applied, overlapping nodes must be distributed in a circular (radial) pattern around the original coordinate.
-* **Edge Connectivity**: Connecting lines (edges) must dynamically adjust to terminate at the offset node positions to maintain visual integrity.
+### 3.4 Geospatial Clustering
+* **Clustering Support**: The system must support grouping overlapping or nearby nodes into clusters based on display rules to maintain map clarity at different zoom levels.
+* **Configurable Clustering**: Users can define clustering parameters (Enabled, Radius, Max Zoom, Min Points) in Display Rules.
+* **Aggregated Visualization**: Clusters must display the number of nodes they contain and use visual cues (color/icon) derived from the matching rule or a default cluster style.
+* **Interactive Drill-down**: Clicking a cluster should either zoom into the extent of children or provide a summary of the contained assets.
 * **View Persistence**: The map's viewport (zoom and position) must be preserved during display rule updates to ensure a non-disruptive user experience.
+
+### 3.7 Zoom-Level Rendering
+* **Visibility Ranges**: Display rules must support defining a valid zoom range (`min_zoom` to `max_zoom`) for matched assets.
+* **Dynamic Hiding**: Assets matching a rule should only be rendered when the current map zoom falls within the specified range.
+* **Default Behavior**: If no zoom range is specified, assets should be visible at all levels (unless clustered).
 
 ### 3.5 Display Rule Assistant
 * **Entity Exploration**: Users can select any grid entity to inspect its full CIM attribute set in a dedicated assistant panel.
