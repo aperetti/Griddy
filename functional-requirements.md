@@ -59,6 +59,7 @@
 * **MRID Link Navigation**: The assistant must detect MRIDs in attribute values and provide "dive" buttons to jump to linked entities (e.g., from a Meter to its parent Transformer).
 * **History & Breadcrumbs**: Support backward navigation through the exploration history.
 * **Attribute Actions**: A context menu on attributes allows users to quickly add conditions to the current rule (e.g., "exists", "matches value", "greater than").
+* **Semantic Path Generation**: The Rule Assistant generates hierarchical paths using lowercase CIM class names (e.g., `transformertank.0.ratedS`) for improved readability and graph traversal alignment.
 * **Side-by-Side Workflow**: On desktop displays, the assistant and rule builder should be visible simultaneously to streamline the configuration process.
 
 ### 3.6 Advanced Condition Logic

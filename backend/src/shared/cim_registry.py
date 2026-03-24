@@ -208,10 +208,11 @@ class CimModelRegistry:
 
     # ── Combined topology ─────────────────────────────────────────
 
-    def search_all_models(self, query: str) -> list[dict]:
+    def search_all_models(self, query: str, class_name: str | None = None) -> list[dict]:
         """Search across all loaded models for nodes or equipment matching the query."""
         results = []
         lower_query = query.lower()
+        lower_class = class_name.lower() if class_name else None
         # Strip common suffixes used in UI display (e.g. " (node)", " (edge)")
         clean_query = lower_query
         for suffix in [" (node)", " (edge)", " (equipment)", " (bus)", " (line)"]:
@@ -230,15 +231,17 @@ class CimModelRegistry:
                     or clean_query in node_id
                     or clean_query in node_type
                 ):
-                    results.append(
-                        {
-                            "id": node["node_id"],
-                            "name": node.get("name") or node["node_id"],
-                            "type": "node",
-                            "model_id": mid,
-                            "cim_type": node.get("node_type", "ConnectivityNode"),
-                        }
-                    )
+                    cim_type = node.get("node_type", "ConnectivityNode")
+                    if not lower_class or lower_class in cim_type.lower():
+                        results.append(
+                            {
+                                "id": node["node_id"],
+                                "name": node.get("name") or node["node_id"],
+                                "type": "node",
+                                "model_id": mid,
+                                "cim_type": cim_type,
+                            }
+                        )
 
                 # Search attached equipment within nodes
                 for eq in node.get("attached_equipment", []):
@@ -253,15 +256,17 @@ class CimModelRegistry:
                         or clean_query in eq_type
                         or clean_query in eq_class
                     ):
-                        results.append(
-                            {
-                                "id": eq["mrid"],
-                                "name": eq.get("name") or eq["mrid"],
-                                "type": "equipment",
-                                "model_id": mid,
-                                "cim_type": eq.get("cim_class") or eq.get("type", "Equipment"),
-                            }
-                        )
+                        cim_type = eq.get("cim_class") or eq.get("type", "Equipment")
+                        if not lower_class or lower_class in cim_type.lower():
+                            results.append(
+                                {
+                                    "id": eq["mrid"],
+                                    "name": eq.get("name") or eq["mrid"],
+                                    "type": "equipment",
+                                    "model_id": mid,
+                                    "cim_type": cim_type,
+                                }
+                            )
                     if len(results) >= 50:
                         break
                 if len(results) >= 50:
@@ -279,15 +284,17 @@ class CimModelRegistry:
                         or clean_query in edge_id
                         or clean_query in edge_type
                     ):
-                        results.append(
-                            {
-                                "id": edge["edge_id"],
-                                "name": edge.get("name") or edge["edge_id"],
-                                "type": "edge",
-                                "model_id": mid,
-                                "cim_type": edge.get("edge_type", "Edge"),
-                            }
-                        )
+                        cim_type = edge.get("edge_type", "Edge")
+                        if not lower_class or lower_class in cim_type.lower():
+                            results.append(
+                                {
+                                    "id": edge["edge_id"],
+                                    "name": edge.get("name") or edge["edge_id"],
+                                    "type": "edge",
+                                    "model_id": mid,
+                                    "cim_type": cim_type,
+                                }
+                            )
                     if len(results) >= 50:
                         break
 

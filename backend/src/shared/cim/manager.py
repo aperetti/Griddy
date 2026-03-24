@@ -454,13 +454,18 @@ class CimModelManager:
         graph = self.network.graph
 
         ends: list[dict] = []
-        hierarchy = {
+        hierarchy: dict[str, Any] = {
             "mrid": detail["mrid"],
             "name": detail.get("name"),
             "class": "PowerTransformer",
-            "attributes": detail.copy(),
-            "children": []
+            **detail
         }
+        
+        def _add_to_node(node: dict, child: dict):
+            cls = child.get("class", "Unknown").lower()
+            if cls not in node:
+                node[cls] = []
+            node[cls].append(child)
         
         # 1. Look for PowerTransformerEnd (Transmission/Substation level)
         pte_cls = getattr(cim, "PowerTransformerEnd", None)
@@ -470,11 +475,9 @@ class CimModelManager:
                 if pt and _mrid_str(pt) == detail["mrid"]:
                     end_data = self._extract_primitives(pte)
                     ends.append(end_data)
-                    hierarchy["children"].append({
-                        "mrid": end_data["mrid"],
-                        "name": end_data.get("name") or f"End {end_data.get('endNumber', '')}",
+                    _add_to_node(hierarchy, {
                         "class": "PowerTransformerEnd",
-                        "attributes": end_data
+                        **end_data
                     })
 
         # 2. Look for TransformerTank (Distribution level: PT -> Tank -> TankInfo -> EndInfo)
@@ -485,11 +488,8 @@ class CimModelManager:
                 if pt and _mrid_str(pt) == detail["mrid"]:
                     tank_data = self._extract_primitives(tank)
                     tank_node = {
-                        "mrid": tank_data["mrid"],
-                        "name": tank_data.get("name") or "TransformerTank",
                         "class": "TransformerTank",
-                        "attributes": tank_data,
-                        "children": []
+                        **tank_data,
                     }
                     
                     # Tank Info (Catalog Data)
@@ -497,11 +497,9 @@ class CimModelManager:
                     if ti:
                         ti_data = self._extract_primitives(ti)
                         ti_mrid = _mrid_str(ti)
-                        tank_node["children"].append({
-                            "mrid": ti_mrid,
-                            "name": ti_data.get("name") or "TransformerTankInfo",
+                        _add_to_node(tank_node, {
                             "class": "TransformerTankInfo",
-                            "attributes": ti_data
+                            **ti_data
                         })
                         
                         # Match Ends for Catalog
@@ -512,11 +510,9 @@ class CimModelManager:
                                 if ei_ti and _mrid_str(ei_ti) == ti_mrid:
                                     info_data = self._extract_primitives(ei)
                                     if not ends: ends.append(info_data) # Legacy compat
-                                    tank_node["children"].append({
-                                        "mrid": info_data["mrid"],
-                                        "name": info_data.get("name") or f"EndInfo {info_data.get('endNumber', '')}",
+                                    _add_to_node(tank_node, {
                                         "class": "TransformerEndInfo",
-                                        "attributes": info_data
+                                        **info_data
                                     })
                                     
                     # Tank Ends (Actual instance connections)
@@ -527,11 +523,8 @@ class CimModelManager:
                             if tt_p and _mrid_str(tt_p) == tank_node["mrid"]:
                                 tte_data = self._extract_primitives(tte)
                                 tte_node = {
-                                    "mrid": tte_data["mrid"],
-                                    "name": tte_data.get("name") or f"TankEnd {tte_data.get('endNumber', '')}",
                                     "class": "TransformerTankEnd",
-                                    "attributes": tte_data,
-                                    "children": []
+                                    **tte_data,
                                 }
                                 
                                 # Match with TransformerEndInfo from the catalog if we have TankInfo
@@ -544,16 +537,14 @@ class CimModelManager:
                                             if ti_p and _mrid_str(ti_p) == _mrid_str(ti):
                                                 if getattr(tei, "endNumber", None) == enum:
                                                     ei_data = self._extract_primitives(tei)
-                                                    tte_node["children"].append({
-                                                        "mrid": ei_data["mrid"],
-                                                        "name": ei_data.get("name") or f"EndInfo {ei_data.get('endNumber', '')}",
+                                                    _add_to_node(tte_node, {
                                                         "class": "TransformerEndInfo",
-                                                        "attributes": ei_data
+                                                        **ei_data
                                                     })
                                 
-                                tank_node["children"].append(tte_node)
+                                _add_to_node(tank_node, tte_node)
 
-                    hierarchy["children"].append(tank_node)
+                    _add_to_node(hierarchy, tank_node)
 
         detail["hierarchy"] = hierarchy
         detail["transformerends"] = sorted(ends, key=lambda e: e.get("endNumber") or 0)
@@ -659,13 +650,18 @@ class CimModelManager:
         cim = self.cim
         graph = self.network.graph
         
-        hierarchy = {
+        hierarchy: dict[str, Any] = {
             "mrid": detail["mrid"],
             "name": detail.get("name"),
             "class": detail.get("cim_class", type(obj).__name__),
-            "attributes": detail.copy(),
-            "children": []
+            **detail
         }
+        
+        def _add_to_node(node: dict, child: dict):
+            cls = child.get("class", "Unknown").lower()
+            if cls not in node:
+                node[cls] = []
+            node[cls].append(child)
         
         # Look for associated Asset
         asset_cls = getattr(cim, "Asset", None)
@@ -676,24 +672,19 @@ class CimModelManager:
                 if psr and _mrid_str(psr) == detail["mrid"]:
                     asset_data = self._extract_primitives(asset)
                     asset_node = {
-                        "mrid": asset_data["mrid"],
-                        "name": asset_data.get("name") or "Asset",
                         "class": "Asset",
-                        "attributes": asset_data,
-                        "children": []
+                        **asset_data,
                     }
                     
                     # Asset Info
                     ai = getattr(asset, "AssetInfo", None)
                     if ai:
                         ai_data = self._extract_primitives(ai)
-                        asset_node["children"].append({
-                            "mrid": ai_data["mrid"],
-                            "name": ai_data.get("name") or "AssetInfo",
+                        _add_to_node(asset_node, {
                             "class": "AssetInfo",
-                            "attributes": ai_data
+                            **ai_data
                         })
                     
-                    hierarchy["children"].append(asset_node)
+                    _add_to_node(hierarchy, asset_node)
                     
         return hierarchy

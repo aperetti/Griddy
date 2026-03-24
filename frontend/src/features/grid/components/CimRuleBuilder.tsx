@@ -171,6 +171,7 @@ export const CimRuleBuilder: React.FC<CimRuleBuilderProps> = ({ value, onChange 
                 <input
                     list={`attrs-${condition.id}`}
                     value={condition.path}
+                    onClick={(e) => e.stopPropagation()}
                     onChange={(e) => handleUpdateCondition(condition.id, { path: e.target.value })}
                     style={{ width: '100%', padding: '6px', background: '#2a2a2a', color: 'white', border: '1px solid #444', borderRadius: '4px', fontSize: '13px' }}
                     placeholder="attribute.path"
@@ -204,6 +205,7 @@ export const CimRuleBuilder: React.FC<CimRuleBuilderProps> = ({ value, onChange 
                 <Text size="10px" c="dimmed" mb={2}>Op</Text>
                 <select
                     value={condition.op}
+                    onClick={(e) => e.stopPropagation()}
                     onChange={(e) => handleUpdateCondition(condition.id, { op: e.target.value })}
                     style={{ width: '100%', padding: '6px', background: '#2a2a2a', color: 'white', border: '1px solid #444', borderRadius: '4px', fontSize: '13px' }}
                 >
@@ -224,6 +226,7 @@ export const CimRuleBuilder: React.FC<CimRuleBuilderProps> = ({ value, onChange 
                     <Text size="10px" c="dimmed" mb={2}>Value</Text>
                     <input
                         value={condition.value}
+                        onClick={(e) => e.stopPropagation()}
                         onChange={(e) => handleUpdateCondition(condition.id, { value: e.target.value })}
                         style={{ width: '100%', padding: '6px', background: '#2a2a2a', color: 'white', border: '1px solid #444', borderRadius: '4px', fontSize: '13px' }}
                         placeholder="value"
@@ -380,7 +383,10 @@ export const CimRuleBuilder: React.FC<CimRuleBuilderProps> = ({ value, onChange 
                         flex: isWide ? '1 1 50%' : '1 1 0', width: '100%', minWidth: 0,
                         position: isWide ? 'sticky' : 'relative', top: isWide ? '10px' : '0'
                     }}>
-                        <RuleAssistant onSelectAttribute={handleAssistantSelect} />
+                        <RuleAssistant 
+                            targetClass={config.target_class}
+                            onSelectAttribute={handleAssistantSelect} 
+                        />
                     </Box>
                 )}
             </Box>

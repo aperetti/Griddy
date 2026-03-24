@@ -6,6 +6,7 @@ import { searchCim, fetchCimNode, fetchCimEquipment } from '../../../shared/api'
 
 interface RuleAssistantProps {
     onSelectAttribute: (path: string, value: any, operator?: string) => void;
+    targetClass?: string;
     zIndex?: number;
 }
 
@@ -119,6 +120,7 @@ const AttributeRow: React.FC<AttributeRowProps> = ({ path, label, value, isMobil
                 <Box 
                     mb={4} 
                     onContextMenu={handleContextMenu}
+                    onClick={(e) => e.stopPropagation()}
                     onTouchStart={handleTouchStart}
                     onTouchEnd={handleTouchEnd}
                     style={{ 
@@ -149,7 +151,7 @@ const AttributeRow: React.FC<AttributeRowProps> = ({ path, label, value, isMobil
     );
 };
 
-export const RuleAssistant: React.FC<RuleAssistantProps> = ({ onSelectAttribute, zIndex = 1000 }) => {
+export const RuleAssistant: React.FC<RuleAssistantProps> = ({ onSelectAttribute, targetClass, zIndex = 1000 }) => {
     const isMobile = useMediaQuery('(max-width: 768px)') || false;
     const [searchValue, setSearchValue] = useState('');
     const [options, setOptions] = useState<any[]>([]);
@@ -157,6 +159,12 @@ export const RuleAssistant: React.FC<RuleAssistantProps> = ({ onSelectAttribute,
     const [nodeDetails, setNodeDetails] = useState<any>(null);
     const [fetchingDetails, setFetchingDetails] = useState(false);
     const [history, setHistory] = useState<any[]>([]);
+    const [hideNulls, setHideNulls] = useState(false);
+    const [schema, setSchema] = useState<Record<string, any>>({});
+
+    useEffect(() => {
+        import('../../../shared/api').then(api => api.fetchCimSchema()).then(setSchema).catch(console.error);
+    }, []);
 
     useEffect(() => {
         if (!searchValue || searchValue.length < 2) {
@@ -167,10 +175,10 @@ export const RuleAssistant: React.FC<RuleAssistantProps> = ({ onSelectAttribute,
         const timer = setTimeout(async () => {
             setLoading(true);
             try {
-                const results = await searchCim(searchValue);
+                const results = await searchCim(searchValue, targetClass);
                 setOptions(results.map((r: any) => ({
                     value: r.id || r.mrid,
-                    label: `${r.name || r.id || r.mrid} (${r.type || r.class || 'CIM Object'})`
+                    label: `${r.name || r.id || r.mrid} (${r.cim_type || r.type || r.class || 'CIM Object'})`
                 })));
             } catch (err) {
                 console.error('Search failed', err);
@@ -180,7 +188,7 @@ export const RuleAssistant: React.FC<RuleAssistantProps> = ({ onSelectAttribute,
         }, 300);
 
         return () => clearTimeout(timer);
-    }, [searchValue]);
+    }, [searchValue, targetClass]);
 
     const handleNodeSelect = async (id: string | null) => {
         if (!id) return;
@@ -229,9 +237,38 @@ export const RuleAssistant: React.FC<RuleAssistantProps> = ({ onSelectAttribute,
     const renderAttributes = (obj: any, path: string = ''): React.ReactNode => {
         if (!obj || typeof obj !== 'object') return null;
 
-        return Object.entries(obj).map(([key, value]) => {
+        // Determine effective class for schema lookup
+        const className = obj.cim_type || obj.class || (path === '' ? obj.type : undefined);
+        const classSchema = className ? schema[className] : null;
+
+        // Merge keys from instance data and schema
+        let keys = Object.keys(obj);
+        if (classSchema?.attributes) {
+            const schemaKeys = classSchema.attributes.map((a: any) => a.name);
+            keys = Array.from(new Set([...keys, ...schemaKeys]));
+        }
+
+        // Sort keys: metadata first, then alpha
+        const metaKeys = ['id', 'mrid', 'name', 'cim_type', 'class', 'type'];
+        keys.sort((a, b) => {
+            const aMeta = metaKeys.indexOf(a);
+            const bMeta = metaKeys.indexOf(b);
+            if (aMeta !== -1 && bMeta !== -1) return aMeta - bMeta;
+            if (aMeta !== -1) return -1;
+            if (bMeta !== -1) return 1;
+            return a.localeCompare(b);
+        });
+
+        return keys.map((key) => {
             if (key === 'model_id' || key === 'hierarchy') return null;
             
+            const value = obj[key] !== undefined ? obj[key] : null;
+            
+            // Respect "Hide Nulls" toggle
+            if (hideNulls && (value === null || value === undefined || value === '')) {
+                return null;
+            }
+
             const currentPath = path ? `${path}.${key}` : key;
             const isArray = Array.isArray(value);
             const isExpandable = !!(value && typeof value === 'object' && !isArray);
@@ -297,7 +334,7 @@ export const RuleAssistant: React.FC<RuleAssistantProps> = ({ onSelectAttribute,
                 >
                     <Box pl={path ? 'md' : 0} style={{ borderLeft: path ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
                         <Group gap="xs" wrap="nowrap" align="flex-start">
-                            <Text size="xs" fw={isExpandable ? 700 : 400} c={isExpandable ? "blue" : "white"} style={{ 
+                            <Text size="xs" fw={isExpandable ? 700 : 400} c={isExpandable ? "blue" : (value === null ? "dimmed" : "white")} style={{ 
                                 flex: '0 0 120px', 
                                 overflow: 'hidden', 
                                 textOverflow: 'ellipsis',
@@ -317,8 +354,8 @@ export const RuleAssistant: React.FC<RuleAssistantProps> = ({ onSelectAttribute,
                                             {isRelation ? (
                                                 <Relation mrid={value as string} onDive={diveIntoMrid} />
                                             ) : (
-                                                <Text size="xs" c="dimmed" style={{ wordBreak: 'break-all' }}>
-                                                    {value === null ? 'null' : String(value)}
+                                                <Text size="xs" c="dimmed" style={{ wordBreak: 'break-all', fontStyle: value === null ? 'italic' : 'normal' }}>
+                                                    {value === null ? 'not in sample data' : String(value)}
                                                 </Text>
                                             )}
                                         </Box>
@@ -372,9 +409,20 @@ export const RuleAssistant: React.FC<RuleAssistantProps> = ({ onSelectAttribute,
                         )}
                     </Stack>
                 </Group>
-                <Tooltip label="Right-click an attribute for more options (exists, !=, etc.). Click name to dive." position="top-end" withArrow withinPortal zIndex={zIndex + 1000}>
-                    <Info size={14} style={{ opacity: 0.5, cursor: 'help' }} />
-                </Tooltip>
+                <Group gap="xs">
+                    <Button 
+                        variant={hideNulls ? "filled" : "outline"} 
+                        size="compact-xs" 
+                        color="gray"
+                        onClick={(e) => { e.stopPropagation(); setHideNulls(!hideNulls); }}
+                        styles={{ label: { fontSize: '10px' } }}
+                    >
+                        {hideNulls ? "Showing All" : "Hide Nulls"}
+                    </Button>
+                    <Tooltip label="Right-click an attribute for more options (exists, !=, etc.). Click name to dive." position="top-end" withArrow withinPortal zIndex={zIndex + 1000}>
+                        <Info size={14} style={{ opacity: 0.5, cursor: 'help' }} />
+                    </Tooltip>
+                </Group>
             </Group>
 
             {history.length === 0 && (
@@ -401,7 +449,7 @@ export const RuleAssistant: React.FC<RuleAssistantProps> = ({ onSelectAttribute,
                             size="compact-xs" 
                             color="gray" 
                             mb={8} 
-                            onClick={() => { setHistory([]); setNodeDetails(null); }}
+                            onClick={(e) => { e.stopPropagation(); setHistory([]); setNodeDetails(null); }}
                             leftSection={<Search size={10} />}
                          >
                             Start New Search
@@ -425,7 +473,7 @@ export const RuleAssistant: React.FC<RuleAssistantProps> = ({ onSelectAttribute,
                                 {nodeDetails?.hierarchy && (
                                     <Box mt="md" pt="md" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
                                         <Text size="10px" fw={700} mb={8} c="dimmed" tt="uppercase">CIM Hierarchy & Children</Text>
-                                        {renderAttributes(nodeDetails.hierarchy, 'hierarchy')}
+                                        {renderAttributes(nodeDetails.hierarchy, '')}
                                     </Box>
                                 )}
                             </Box>

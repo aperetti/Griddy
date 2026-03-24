@@ -20,6 +20,7 @@
     *   **Rule Assistant Integration**:
         *   Implement a side-by-side layout (50/50 split on desktop) between the Rule Assistant and Rule Builder.
         *   The Assistant must use `lucide-react` icons and Mantine components (`Stack`, `Group`, `Paper`) for a clean, hierarchical display.
+        *   **Semantic Paths**: Generate paths using lowercased CIM class names and flatten the `attributes` sub-dictionary to remove redundant path segments.
         *   Support for the `length_gt` operator for array-type attributes.
     *   **Nested Rule Builder UI**:
         *   Implement `CimRuleBuilder.tsx` as a recursive component that renders `ConditionGroup` components.

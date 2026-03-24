@@ -109,9 +109,11 @@ async def get_cim_neighbors(target_id: str):
 
 
 @router.get("/search")
-async def search_cim(query: str = Query(..., min_length=2)):
+async def search_cim(
+    query: str = Query(..., min_length=2), class_name: str | None = None
+):
     """Search across all loaded models for nodes matching the query."""
-    return registry.search_all_models(query)
+    return registry.search_all_models(query, class_name=class_name)
 
 
 @router.get("/schema")
