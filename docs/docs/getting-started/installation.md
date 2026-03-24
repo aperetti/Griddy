@@ -6,6 +6,7 @@ Griddy can be installed using Docker Compose for a quick setup, or manually for 
 
 - **Docker Desktop** (for Docker-based setup)
 - **Python 3.12+** and **Node.js 20+** (for local development)
+- (Optional) Copy `users.csv.example` to `users.csv` in the project root to secure the Rules Engine with basic auth.
 
 ---
 
