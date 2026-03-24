@@ -169,14 +169,28 @@ class DisplayRuleEngine:
         if actual_val is None: return False
         
         try:
-            if op == '>' : return actual_val > target_val
-            if op == '<' : return actual_val < target_val
-            if op == '>=': return actual_val >= target_val
-            if op == '<=': return actual_val <= target_val
+            # Coerce to float if comparing numerically
+            if op in ('>', '<', '>=', '<='):
+                actual_num = float(actual_val) if not isinstance(actual_val, (int, float)) else actual_val
+                target_num = float(target_val) if not isinstance(target_val, (int, float)) else target_val
+                
+                if op == '>' : return actual_num > target_num
+                if op == '<' : return actual_num < target_num
+                if op == '>=': return actual_num >= target_num
+                if op == '<=': return actual_num <= target_num
+            
+            if op == '==': return str(actual_val).lower() == str(target_val).lower()
+            if op == '!=': return str(actual_val).lower() != str(target_val).lower()
+
             if op == 'contains': return isinstance(actual_val, str) and target_val in actual_val
             if op == 'length_gt': 
                 return (isinstance(actual_val, (list, dict, str)) and len(actual_val) > int(target_val))
         except:
+            # If coercion fails, fall back to string comparison or just fail
+            try:
+                if op == '==': return str(actual_val).lower() == str(target_val).lower()
+            except:
+                pass
             return False
         return False
 
@@ -264,7 +278,11 @@ class DisplayRuleEngine:
             # For nodes, we check the attached equipment matching the target_class
             attached = data.get('attached_equipment', [])
             if target_class:
-                objects_to_check = [e for e in attached if e.get('type') == target_class]
+                # Check both 'type' and 'cim_class' as they vary between entry points
+                objects_to_check = [
+                    e for e in attached 
+                    if e.get('type') == target_class or e.get('cim_class') == target_class
+                ]
             else:
                 # If no target_class, check conditions against the node itself OR any attached equipment
                 objects_to_check = [data] + attached

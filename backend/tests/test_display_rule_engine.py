@@ -25,7 +25,17 @@ class TestDisplayRuleEngine(unittest.TestCase):
                 match_equipment TEXT,
                 match_edge_types TEXT,
                 size REAL,
-                label TEXT
+                label TEXT,
+                enabled INTEGER DEFAULT 1,
+                icon TEXT,
+                color_hex TEXT,
+                radial_offset REAL,
+                cluster_enabled INTEGER,
+                cluster_radius REAL,
+                cluster_max_zoom REAL,
+                min_zoom REAL,
+                max_zoom REAL,
+                css_overrides TEXT
             )
         """)
         
@@ -38,16 +48,20 @@ class TestDisplayRuleEngine(unittest.TestCase):
         self.engine = DisplayRuleEngine(self.db_path)
 
     def tearDown(self):
-        os.close(self.db_fd)
-        os.unlink(self.db_path)
+        try:
+            os.close(self.db_fd)
+            if os.path.exists(self.db_path):
+                os.unlink(self.db_path)
+        except:
+            pass
 
-    def add_rule(self, name, priority, conditions, visual_type, match_equipment=None, match_edge_types=None, size=1.0, label=""):
+    def add_rule(self, name, priority, conditions, visual_type, match_equipment=None, match_edge_types=None, size=1.0, label="", enabled=1):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO display_config_rules 
-            (config_id, name, priority, match_conditions, visual_type, match_equipment, match_edge_types, size, label)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (config_id, name, priority, match_conditions, visual_type, match_equipment, match_edge_types, size, label, enabled)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             self.config_id, name, priority, 
             json.dumps(conditions) if isinstance(conditions, dict) else conditions,
@@ -55,7 +69,8 @@ class TestDisplayRuleEngine(unittest.TestCase):
             json.dumps(match_equipment) if match_equipment else None,
             json.dumps(match_edge_types) if match_edge_types else None,
             size,
-            label
+            label,
+            enabled
         ))
         conn.commit()
         conn.close()
@@ -225,6 +240,41 @@ class TestDisplayRuleEngine(unittest.TestCase):
         
         # Fail both OR conditions
         self.assertIsNone(self.engine.classify_node({"class": "VoltageLevel", "voltage": 50, "name": "Low", "attached_equipment": []}))
+
+    def test_numeric_string_coercion(self):
+        # Rule: active_power_w >= "7000" (string)
+        self.add_rule("High Power", 10, {
+            "target_class": "EnergyConsumer",
+            "conditions": [
+                {"path": "active_power_w", "op": ">=", "value": "7000"}
+            ]
+        }, "PowerViolation")
+
+        # Test node with float value 8500.0 - should match even though rule value is string
+        node_match = {
+            "attached_equipment": [
+                {
+                    "cim_class": "EnergyConsumer",
+                    "active_power_w": 8500.0
+                }
+            ]
+        }
+        res = self.engine.classify_node(node_match)
+        self.assertIsNotNone(res)
+        self.assertEqual(res["visual_type"], "PowerViolation")
+
+        # Test node with type instead of cim_class
+        node_match_type = {
+            "attached_equipment": [
+                {
+                    "type": "EnergyConsumer",
+                    "active_power_w": 8500.0
+                }
+            ]
+        }
+        res = self.engine.classify_node(node_match_type)
+        self.assertIsNotNone(res)
+        self.assertEqual(res["visual_type"], "PowerViolation")
 
 if __name__ == '__main__':
     unittest.main()

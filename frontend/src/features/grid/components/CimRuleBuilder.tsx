@@ -51,6 +51,233 @@ const ensureIds = (node: any): any => {
     return newNode;
 };
 
+// ── Recursive update/remove helpers (placed outside) ────────────────
+
+const updateNode = (root: ConditionGroup, id: string, updater: (node: any) => any): ConditionGroup => {
+    if (root.id === id) return updater(root);
+    
+    return {
+        ...root,
+        conditions: root.conditions.map(c => {
+            if ('conditions' in c) return updateNode(c as ConditionGroup, id, updater);
+            if (c.id === id) return updater(c);
+            return c;
+        })
+    };
+};
+
+const removeNode = (root: ConditionGroup, id: string): ConditionGroup => {
+    return {
+        ...root,
+        conditions: root.conditions.filter(c => c.id !== id).map(c => {
+            if ('conditions' in c) return removeNode(c as ConditionGroup, id);
+            return c;
+        })
+    };
+};
+
+// ── Sub-components moved outside to maintain focus ────────────────
+
+const ConditionRow = ({ 
+    condition, 
+    handleUpdateCondition, 
+    handleRemove,
+    currentClassAttributes 
+}: { 
+    condition: Condition, 
+    handleUpdateCondition: (id: string, updates: Partial<Condition>) => void,
+    handleRemove: (id: string) => void,
+    currentClassAttributes: any[]
+}) => (
+    <Group gap="xs" wrap="nowrap" align="flex-end" style={{ background: 'rgba(0,0,0,0.1)', padding: '8px', borderRadius: '4px' }}>
+        <Box style={{ flex: 2, minWidth: 100 }}>
+            <Text size="10px" c="dimmed" mb={2}>Path</Text>
+            <input
+                list={`attrs-${condition.id}`}
+                value={condition.path}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => handleUpdateCondition(condition.id, { path: e.target.value })}
+                style={{ width: '100%', padding: '6px', background: '#2a2a2a', color: 'white', border: '1px solid #444', borderRadius: '4px', fontSize: '13px' }}
+                placeholder="attribute.path"
+            />
+            <datalist id={`attrs-${condition.id}`}>
+                {(() => {
+                    const pathParts = condition.path.split('.');
+                    const prefix = pathParts.slice(0, -1).join('.');
+                    
+                    let opts: string[] = [];
+                    
+                    if (condition.path.startsWith('hierarchy')) {
+                        const hierarchyKeys = ['mrid', 'name', 'class', 'attributes', 'children'];
+                        if (condition.path === 'hierarchy' || condition.path === 'hierarchy.') {
+                            opts = hierarchyKeys.map(k => `hierarchy.${k}`);
+                        } else if (condition.path.includes('attributes.')) {
+                            opts = currentClassAttributes.map((a: any) => `${prefix}.${a.name}`);
+                        }
+                    } else {
+                        opts = currentClassAttributes.map((attr: any) => attr.name);
+                        opts.push('hierarchy');
+                    }
+                    
+                    return opts.map(opt => (
+                        <option key={opt} value={opt} />
+                    ));
+                })()}
+            </datalist>
+        </Box>
+        <Box style={{ flex: 1, minWidth: 80 }}>
+            <Text size="10px" c="dimmed" mb={2}>Op</Text>
+            <select
+                value={condition.op}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => handleUpdateCondition(condition.id, { op: e.target.value })}
+                style={{ width: '100%', padding: '6px', background: '#2a2a2a', color: 'white', border: '1px solid #444', borderRadius: '4px', fontSize: '13px' }}
+            >
+                <option value="==">==</option>
+                <option value="!=">!=</option>
+                <option value=">">&gt;</option>
+                <option value="<">&lt;</option>
+                <option value=">=">&gt;=</option>
+                <option value="<=">&lt;=</option>
+                <option value="contains">contains</option>
+                <option value="exists">exists</option>
+                <option value="not_exists">not exists</option>
+                <option value="length_gt">length &gt;</option>
+            </select>
+        </Box>
+        {condition.op !== 'exists' && condition.op !== 'not_exists' && (
+            <Box style={{ flex: 2, minWidth: 100 }}>
+                <Text size="10px" c="dimmed" mb={2}>Value</Text>
+                <input
+                    value={condition.value}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => handleUpdateCondition(condition.id, { value: e.target.value })}
+                    style={{ width: '100%', padding: '6px', background: '#2a2a2a', color: 'white', border: '1px solid #444', borderRadius: '4px', fontSize: '13px' }}
+                    placeholder="value"
+                />
+            </Box>
+        )}
+        <ActionIcon variant="light" color="red" size="lg" onClick={() => handleRemove(condition.id)}>
+            <Trash2 size={16} />
+        </ActionIcon>
+    </Group>
+);
+
+const ConditionGroupUI = ({ 
+    group, 
+    depth = 0,
+    focusedGroupId,
+    setFocusedGroupId,
+    handleToggleOp,
+    handleAddCondition,
+    handleAddGroup,
+    handleRemove,
+    handleUpdateCondition,
+    currentClassAttributes 
+}: { 
+    group: ConditionGroup, 
+    depth: number,
+    focusedGroupId: string | null,
+    setFocusedGroupId: (id: string | null) => void,
+    handleToggleOp: (id: string, op: 'AND' | 'OR') => void,
+    handleAddCondition: (groupId: string) => void,
+    handleAddGroup: (groupId: string) => void,
+    handleRemove: (id: string) => void,
+    handleUpdateCondition: (id: string, updates: Partial<Condition>) => void,
+    currentClassAttributes: any[]
+}) => {
+    const isRoot = depth === 0;
+    const isFocused = focusedGroupId === group.id;
+
+    return (
+        <Box 
+            p="xs" 
+            mb="xs" 
+            style={{ 
+                border: isFocused ? '1px solid #4dabf7' : '1px solid rgba(255,255,255,0.05)',
+                background: isRoot ? 'transparent' : 'rgba(255,255,255,0.02)',
+                borderRadius: '8px',
+                marginLeft: isRoot ? 0 : '12px',
+                position: 'relative'
+            }}
+            onClick={(e) => { e.stopPropagation(); setFocusedGroupId(group.id); }}
+        >
+            <Group justify="space-between" mb="xs">
+                <Group gap="xs">
+                    <SegmentedControl 
+                        size="xs"
+                        value={group.logical_op}
+                        onChange={(val) => handleToggleOp(group.id, val as 'AND' | 'OR')}
+                        data={[
+                            { label: 'AND', value: 'AND' },
+                            { label: 'OR', value: 'OR' }
+                        ]}
+                        styles={{
+                            root: { background: 'rgba(0,0,0,0.2)' },
+                            indicator: { background: group.logical_op === 'AND' ? '#224422' : '#442222' }
+                        }}
+                    />
+                    <Badge size="xs" variant="outline" color={isFocused ? "blue" : "gray"}>
+                        {isFocused ? "FOCUSED" : `GROUP`}
+                    </Badge>
+                </Group>
+                <Group gap="xs">
+                    <Tooltip label="Add Condition" position="top">
+                        <ActionIcon variant="light" color="green" size="sm" onClick={(e) => { e.stopPropagation(); handleAddCondition(group.id); }}>
+                            <Plus size={14} />
+                        </ActionIcon>
+                    </Tooltip>
+                    <Tooltip label="Add Nested Group" position="top">
+                        <ActionIcon variant="light" color="blue" size="sm" onClick={(e) => { e.stopPropagation(); handleAddGroup(group.id); }}>
+                            <FolderPlus size={14} />
+                        </ActionIcon>
+                    </Tooltip>
+                    {!isRoot && (
+                        <ActionIcon variant="subtle" color="red" size="sm" onClick={(e) => { e.stopPropagation(); handleRemove(group.id); }}>
+                            <Trash2 size={14} />
+                        </ActionIcon>
+                    )}
+                </Group>
+            </Group>
+
+            <Stack gap="xs">
+                {(group.conditions || []).length === 0 && (
+                    <Text size="xs" c="dimmed" ta="center" py="sm">Empty Group. Add something!</Text>
+                )}
+                {(group.conditions || []).map((c: any) => (
+                    c && 'conditions' in c ? (
+                        <ConditionGroupUI 
+                            key={c.id} 
+                            group={c as ConditionGroup} 
+                            depth={depth + 1} 
+                            focusedGroupId={focusedGroupId}
+                            setFocusedGroupId={setFocusedGroupId}
+                            handleToggleOp={handleToggleOp}
+                            handleAddCondition={handleAddCondition}
+                            handleAddGroup={handleAddGroup}
+                            handleRemove={handleRemove}
+                            handleUpdateCondition={handleUpdateCondition}
+                            currentClassAttributes={currentClassAttributes}
+                        />
+                    ) : (
+                        c ? (
+                            <ConditionRow 
+                                key={c.id} 
+                                condition={c as Condition} 
+                                handleUpdateCondition={handleUpdateCondition}
+                                handleRemove={handleRemove}
+                                currentClassAttributes={currentClassAttributes}
+                            />
+                        ) : null
+                    )
+                ))}
+            </Stack>
+        </Box>
+    );
+};
+
+// ── Main Component ──────────────────────────────────────────
+
 export const CimRuleBuilder: React.FC<CimRuleBuilderProps> = ({ value, onChange }) => {
     const [schema, setSchema] = useState<Record<string, any>>({});
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -73,7 +300,7 @@ export const CimRuleBuilder: React.FC<CimRuleBuilderProps> = ({ value, onChange 
         fetchCimSchema().then(setSchema).catch(console.error);
         const handleResize = () => setIsMobile(window.innerWidth < 768);
         window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
+        return () => window.removeResizeListener?.('resize', handleResize);
     }, []);
 
     // Sync from parent
@@ -93,31 +320,6 @@ export const CimRuleBuilder: React.FC<CimRuleBuilderProps> = ({ value, onChange 
         onChange(JSON.stringify(newConfig));
     };
 
-    // Recursive update helper
-    const updateNode = (root: ConditionGroup, id: string, updater: (node: any) => any): ConditionGroup => {
-        if (root.id === id) return updater(root);
-        
-        return {
-            ...root,
-            conditions: root.conditions.map(c => {
-                if ('conditions' in c) return updateNode(c as ConditionGroup, id, updater);
-                if (c.id === id) return updater(c);
-                return c;
-            })
-        };
-    };
-
-    // Recursive remove helper
-    const removeNode = (root: ConditionGroup, id: string): ConditionGroup => {
-        return {
-            ...root,
-            conditions: root.conditions.filter(c => c.id !== id).map(c => {
-                if ('conditions' in c) return removeNode(c as ConditionGroup, id);
-                return c;
-            })
-        };
-    };
-
     const handleAddCondition = (groupId: string) => {
         updateConfig(updateNode(config as MatchConditions, groupId, (node: ConditionGroup) => ({
             ...node,
@@ -131,7 +333,7 @@ export const CimRuleBuilder: React.FC<CimRuleBuilderProps> = ({ value, onChange 
             ...node,
             conditions: [...node.conditions, { id: genId(), logical_op: 'AND', conditions: [] }]
         })));
-        setFocusedGroupId(null); // Clear focus when adding group to root or similar
+        setFocusedGroupId(null);
     };
 
     const handleRemove = (id: string) => {
@@ -163,152 +365,6 @@ export const CimRuleBuilder: React.FC<CimRuleBuilderProps> = ({ value, onChange 
     const currentClassAttributes = config.target_class ? schema[config.target_class]?.attributes || [] : [];
 
     const isWide = !isMobile && window.innerWidth > 800;
-
-    const ConditionRow = ({ condition }: { condition: Condition }) => (
-        <Group gap="xs" wrap="nowrap" align="flex-end" style={{ background: 'rgba(0,0,0,0.1)', padding: '8px', borderRadius: '4px' }}>
-            <Box style={{ flex: 2, minWidth: 100 }}>
-                <Text size="10px" c="dimmed" mb={2}>Path</Text>
-                <input
-                    list={`attrs-${condition.id}`}
-                    value={condition.path}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => handleUpdateCondition(condition.id, { path: e.target.value })}
-                    style={{ width: '100%', padding: '6px', background: '#2a2a2a', color: 'white', border: '1px solid #444', borderRadius: '4px', fontSize: '13px' }}
-                    placeholder="attribute.path"
-                />
-                <datalist id={`attrs-${condition.id}`}>
-                    {(() => {
-                        const pathParts = condition.path.split('.');
-                        const prefix = pathParts.slice(0, -1).join('.');
-                        
-                        let opts: string[] = [];
-                        
-                        if (condition.path.startsWith('hierarchy')) {
-                            const hierarchyKeys = ['mrid', 'name', 'class', 'attributes', 'children'];
-                            if (condition.path === 'hierarchy' || condition.path === 'hierarchy.') {
-                                opts = hierarchyKeys.map(k => `hierarchy.${k}`);
-                            } else if (condition.path.includes('attributes.')) {
-                                opts = currentClassAttributes.map((a: any) => `${prefix}.${a.name}`);
-                            }
-                        } else {
-                            opts = currentClassAttributes.map((attr: any) => attr.name);
-                            opts.push('hierarchy');
-                        }
-                        
-                        return opts.map(opt => (
-                            <option key={opt} value={opt} />
-                        ));
-                    })()}
-                </datalist>
-            </Box>
-            <Box style={{ flex: 1, minWidth: 80 }}>
-                <Text size="10px" c="dimmed" mb={2}>Op</Text>
-                <select
-                    value={condition.op}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => handleUpdateCondition(condition.id, { op: e.target.value })}
-                    style={{ width: '100%', padding: '6px', background: '#2a2a2a', color: 'white', border: '1px solid #444', borderRadius: '4px', fontSize: '13px' }}
-                >
-                    <option value="==">==</option>
-                    <option value="!=">!=</option>
-                    <option value=">">&gt;</option>
-                    <option value="<">&lt;</option>
-                    <option value=">=">&gt;=</option>
-                    <option value="<=">&lt;=</option>
-                    <option value="contains">contains</option>
-                    <option value="exists">exists</option>
-                    <option value="not_exists">not exists</option>
-                    <option value="length_gt">length &gt;</option>
-                </select>
-            </Box>
-            {condition.op !== 'exists' && condition.op !== 'not_exists' && (
-                <Box style={{ flex: 2, minWidth: 100 }}>
-                    <Text size="10px" c="dimmed" mb={2}>Value</Text>
-                    <input
-                        value={condition.value}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => handleUpdateCondition(condition.id, { value: e.target.value })}
-                        style={{ width: '100%', padding: '6px', background: '#2a2a2a', color: 'white', border: '1px solid #444', borderRadius: '4px', fontSize: '13px' }}
-                        placeholder="value"
-                    />
-                </Box>
-            )}
-            <ActionIcon variant="light" color="red" size="lg" onClick={() => handleRemove(condition.id)}>
-                <Trash2 size={16} />
-            </ActionIcon>
-        </Group>
-    );
-
-    const ConditionGroupUI = ({ group, depth = 0 }: { group: ConditionGroup, depth: number }) => {
-        const isRoot = depth === 0;
-        const isFocused = focusedGroupId === group.id;
-
-        return (
-            <Box 
-                p="xs" 
-                mb="xs" 
-                style={{ 
-                    border: isFocused ? '1px solid #4dabf7' : '1px solid rgba(255,255,255,0.05)',
-                    background: isRoot ? 'transparent' : 'rgba(255,255,255,0.02)',
-                    borderRadius: '8px',
-                    marginLeft: isRoot ? 0 : '12px',
-                    position: 'relative'
-                }}
-                onClick={(e) => { e.stopPropagation(); setFocusedGroupId(group.id); }}
-            >
-                <Group justify="space-between" mb="xs">
-                    <Group gap="xs">
-                        <SegmentedControl 
-                            size="xs"
-                            value={group.logical_op}
-                            onChange={(val) => handleToggleOp(group.id, val as 'AND' | 'OR')}
-                            data={[
-                                { label: 'AND', value: 'AND' },
-                                { label: 'OR', value: 'OR' }
-                            ]}
-                            styles={{
-                                root: { background: 'rgba(0,0,0,0.2)' },
-                                indicator: { background: group.logical_op === 'AND' ? '#224422' : '#442222' }
-                            }}
-                        />
-                        <Badge size="xs" variant="outline" color={isFocused ? "blue" : "gray"}>
-                            {isFocused ? "FOCUSED" : `GROUP`}
-                        </Badge>
-                    </Group>
-                    <Group gap="xs">
-                        <Tooltip label="Add Condition" position="top">
-                            <ActionIcon variant="light" color="green" size="sm" onClick={(e) => { e.stopPropagation(); handleAddCondition(group.id); }}>
-                                <Plus size={14} />
-                            </ActionIcon>
-                        </Tooltip>
-                        <Tooltip label="Add Nested Group" position="top">
-                            <ActionIcon variant="light" color="blue" size="sm" onClick={(e) => { e.stopPropagation(); handleAddGroup(group.id); }}>
-                                <FolderPlus size={14} />
-                            </ActionIcon>
-                        </Tooltip>
-                        {!isRoot && (
-                            <ActionIcon variant="subtle" color="red" size="sm" onClick={(e) => { e.stopPropagation(); handleRemove(group.id); }}>
-                                <Trash2 size={14} />
-                            </ActionIcon>
-                        )}
-                    </Group>
-                </Group>
-
-                <Stack gap="xs">
-                    {(group.conditions || []).length === 0 && (
-                        <Text size="xs" c="dimmed" ta="center" py="sm">Empty Group. Add something!</Text>
-                    )}
-                    {(group.conditions || []).map((c: any) => (
-                        c && 'conditions' in c ? (
-                            <ConditionGroupUI key={c.id} group={c as ConditionGroup} depth={depth + 1} />
-                        ) : (
-                            c ? <ConditionRow key={c.id} condition={c as Condition} /> : null
-                        )
-                    ))}
-                </Stack>
-            </Box>
-        );
-    };
 
     return (
         <Box p="xs" style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '4px' }}>
@@ -355,7 +411,18 @@ export const CimRuleBuilder: React.FC<CimRuleBuilderProps> = ({ value, onChange 
                         </select>
                     </Box>
 
-                    <ConditionGroupUI group={config} depth={0} />
+                    <ConditionGroupUI 
+                        group={config} 
+                        depth={0} 
+                        focusedGroupId={focusedGroupId}
+                        setFocusedGroupId={setFocusedGroupId}
+                        handleToggleOp={handleToggleOp}
+                        handleAddCondition={handleAddCondition}
+                        handleAddGroup={handleAddGroup}
+                        handleRemove={handleRemove}
+                        handleUpdateCondition={handleUpdateCondition}
+                        currentClassAttributes={currentClassAttributes}
+                    />
 
                     <Box mt="md" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px' }}>
                          <Text size="10px" c="dimmed" mb={8}>
