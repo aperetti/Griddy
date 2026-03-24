@@ -738,17 +738,32 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                                     >
                                                         {rule.name}
                                                     </Text>
-                                                    <ActionIcon 
-                                                        size="md" 
-                                                        variant="subtle" 
-                                                        color="red" 
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleDeleteRule(rule.id);
-                                                        }}
-                                                    >
-                                                        <Trash2 size={18} />
-                                                    </ActionIcon>
+                                                    <Group gap={4} wrap="nowrap">
+                                                        <ActionIcon 
+                                                            size="md" 
+                                                            variant="subtle" 
+                                                            color="blue" 
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleDuplicateRule(rule.id);
+                                                            }}
+                                                            title="Duplicate rule"
+                                                        >
+                                                            <Copy size={18} />
+                                                        </ActionIcon>
+                                                        <ActionIcon 
+                                                            size="md" 
+                                                            variant="subtle" 
+                                                            color="red" 
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleDeleteRule(rule.id);
+                                                            }}
+                                                            title="Delete rule"
+                                                        >
+                                                            <Trash2 size={18} />
+                                                        </ActionIcon>
+                                                    </Group>
                                                 </Group>
                                                 <Group justify="space-between">
                                                     <Group gap={4}>

@@ -225,7 +225,11 @@ async def get_sprite_map_png():
             raise HTTPException(status_code=500, detail=f"Sprite generation failed: {str(e)}")
             
     content = await run_in_threadpool(_generate)
-    return Response(content=content, media_type="image/png")
+    return Response(
+        content=content, 
+        media_type="image/png",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+    )
 
 @router.get("/sprites/map.json")
 async def get_sprite_map_json():
@@ -237,4 +241,9 @@ async def get_sprite_map_json():
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Sprite mapping generation failed: {str(e)}")
             
-    return await run_in_threadpool(_generate)
+    content = await run_in_threadpool(_generate)
+    return Response(
+        content=json.dumps(content),
+        media_type="application/json",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+    )
