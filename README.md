@@ -202,13 +202,13 @@ The docs site opens at <http://localhost:3002>.
 
 ### Dev Server Summary
 
-| Service | Command | URL |
-| :--- | :--- | :--- |
-| Backend | `uvicorn main:app --reload` | <http://localhost:8000> |
-| Frontend | `npm run dev` (in `frontend/`) | <http://localhost:3001> |
-| Docs | `npm run start` (in `docs/`) | <http://localhost:3002> |
+| Service | Command | Port | URL |
+| :--- | :--- | :--- | :--- |
+| **Frontend (Admin)** | `npm run dev` (in `frontend/`) | `3001` | <http://localhost:3001> |
+| **Backend API** | `uvicorn main:app --reload` | `8000` | <http://localhost:8000> |
+| **Docs** | `npm run start` (in `docs/`) | `3002` | <http://localhost:3002> |
 
-> The Vite dev server automatically proxies `/api` → `localhost:8000` and `/docs` → `localhost:3002`, so you can access everything through <http://localhost:3001>.
+> **Vite Dev Server (3001)**: The frontend development server automatically proxies `/api` → `localhost:8000` and `/docs` → `localhost:3002`. This allows you to access the consolidated application entirely through port `3001` during development.
 
 ---
 
