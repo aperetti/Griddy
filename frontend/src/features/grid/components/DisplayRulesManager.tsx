@@ -4,8 +4,9 @@ import {
     Table, Button, Group, ActionIcon, 
     Stack, Text, Badge, Select, TextInput, 
     NumberInput, JsonInput, Paper, Divider,
-    ColorInput, ColorSwatch, Box, PasswordInput,
-    Alert, FileButton, Grid, Textarea, Switch
+    ColorSwatch, Box, PasswordInput,
+    Alert, FileButton, Grid, Textarea, Switch,
+    Fieldset
 } from '@mantine/core';
 import {
     X, Upload, Maximize2, Trash2, Plus,
@@ -350,302 +351,281 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                     <X size={14} />
                                 </ActionIcon>
                             </Group>
-                            <TextInput
-                                label={
-                                    <Group gap={4} wrap="nowrap">
-                                        <Text size="xs" fw={500}>Rule Name</Text>
-                                        <Tooltip label="Human-readable name for this display rule." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
-                                            <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
-                                        </Tooltip>
-                                    </Group>
-                                }
-                                placeholder="e.g. Substation Regulators"
-                                value={editingRule?.name || ''}
-                                onChange={(e) => setEditingRule(prev => prev ? { ...prev, name: e.target.value } : null)}
-                                size="xs"
-                            />
-                            <Group grow>
-                                <TextInput
-                                    label={
-                                        <Group gap={4} wrap="nowrap">
-                                            <Text size="xs" fw={500}>Visual Type</Text>
-                                            <Tooltip label="The logical category for this rule (e.g., Transformer, Meter). Matches the 'type' field in the topology JSON." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
-                                                <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
-                                            </Tooltip>
-                                        </Group>
-                                    }
-                                    placeholder="e.g. Transformer"
-                                    value={editingRule?.visual_type || ''}
-                                    onChange={(e) => setEditingRule(prev => prev ? { ...prev, visual_type: e.target.value } : null)}
-                                    size="xs"
-                                />
-                                <NumberInput
-                                    label={
-                                        <Group gap={4} wrap="nowrap">
-                                            <Text size="xs" fw={500}>Priority</Text>
-                                            <Tooltip label="Controls matching order. Higher priority rules are evaluated first." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
-                                                <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
-                                            </Tooltip>
-                                        </Group>
-                                    }
-                                    value={editingRule?.priority || 0}
-                                    onChange={(val) => setEditingRule(prev => prev ? { ...prev, priority: typeof val === 'number' ? val : 0 } : null)}
-                                    size="xs"
-                                />
-                            </Group>
-
-                            <Group justify="space-between" align="center">
-                                <Group gap={4} wrap="nowrap">
-                                    <Text size="xs" fw={500}>Match Conditions</Text>
-                                    <Tooltip label="Logic used to identify assets from the topology that this rule should apply to." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
-                                        <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
-                                    </Tooltip>
-                                </Group>
-                                <Button
-                                    variant="subtle"
-                                    size="compact-xs"
-                                    onClick={() => setUseBuilder(!useBuilder)}
-                                >
-                                    {useBuilder ? "Switch to JSON" : "Switch to Builder"}
-                                </Button>
-                            </Group>
-
-                            {useBuilder ? (
-                                <CimRuleBuilder
-                                    value={typeof editingRule?.match_conditions === 'string' ? editingRule.match_conditions : JSON.stringify(editingRule?.match_conditions || {})}
-                                    onChange={(val) => setEditingRule(prev => prev ? { ...prev, match_conditions: val } : null)}
-                                />
-                            ) : (
-                                <JsonInput
-                                    placeholder='{"equipment_type": "PowerTransformer", "properties": {"name": "Regulator"}}'
-                                    validationError="Invalid JSON"
-                                    formatOnBlur
-                                    autosize
-                                    minRows={4}
-                                    value={typeof editingRule?.match_conditions === 'string' ? editingRule.match_conditions : JSON.stringify(editingRule?.match_conditions || {}, null, 2)}
-                                    onChange={(val) => setEditingRule(prev => prev ? { ...prev, match_conditions: val } : null)}
-                                    size="xs"
-                                />
-                            )}
-                            <Grid gutter="xs" align="flex-end" pt="sm">
-                                <Grid.Col span={{ base: 4, sm: 2 }}>
-                                    <NumberInput
-                                        label={
-                                            <Group gap={4} wrap="nowrap">
-                                                <Text size="xs" fw={500}>Size</Text>
-                                                <Tooltip label="Scaling factor applied to icons or line widths." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
-                                                    <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
-                                                </Tooltip>
-                                            </Group>
-                                        }
-                                        placeholder="1.0"
-                                        step={0.1}
-                                        decimalScale={1}
-                                        value={editingRule?.size || 1.0}
-                                        onChange={(val) => setEditingRule(prev => prev ? { ...prev, size: typeof val === 'number' ? val : 1.0 } : null)}
-                                        size="xs"
-                                    />
-                                </Grid.Col>
-                                <Grid.Col span={{ base: 8, sm: 4 }}>
-                                    <Stack gap={4}>
-                                        <Text size="xs" fw={500}>SVG Icon</Text>
-                                        <Group gap="xs" wrap="nowrap">
-                                            <FileButton onChange={handleFileUpload} accept="image/svg+xml">
-                                                {(props) => (
-                                                    <Button {...props} variant="light" size="xs" leftSection={<Upload size={14} />}>
-                                                        Upload
-                                                    </Button>
-                                                )}
-                                            </FileButton>
-                                            <Button 
-                                                variant="light" 
-                                                size="xs" 
-                                                leftSection={<Maximize2 size={14} />}
-                                                onClick={openEditor}
-                                                style={{ flex: 1 }}
-                                            >
-                                                {isMobile ? "Live" : "Live Editor"}
-                                            </Button>
-                                        </Group>
-                                    </Stack>
-                                </Grid.Col>
-                                
-                                <Grid.Col span={{ base: 4, sm: 'auto' }}>
-                                    <Group justify="center" align="center" h="100%">
-                                        {editingRule?.icon && (editingRule.icon.trim().startsWith('<svg') || editingRule.icon.includes('<svg')) ? (
-                                            <Box style={{ 
-                                                width: 32, 
-                                                height: 32, 
-                                                display: 'flex', 
-                                                alignItems: 'center', 
-                                                justifyContent: 'center',
-                                                background: 'rgba(255,255,255,0.1)',
-                                                borderRadius: 4,
-                                                overflow: 'hidden'
-                                            }}>
-                                                <div 
-                                                    style={{ width: '100%', height: '100%', display: 'flex' }}
-                                                    dangerouslySetInnerHTML={{ __html: editingRule.icon }} 
-                                                />
-                                            </Box>
-                                        ) : (
-                                            <Box style={{ width: 32, height: 32, border: '1px dashed rgba(255,255,255,0.2)', borderRadius: 4 }} />
-                                        )}
-                                    </Group>
-                                </Grid.Col>
-
-                                <Grid.Col span={{ base: 8, sm: 3 }}>
-                                    <ColorInput
-                                        label={
-                                            <Group gap={4} wrap="nowrap">
-                                                <Text size="xs" fw={500}>Color</Text>
-                                                <Tooltip label="Sets the primary color for icons and lines matching this rule." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
-                                                    <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
-                                                </Tooltip>
-                                            </Group>
-                                        }
-                                        placeholder="#FF..."
-                                        value={editingRule?.color_hex || ''}
-                                        onChange={(val: string) => setEditingRule(prev => prev ? { ...prev, color_hex: val } : null)}
-                                        size="xs"
-                                        popoverProps={{ zIndex: zIndex + 1000 }}
-                                        disallowInput
-                                    />
-                                </Grid.Col>
-
-                                <Grid.Col span={{ base: 6, sm: 2 }}>
+                            <Fieldset legend={<Text size="xs" fw={700}>Identity & Matching</Text>} variant="unstyled" style={{ padding: '4px 0' }}>
+                                <Stack gap="xs">
                                     <TextInput
                                         label={
                                             <Group gap={4} wrap="nowrap">
-                                                <Text size="xs" fw={500}>Label</Text>
-                                                <Tooltip label="Static text that will appear in the node's label on the map view." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                <Text size="xs" fw={500}>Rule Name</Text>
+                                                <Tooltip label="Human-readable name for this display rule." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
                                                     <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
                                                 </Tooltip>
                                             </Group>
                                         }
-                                        placeholder="Label..."
-                                        value={editingRule?.label || ''}
-                                        onChange={(e) => setEditingRule(prev => prev ? { ...prev, label: e.target.value } : null)}
+                                        placeholder="e.g. Substation Regulators"
+                                        value={editingRule?.name || ''}
+                                        onChange={(e) => setEditingRule(prev => prev ? { ...prev, name: e.target.value } : null)}
                                         size="xs"
                                     />
-                                </Grid.Col>
-                                
-                                <Grid.Col span={{ base: 6, sm: 2 }}>
-                                    <NumberInput
-                                        label={
-                                            <Group gap={4} wrap="nowrap">
-                                                <Text size="xs" fw={500}>Min Zoom</Text>
-                                                <Tooltip label="Minimum zoom level at which these assets are visible." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
-                                                    <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
-                                                </Tooltip>
-                                            </Group>
-                                        }
-                                        placeholder="0"
-                                        min={0}
-                                        max={24}
-                                        step={0.5}
-                                        value={editingRule?.min_zoom ?? 0}
-                                        onChange={(val) => setEditingRule(prev => prev ? { ...prev, min_zoom: typeof val === 'number' ? val : 0 } : null)}
-                                        size="xs"
-                                    />
-                                </Grid.Col>
-
-                                <Grid.Col span={{ base: 6, sm: 2 }}>
-                                    <NumberInput
-                                        label={
-                                            <Group gap={4} wrap="nowrap">
-                                                <Text size="xs" fw={500}>Max Zoom</Text>
-                                                <Tooltip label="Maximum zoom level at which these assets are visible." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
-                                                    <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
-                                                </Tooltip>
-                                            </Group>
-                                        }
-                                        placeholder="24"
-                                        min={0}
-                                        max={24}
-                                        step={0.5}
-                                        value={editingRule?.max_zoom ?? 24}
-                                        onChange={(val) => setEditingRule(prev => prev ? { ...prev, max_zoom: typeof val === 'number' ? val : 24 } : null)}
-                                        size="xs"
-                                    />
-                                </Grid.Col>
-
-                            </Grid>
-
-                            <Paper withBorder p="xs" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                                <Group justify="space-between">
-                                    <Group gap="xs">
-                                        <Text size="xs" fw={500}>Rule Enabled</Text>
-                                        <Tooltip label="If disabled, this rule will be ignored when rendering the map." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
-                                            <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
-                                        </Tooltip>
+                                    <Group grow align="flex-end">
+                                        <TextInput
+                                            label={
+                                                <Group gap={4} wrap="nowrap">
+                                                    <Text size="xs" fw={500}>Visual Type</Text>
+                                                    <Tooltip label="The logical category for this rule (e.g., Transformer, Meter). Matches the 'type' field in the topology JSON." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                        <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                                    </Tooltip>
+                                                </Group>
+                                            }
+                                            placeholder="e.g. Transformer"
+                                            value={editingRule?.visual_type || ''}
+                                            onChange={(e) => setEditingRule(prev => prev ? { ...prev, visual_type: e.target.value } : null)}
+                                            size="xs"
+                                        />
+                                        <NumberInput
+                                            label={
+                                                <Group gap={4} wrap="nowrap">
+                                                    <Text size="xs" fw={500}>Priority</Text>
+                                                    <Tooltip label="Controls matching order. Higher priority rules are evaluated first." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                        <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                                    </Tooltip>
+                                                </Group>
+                                            }
+                                            value={editingRule?.priority || 0}
+                                            onChange={(val) => setEditingRule(prev => prev ? { ...prev, priority: typeof val === 'number' ? val : 0 } : null)}
+                                            size="xs"
+                                        />
                                     </Group>
-                                    <Switch 
-                                        checked={editingRule?.enabled ?? true}
-                                        onChange={(e) => setEditingRule(prev => prev ? { ...prev, enabled: e.currentTarget.checked } : null)}
-                                        size="xs"
-                                    />
-                                </Group>
-                            </Paper>
-                            
-                            <Divider label="Geospatial Clustering" labelPosition="center" />
-                            <Paper withBorder p="xs" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                                <Stack gap="sm">
-                                    <Group justify="space-between">
-                                        <Group gap="xs">
-                                            <Switch 
-                                                label="Enable Clustering" 
-                                                size="xs"
-                                                checked={editingRule?.cluster_enabled || false}
-                                                onChange={(e) => setEditingRule(prev => prev ? { ...prev, cluster_enabled: e.currentTarget.checked } : null)}
-                                            />
-                                            <Tooltip label="Automatically group nearby nodes into clusters at lower zoom levels to reduce map clutter." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
-                                                <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
-                                            </Tooltip>
+
+                                    <Stack gap={4}>
+                                        <Group justify="space-between" align="center">
+                                            <Group gap={4} wrap="nowrap">
+                                                <Text size="xs" fw={500}>Match Conditions</Text>
+                                                <Tooltip label="Logic used to identify assets from the topology that this rule should apply to." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                    <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                                </Tooltip>
+                                            </Group>
+                                            <Button
+                                                variant="subtle"
+                                                size="compact-xs"
+                                                onClick={() => setUseBuilder(!useBuilder)}
+                                            >
+                                                {useBuilder ? "Switch to JSON" : "Switch to Builder"}
+                                            </Button>
                                         </Group>
-                                    </Group>
 
-                                    {editingRule?.cluster_enabled && (
-                                        <Grid gutter="xs">
-                                            <Grid.Col span={4}>
-                                                <NumberInput
-                                                    label="Radius"
-                                                    description="Pixels"
-                                                    step={5}
-                                                    min={10}
-                                                    max={200}
-                                                    value={editingRule?.cluster_radius || 40}
-                                                    onChange={(val) => setEditingRule(prev => prev ? { ...prev, cluster_radius: typeof val === 'number' ? val : 40 } : null)}
-                                                    size="xs"
-                                                />
-                                            </Grid.Col>
-                                            <Grid.Col span={4}>
-                                                <NumberInput
-                                                    label="Max Zoom"
-                                                    description="Stop at level"
-                                                    step={1}
-                                                    min={1}
-                                                    max={22}
-                                                    value={editingRule?.cluster_max_zoom || 20}
-                                                    onChange={(val) => setEditingRule(prev => prev ? { ...prev, cluster_max_zoom: typeof val === 'number' ? val : 20 } : null)}
-                                                    size="xs"
-                                                />
-                                            </Grid.Col>
-                                            <Grid.Col span={4}>
-                                                <NumberInput
-                                                    label="Min Points"
-                                                    description="To form cluster"
-                                                    step={1}
-                                                    min={2}
-                                                    value={editingRule?.cluster_min_points || 2}
-                                                    onChange={(val) => setEditingRule(prev => prev ? { ...prev, cluster_min_points: typeof val === 'number' ? val : 2 } : null)}
-                                                    size="xs"
-                                                />
-                                            </Grid.Col>
-                                        </Grid>
-                                    )}
+                                        {useBuilder ? (
+                                            <CimRuleBuilder
+                                                value={typeof editingRule?.match_conditions === 'string' ? editingRule.match_conditions : JSON.stringify(editingRule?.match_conditions || {})}
+                                                onChange={(val) => setEditingRule(prev => prev ? { ...prev, match_conditions: val } : null)}
+                                            />
+                                        ) : (
+                                            <JsonInput
+                                                placeholder='{"equipment_type": "PowerTransformer", "properties": {"name": "Regulator"}}'
+                                                validationError="Invalid JSON"
+                                                formatOnBlur
+                                                autosize
+                                                minRows={4}
+                                                value={typeof editingRule?.match_conditions === 'string' ? editingRule.match_conditions : JSON.stringify(editingRule?.match_conditions || {}, null, 2)}
+                                                onChange={(val) => setEditingRule(prev => prev ? { ...prev, match_conditions: val } : null)}
+                                                size="xs"
+                                            />
+                                        )}
+                                    </Stack>
                                 </Stack>
-                            </Paper>
+                            </Fieldset>
+
+                            <Fieldset legend={<Text size="xs" fw={700}>Visual Appearance</Text>} variant="unstyled" style={{ padding: '0' }}>
+                                <Grid gutter="xs" align="flex-end">
+                                    <Grid.Col span={{ base: 4, sm: 2 }}>
+                                        <NumberInput
+                                            label={
+                                                <Group gap={4} wrap="nowrap">
+                                                    <Text size="xs" fw={500}>Size</Text>
+                                                    <Tooltip label="Scaling factor applied to icons or line widths." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                        <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                                    </Tooltip>
+                                                </Group>
+                                            }
+                                            placeholder="1.0"
+                                            step={0.1}
+                                            decimalScale={1}
+                                            value={editingRule?.size || 1.0}
+                                            onChange={(val) => setEditingRule(prev => prev ? { ...prev, size: typeof val === 'number' ? val : 1.0 } : null)}
+                                            size="xs"
+                                        />
+                                    </Grid.Col>
+                                    <Grid.Col span={{ base: 8, sm: 4 }}>
+                                        <Stack gap={4}>
+                                            <Text size="xs" fw={500}>SVG Icon</Text>
+                                            <Group gap="xs" wrap="nowrap">
+                                                <FileButton onChange={handleFileUpload} accept="image/svg+xml">
+                                                    {(props) => (
+                                                        <Button {...props} variant="light" size="xs" leftSection={<Upload size={14} />}>
+                                                            Upload
+                                                        </Button>
+                                                    )}
+                                                </FileButton>
+                                                <Button 
+                                                    variant="light" 
+                                                    size="xs" 
+                                                    leftSection={<Maximize2 size={14} />}
+                                                    onClick={openEditor}
+                                                    style={{ flex: 1 }}
+                                                >
+                                                    {isMobile ? "Live" : "Live Editor"}
+                                                </Button>
+                                            </Group>
+                                        </Stack>
+                                    </Grid.Col>
+                                    
+                                    <Grid.Col span={{ base: 4, sm: 1 }}>
+                                        <Group justify="center" align="center" h="100%">
+                                            {editingRule?.icon && (editingRule.icon.trim().startsWith('<svg') || editingRule.icon.includes('<svg')) ? (
+                                                <Box style={{ 
+                                                    width: 32, 
+                                                    height: 32, 
+                                                    display: 'flex', 
+                                                    alignItems: 'center', 
+                                                    justifyContent: 'center',
+                                                    background: 'rgba(255,255,255,0.1)',
+                                                    borderRadius: 4,
+                                                    overflow: 'hidden'
+                                                }}>
+                                                    <div 
+                                                        style={{ width: '100%', height: '100%', display: 'flex' }}
+                                                        dangerouslySetInnerHTML={{ __html: editingRule.icon }} 
+                                                    />
+                                                </Box>
+                                            ) : (
+                                                <Box style={{ width: 32, height: 32, border: '1px dashed rgba(255,255,255,0.2)', borderRadius: 4 }} />
+                                            )}
+                                        </Group>
+                                    </Grid.Col>
+
+                                    <Grid.Col span={{ base: 8, sm: 5 }}>
+                                        <TextInput
+                                            label={
+                                                <Group gap={4} wrap="nowrap">
+                                                    <Text size="xs" fw={500}>Label</Text>
+                                                    <Tooltip label="Static text that will appear in the node's label on the map view." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                        <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                                    </Tooltip>
+                                                </Group>
+                                            }
+                                            placeholder="Label..."
+                                            value={editingRule?.label || ''}
+                                            onChange={(e) => setEditingRule(prev => prev ? { ...prev, label: e.target.value } : null)}
+                                            size="xs"
+                                        />
+                                    </Grid.Col>
+                                </Grid>
+                            </Fieldset>
+
+                            <Fieldset legend={<Text size="xs" fw={700}>Visibility & Behavior</Text>} variant="unstyled" style={{ padding: '0' }}>
+                                <Stack gap="sm">
+                                    <Grid gutter="xs">
+                                        <Grid.Col span={6}>
+                                            <NumberInput
+                                                label={
+                                                    <Group gap={4} wrap="nowrap">
+                                                        <Text size="xs" fw={500}>Min Zoom</Text>
+                                                        <Tooltip label="Minimum zoom level at which these assets are visible." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                            <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                                        </Tooltip>
+                                                    </Group>
+                                                }
+                                                placeholder="0"
+                                                min={0}
+                                                max={24}
+                                                step={0.5}
+                                                value={editingRule?.min_zoom ?? 0}
+                                                onChange={(val) => setEditingRule(prev => prev ? { ...prev, min_zoom: typeof val === 'number' ? val : 0 } : null)}
+                                                size="xs"
+                                            />
+                                        </Grid.Col>
+
+                                        <Grid.Col span={6}>
+                                            <NumberInput
+                                                label={
+                                                    <Group gap={4} wrap="nowrap">
+                                                        <Text size="xs" fw={500}>Max Zoom</Text>
+                                                        <Tooltip label="Maximum zoom level at which these assets are visible." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                            <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                                        </Tooltip>
+                                                    </Group>
+                                                }
+                                                placeholder="24"
+                                                min={0}
+                                                max={24}
+                                                step={0.5}
+                                                value={editingRule?.max_zoom ?? 24}
+                                                onChange={(val) => setEditingRule(prev => prev ? { ...prev, max_zoom: typeof val === 'number' ? val : 24 } : null)}
+                                                size="xs"
+                                            />
+                                        </Grid.Col>
+                                    </Grid>
+
+                                    <Paper withBorder p="xs" style={{ background: 'rgba(255,255,255,0.05)' }}>
+                                        <Stack gap="sm">
+                                            <Text size="xs" fw={700} c="dimmed">Geospatial Clustering</Text>
+                                            <Divider variant="dashed" />
+                                            <Group justify="space-between">
+                                                <Group gap="xs">
+                                                    <Switch 
+                                                        label="Enable Clustering" 
+                                                        size="xs"
+                                                        checked={editingRule?.cluster_enabled || false}
+                                                        onChange={(e) => setEditingRule(prev => prev ? { ...prev, cluster_enabled: e.currentTarget.checked } : null)}
+                                                    />
+                                                    <Tooltip label="Groups nearby assets of this type into single markers at lower zoom levels." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                        <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                                    </Tooltip>
+                                                </Group>
+                                            </Group>
+
+                                            {editingRule?.cluster_enabled && (
+                                                <Group grow>
+                                                    <NumberInput
+                                                        label="Radius"
+                                                        size="xs"
+                                                        value={editingRule?.cluster_radius || 50}
+                                                        onChange={(val) => setEditingRule(prev => prev ? { ...prev, cluster_radius: typeof val === 'number' ? val : 50 } : null)}
+                                                    />
+                                                    <NumberInput
+                                                        label="Max Zoom"
+                                                        size="xs"
+                                                        value={editingRule?.cluster_max_zoom || 14}
+                                                        onChange={(val) => setEditingRule(prev => prev ? { ...prev, cluster_max_zoom: typeof val === 'number' ? val : 14 } : null)}
+                                                    />
+                                                    <NumberInput
+                                                        label="Min Points"
+                                                        size="xs"
+                                                        value={editingRule?.cluster_min_points || 2}
+                                                        onChange={(val) => setEditingRule(prev => prev ? { ...prev, cluster_min_points: typeof val === 'number' ? val : 2 } : null)}
+                                                    />
+                                                </Group>
+                                            )}
+                                        </Stack>
+                                    </Paper>
+
+                                    <Paper withBorder p="xs" style={{ background: 'rgba(255,255,255,0.05)' }}>
+                                        <Group justify="space-between">
+                                            <Group gap="xs">
+                                                <Text size="xs" fw={500}>Rule Enabled</Text>
+                                                <Tooltip label="If disabled, this rule will be ignored when rendering the map." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                    <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                                </Tooltip>
+                                            </Group>
+                                            <Switch 
+                                                checked={editingRule?.enabled ?? true}
+                                                onChange={(e) => setEditingRule(prev => prev ? { ...prev, enabled: e.currentTarget.checked } : null)}
+                                                size="xs"
+                                            />
+                                        </Group>
+                                    </Paper>
+                                </Stack>
+                            </Fieldset>
 
                             <Divider label="SVG CSS Overrides" labelPosition="center" />
                             
