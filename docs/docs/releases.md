@@ -3,7 +3,15 @@ title: Release Updates
 ---
 # Release Updates
 
-This page tracks the evolution of the Griddy project. We are currently in **Alpha** (v0.2.1-alpha).
+This page tracks the evolution of the Griddy project. We are currently in **Alpha** (v0.2.2-alpha).
+
+## [0.2.2-alpha] - 2026-03-23
+### Added
+- **CIM Equipment Support**: The Rule Builder now supports `target_class` filtering for CIM objects like `EnergyConsumer`, `PowerTransformer`, and `Capacitor`.
+
+### Fixed
+- **Display Rule Numeric Coercion**: Fixed a matching failure where numeric rules (e.g., `active_power_w >= 7000`) were treated as strings by the engine.
+- **Equipment Type Resolution**: Resolved an inconsistency where the engine failed to match equipment using both `type` and `cim_class` identifiers.
 
 ## [0.2.1-alpha] - 2026-03-22
 ### Added
