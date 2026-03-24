@@ -29,6 +29,7 @@ interface GridMapProps {
     skipGlobalFit?: boolean;
     onViewStateChange?: (viewState: any) => void;
     goToLocation?: { longitude: number; latitude: number } | null;
+    spriteVersion?: number;
 }
 const stringToColor = (str: string): [number, number, number] => {
     let hash = 0;
@@ -196,6 +197,7 @@ export const GridMap = React.memo<GridMapProps>(({
     skipGlobalFit = false,
     onViewStateChange,
     goToLocation,
+    spriteVersion = 0,
 }) => {
     const selectedNodeIdsSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
     const [mounted, setMounted] = useState(false);
@@ -205,8 +207,6 @@ export const GridMap = React.memo<GridMapProps>(({
     const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
     // Load sprite atlas from backend.
-    // Increment spriteVersion (via _setSpriteVersion) after saving display rules to force a refetch.
-    const [spriteVersion, _setSpriteVersion] = useState(0);
     const spriteMap = useSpriteMap(spriteVersion);
 
     const [viewState, setViewState] = useState<any>({

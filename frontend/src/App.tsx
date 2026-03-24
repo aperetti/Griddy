@@ -781,6 +781,7 @@ export default function App() {
               skipGlobalFit={isSearching}
               onViewStateChange={setMainViewState}
               goToLocation={goToLocation}
+              spriteVersion={topologyVersion}
             />
           </Box>
 

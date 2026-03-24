@@ -39,7 +39,7 @@ export function useSpriteMap(version: number = 0): SpriteMap | null {
 
         const load = async () => {
             try {
-                const res = await fetch(SPRITE_JSON_URL);
+                const res = await fetch(`${SPRITE_JSON_URL}?v=${version}`);
                 if (!res.ok) {
                     console.warn('[useSpriteMap] Failed to fetch sprite map JSON:', res.status);
                     return;
