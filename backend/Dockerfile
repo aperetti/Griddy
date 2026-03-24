@@ -16,11 +16,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy backend source
-COPY . .
+COPY backend/ .
+
+# Copy user auth configs from root
+COPY *.csv* ./
 
 # Copy the CIM model from the parent directory if it's there (orchestrated by compose/build context)
 # Alternatively, we expect it to be in /app/IEEE8500.xml

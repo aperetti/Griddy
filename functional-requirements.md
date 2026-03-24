@@ -67,6 +67,11 @@
 * **Boolean Evaluation**: The system must correctly evaluate complex logical expressions across both node attributes and attached equipment properties.
 
 ### 3.10 Display Rule Management
+(Includes Advanced Filtering Engine)
+
+*Basic Authentication:* The rule management interface and configuration APIs are protected by HTTP Basic Authentication. Users must sign in with a provisioned account (configured via CSV during deployment) to view, create, edit, or delete display rules.
+
+Users can create conditional formatting rules based on any attribute of a grid entity (e.g., "Show all transformers with KVA > 500").
 * **Rule Toggling**: Users can enable/disable individual display rules via a toggle switch in the Rule Manager to quickly test different visualization configurations without deleting rules.
 * **Rule Duplication**: One-click duplication of existing rules to facilitate creating variants with minor modifications.
 

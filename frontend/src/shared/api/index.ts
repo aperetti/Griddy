@@ -114,18 +114,36 @@ export interface DisplayRule {
     enabled: boolean;
 }
 
+const getAuthHeaders = (): Record<string, string> => {
+    const token = localStorage.getItem('adminAuth');
+    if (token) {
+        return { 'Authorization': `Basic ${token}` };
+    }
+    return {};
+};
+
 export const fetchDisplayConfigs = async (): Promise<DisplayConfig[]> => {
-    const res = await fetch(`${ADMIN_API_BASE}/display-rules/configs`);
+    const res = await fetch(`${ADMIN_API_BASE}/display-rules/configs`, {
+        headers: { ...getAuthHeaders() }
+    });
+    if (res.status === 401) throw new Error('Unauthorized');
     return res.json();
 };
 
 export const fetchDisplayRules = async (configId: number): Promise<DisplayRule[]> => {
-    const res = await fetch(`${ADMIN_API_BASE}/display-rules/configs/${configId}/rules`);
+    const res = await fetch(`${ADMIN_API_BASE}/display-rules/configs/${configId}/rules`, {
+        headers: { ...getAuthHeaders() }
+    });
+    if (res.status === 401) throw new Error('Unauthorized');
     return res.json();
 };
 
 export const setDefaultDisplayConfig = async (configId: number): Promise<void> => {
-    await fetch(`${ADMIN_API_BASE}/display-rules/configs/${configId}/set-default`, { method: 'POST' });
+    const res = await fetch(`${ADMIN_API_BASE}/display-rules/configs/${configId}/set-default`, { 
+        method: 'PUT',
+        headers: { ...getAuthHeaders() }
+    });
+    if (res.status === 401) throw new Error('Unauthorized');
 };
 
 export const saveDisplayRule = async (rule: Partial<DisplayRule>): Promise<DisplayRule> => {
@@ -146,10 +164,15 @@ export const saveDisplayRule = async (rule: Partial<DisplayRule>): Promise<Displ
     
     const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+            'Content-Type': 'application/json',
+            ...getAuthHeaders()
+        },
         body: JSON.stringify(payload)
     });
     
+    if (res.status === 401) throw new Error('Unauthorized');
+
     if (!res.ok) {
         const text = await res.text();
         throw new Error(`API Error ${res.status}: ${text.slice(0, 100)}`);
@@ -163,11 +186,19 @@ export const saveDisplayRule = async (rule: Partial<DisplayRule>): Promise<Displ
 };
 
 export const deleteDisplayRule = async (ruleId: number): Promise<void> => {
-    await fetch(`${ADMIN_API_BASE}/display-rules/rules/${ruleId}`, { method: 'DELETE' });
+    const res = await fetch(`${ADMIN_API_BASE}/display-rules/rules/${ruleId}`, { 
+        method: 'DELETE',
+        headers: { ...getAuthHeaders() }
+    });
+    if (res.status === 401) throw new Error('Unauthorized');
 };
 
 export const duplicateDisplayRule = async (ruleId: number): Promise<{id: number, name: string}> => {
-    const res = await fetch(`${ADMIN_API_BASE}/display-rules/rules/${ruleId}/duplicate`, { method: 'POST' });
+    const res = await fetch(`${ADMIN_API_BASE}/display-rules/rules/${ruleId}/duplicate`, { 
+        method: 'POST',
+        headers: { ...getAuthHeaders() }
+    });
+    if (res.status === 401) throw new Error('Unauthorized');
     return res.json();
 };
 

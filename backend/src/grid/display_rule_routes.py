@@ -6,6 +6,8 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 from src.shared.dependencies import ADMIN_SQLITE_PATH, display_engine
 from src.grid.sprites import generator as sprite_generator
+from src.shared.auth import get_current_username
+from fastapi import Depends
 
 router = APIRouter(prefix="/api/display-rules", tags=["display-rules"])
 
@@ -41,14 +43,14 @@ def _get_admin_conn():
 
 # ── Routes ────────────────────────────────────────────────────────
 @router.get("/configs")
-async def list_display_configs():
+async def list_display_configs(username: str = Depends(get_current_username)):
     def _list():
         with _get_admin_conn() as conn:
             return [dict(row) for row in conn.execute("SELECT * FROM display_configs ORDER BY created_at DESC").fetchall()]
     return await run_in_threadpool(_list)
 
 @router.post("/configs")
-async def create_display_config(config: DisplayConfigUpdate):
+async def create_display_config(config: DisplayConfigUpdate, username: str = Depends(get_current_username)):
     def _create():
         with _get_admin_conn() as conn:
             cursor = conn.execute(
@@ -63,7 +65,7 @@ async def create_display_config(config: DisplayConfigUpdate):
     return await run_in_threadpool(_create)
 
 @router.put("/configs/{config_id}/set-default")
-async def set_default_config(config_id: int):
+async def set_default_config(config_id: int, username: str = Depends(get_current_username)):
     def _set():
         with _get_admin_conn() as conn:
             conn.execute("UPDATE display_configs SET is_default = 0")
@@ -73,7 +75,7 @@ async def set_default_config(config_id: int):
     return await run_in_threadpool(_set)
 
 @router.get("/configs/{config_id}/rules")
-async def list_config_rules(config_id: int):
+async def list_config_rules(config_id: int, username: str = Depends(get_current_username)):
     def _list():
         with _get_admin_conn() as conn:
             rows = conn.execute(
@@ -95,7 +97,7 @@ async def list_config_rules(config_id: int):
     return await run_in_threadpool(_list)
 
 @router.post("/configs/{config_id}/rules")
-async def add_config_rule(config_id: int, rule: RuleUpdate):
+async def add_config_rule(config_id: int, rule: RuleUpdate, username: str = Depends(get_current_username)):
     def _add():
         with _get_admin_conn() as conn:
             cursor = conn.execute(
@@ -118,7 +120,7 @@ async def add_config_rule(config_id: int, rule: RuleUpdate):
     return await run_in_threadpool(_add)
 
 @router.put("/rules/{rule_id}")
-async def update_config_rule(rule_id: int, rule: RuleUpdate):
+async def update_config_rule(rule_id: int, rule: RuleUpdate, username: str = Depends(get_current_username)):
     def _update():
         with _get_admin_conn() as conn:
             conn.execute(
@@ -142,7 +144,7 @@ async def update_config_rule(rule_id: int, rule: RuleUpdate):
     return await run_in_threadpool(_update)
 
 @router.delete("/rules/{rule_id}")
-async def delete_config_rule(rule_id: int):
+async def delete_config_rule(rule_id: int, username: str = Depends(get_current_username)):
     def _delete():
         with _get_admin_conn() as conn:
             conn.execute("DELETE FROM display_config_rules WHERE id = ?", (rule_id,))
@@ -151,7 +153,7 @@ async def delete_config_rule(rule_id: int):
     return await run_in_threadpool(_delete)
 
 @router.post("/rules/{rule_id}/duplicate")
-async def duplicate_config_rule(rule_id: int):
+async def duplicate_config_rule(rule_id: int, username: str = Depends(get_current_username)):
     def _duplicate():
         with _get_admin_conn() as conn:
             # 1. Fetch existing rule

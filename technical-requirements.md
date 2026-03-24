@@ -27,7 +27,11 @@
     *   **Zoom-Level Rendering**:
         *   The frontend must filter rendered nodes and edges based on the `min_zoom` and `max_zoom` properties of the matching display rule.
         *   This filtering should happen in real-time in the `GridMap` based on `viewState.zoom`.
-
+#### Display Rules Router (`display_rule_routes.py`)
+- Standard CRUD endpoints (`/configs`, `/rules`) backed by `admin_config.db`.
+- Complex filtering evaluations happen in pure Python.
+- **Security:** Modifying endpoints (and specific admin reading endpoints) are protected via FastAPI `HTTPBasic` authentication. 
+  - Credentials fall back to reading from a `users.csv` file provisioned in the application root/deployment via Docker build contexts.
 *   **Backend (FastAPI & Data Ingestion)**:
     *   **Data Ingestion (CIM):** The CIM ingestor must effectively extract robust asset taxonomy, correctly tagging `Substation`, `Breaker`, `Switch`, `Transformer`, and `Meter` types. Determine the switch 'open' status for visualizations.
     *   **Graph Export Endpoint:** An endpoint to export the full grid (or a simplified version) as JSON (nodes and links) for the frontend visualization library.

@@ -4,12 +4,12 @@ import {
     Table, Button, Group, ActionIcon, 
     Stack, Text, Badge, Select, TextInput, 
     NumberInput, JsonInput, Paper, Divider,
-    ColorInput, ColorSwatch, Box,
+    ColorInput, ColorSwatch, Box, PasswordInput,
     Alert, FileButton, Grid, Textarea, Switch
 } from '@mantine/core';
 import {
     X, Upload, Maximize2, Trash2, Plus,
-    AlertCircle, Code, Eye, Info, Copy
+    AlertCircle, Code, Eye, Info, Copy, Lock
 } from 'lucide-react';
 import { AnalysisWindow } from '../../analytics/components/AnalysisWindow';
 import {
@@ -49,14 +49,21 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
     const [useBuilder, setUseBuilder] = useState(true);
     const [isEditorOpen, setIsEditorOpen] = useState(false);
     const [editorValue, setEditorValue] = useState('');
+    const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('adminAuth'));
+    const [authUsername, setAuthUsername] = useState('');
+    const [authPassword, setAuthPassword] = useState('');
+    const [authError, setAuthError] = useState<string | null>(null);
+    const [isAuthenticating, setIsAuthenticating] = useState(false);
     const isMobile = useMediaQuery('(max-width: 768px)');
 
     useEffect(() => {
-        if (opened) {
+        if (opened && isAuthenticated) {
             loadConfigs();
             onFocus?.();
+        } else if (opened && !isAuthenticated) {
+            onFocus?.();
         }
-    }, [opened]);
+    }, [opened, isAuthenticated]);
 
     useEffect(() => {
         if (selectedConfigId) {
@@ -79,7 +86,13 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
         } catch (err: any) {
             console.error('Failed to load configs', err);
             setConfigs([]);
-            setConfigError(err.message || 'Failed to connect to display service. Ensure the main-backend is running.');
+            if (err.message === 'Unauthorized') {
+                localStorage.removeItem('adminAuth');
+                setIsAuthenticated(false);
+                setAuthError("Session expired or unauthorized. Please sign in again.");
+            } else {
+                setConfigError(err.message || 'Failed to connect to display service.');
+            }
         }
     };
 
@@ -213,6 +226,30 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
         });
     };
 
+    const handleAuthSubmit = async () => {
+        setIsAuthenticating(true);
+        setAuthError(null);
+        try {
+            const token = btoa(`${authUsername}:${authPassword}`);
+            const res = await fetch('/api/display-rules/configs', {
+                headers: { 'Authorization': `Basic ${token}` }
+            });
+            if (res.status === 401) {
+                setAuthError('Invalid username or password');
+            } else if (!res.ok) {
+                setAuthError(`Server error: ${res.status}`);
+            } else {
+                localStorage.setItem('adminAuth', token);
+                setIsAuthenticated(true);
+                setAuthPassword('');
+            }
+        } catch (err) {
+            setAuthError('Failed to connect to authentication server');
+        } finally {
+            setIsAuthenticating(false);
+        }
+    };
+
     return (
         <Fragment>
             <AnalysisWindow
@@ -223,7 +260,52 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                 zIndex={zIndex}
                 onFocus={onFocus}
             >
-            <Stack gap="md" h="100%">
+            {!isAuthenticated ? (
+                <Stack align="center" justify="center" h="100%" px="md">
+                    <Paper withBorder p="xl" radius="md" w="100%" maw={400} style={{ background: 'rgba(0,0,0,0.5)' }}>
+                        <Stack gap="md">
+                            <Group justify="center">
+                                <Box bg="blue.9" p="sm" style={{ borderRadius: '50%' }}>
+                                    <Lock size={24} color="white" />
+                                </Box>
+                            </Group>
+                            <Text fw={700} ta="center" size="lg">Rules Engine Sign In</Text>
+                            <Text size="sm" c="dimmed" ta="center">
+                                Authentication is required to configure display rules.
+                            </Text>
+                            
+                            {authError && (
+                                <Alert icon={<AlertCircle size={16} />} color="red" variant="light">
+                                    {authError}
+                                </Alert>
+                            )}
+
+                            <form onSubmit={(e) => { e.preventDefault(); handleAuthSubmit(); }}>
+                                <Stack gap="md">
+                                    <TextInput 
+                                        label="Username" 
+                                        placeholder="Admin username" 
+                                        required 
+                                        value={authUsername}
+                                        onChange={(e) => setAuthUsername(e.currentTarget.value)}
+                                    />
+                                    <PasswordInput 
+                                        label="Password" 
+                                        placeholder="Admin password" 
+                                        required 
+                                        value={authPassword}
+                                        onChange={(e) => setAuthPassword(e.currentTarget.value)}
+                                    />
+                                    <Button type="submit" fullWidth loading={isAuthenticating} color="blue" mt="sm">
+                                        Sign In
+                                    </Button>
+                                </Stack>
+                            </form>
+                        </Stack>
+                    </Paper>
+                </Stack>
+            ) : (
+                <Stack gap="md" h="100%">
                 {configError && (
                     <Alert icon={<AlertCircle size={16} />} title="Backend Error" color="red" variant="light">
                         {configError}
@@ -838,6 +920,7 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                     )}
                 </Paper>
             </Stack>
+            )}
         </AnalysisWindow>
 
         <AnalysisWindow
