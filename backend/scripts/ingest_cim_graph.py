@@ -83,64 +83,76 @@ def setup_sqlite(db_path: str) -> sqlite3.Connection:
 
 def main():
     from src.shared.cim_model import CimModelManager
+    
+    models_dir = BACKEND_DIR / "cim" / "models"
+    xml_files = list(models_dir.glob("*.xml"))
+    
+    if not xml_files:
+        print(f"No CIM models found in {models_dir}")
+        return
 
+    print(f"Discovered {len(xml_files)} CIM models. Initializing SQLite DB...")
     print(f"SQLite DB : {SQLITE_PATH}")
-
-    # ── 1. Load CIM model via shared manager ──────────────────────
-    print("\nLoading CIM model via CimModelManager...")
-    manager = CimModelManager.get_instance()
-    manager.load()
-
-    nodes_raw = manager.get_topology_nodes()
-    edges_raw = manager.get_topology_edges()
-
-    print(f"  {len(nodes_raw)} nodes, {len(edges_raw)} edges from CIM model")
-
-    # ── 2. Convert to SQLite rows ─────────────────────────────────
-    nodes_to_insert = []
-    for n in nodes_raw:
-        nodes_to_insert.append((
-            n["node_id"],
-            manager.model_id,
-            n["node_type"],
-            n.get("name", ""),
-            json.dumps(n.get("phases", ["A", "B", "C"])),
-            n.get("latitude", 0.0),
-            n.get("longitude", 0.0),
-            int(n.get("is_open", False)),
-        ))
-
-    edges_to_insert = []
-    for e in edges_raw:
-        edges_to_insert.append((
-            e["edge_id"],
-            manager.model_id,
-            e["from_node_id"],
-            e["to_node_id"],
-            e.get("conductor_type", "Unknown"),
-            json.dumps(e.get("phases", ["A", "B", "C"])),
-        ))
-
-    # ── 3. Write to SQLite ────────────────────────────────────────
-    print(f"\nWriting {len(nodes_to_insert)} nodes and "
-          f"{len(edges_to_insert)} edges to SQLite...")
-
+    
+    # ── 1. Setup SQLite once ──────────────────────────────────────
     conn = setup_sqlite(SQLITE_PATH)
 
-    conn.executemany(
-        "INSERT INTO grid_nodes "
-        "(node_id, model_id, node_type, name, phases_present, latitude, longitude, is_open) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        nodes_to_insert
-    )
-    conn.executemany(
-        "INSERT INTO grid_edges "
-        "(edge_id, model_id, from_node_id, to_node_id, conductor_type, phases) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        edges_to_insert
-    )
+    for xml_path in xml_files:
+        print(f"\nProcessing {xml_path.name}...")
+        
+        # ── 2. Load CIM model ──────────────────────────────────────
+        # Use a fresh manager for each model
+        manager = CimModelManager()
+        try:
+            manager.load(str(xml_path))
+        except Exception as e:
+            print(f"  FAILED to load {xml_path.name}: {e}")
+            continue
 
-    conn.commit()
+        nodes_raw = manager.get_topology_nodes()
+        edges_raw = manager.get_topology_edges()
+
+        print(f"  {len(nodes_raw)} nodes, {len(edges_raw)} edges from CIM model")
+
+        # ── 3. Convert to SQLite rows ─────────────────────────────────
+        nodes_to_insert = []
+        for n in nodes_raw:
+            nodes_to_insert.append((
+                n["node_id"],
+                manager.model_id,
+                n["node_type"],
+                n.get("name", ""),
+                json.dumps(n.get("phases", ["A", "B", "C"])),
+                n.get("latitude", 0.0),
+                n.get("longitude", 0.0),
+                int(n.get("is_open", False)),
+            ))
+
+        edges_to_insert = []
+        for e in edges_raw:
+            edges_to_insert.append((
+                e["edge_id"],
+                manager.model_id,
+                e["from_node_id"],
+                e["to_node_id"],
+                e.get("conductor_type", "Unknown"),
+                json.dumps(e.get("phases", ["A", "B", "C"])),
+            ))
+
+        # ── 4. Write to SQLite ────────────────────────────────────────
+        conn.executemany(
+            "INSERT INTO grid_nodes "
+            "(node_id, model_id, node_type, name, phases_present, latitude, longitude, is_open) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            nodes_to_insert
+        )
+        conn.executemany(
+            "INSERT INTO grid_edges "
+            "(edge_id, model_id, from_node_id, to_node_id, conductor_type, phases) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            edges_to_insert
+        )
+        conn.commit()
 
     # ── Summary ───────────────────────────────────────────────────
     node_count = conn.execute("SELECT COUNT(*) FROM grid_nodes").fetchone()[0]

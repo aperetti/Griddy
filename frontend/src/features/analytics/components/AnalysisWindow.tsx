@@ -95,7 +95,9 @@ export function AnalysisWindow({
                             width: rndState.width === 'auto' ? (typeof rndState.width === 'number' ? rndState.width : 600) : rndState.width,
                             height: targetHeight,
                         });
-                        setRndState(clamped);
+                        if (clamped.height !== rndState.height || clamped.width !== rndState.width || clamped.x !== rndState.x || clamped.y !== rndState.y) {
+                            setRndState(clamped);
+                        }
                     }
                 }
                 if (!loading) setIsInitialMount(false);
@@ -103,10 +105,16 @@ export function AnalysisWindow({
 
             return () => clearTimeout(timer);
         }
-    }, [isInitialMount, loading, rndState.x, rndState.y, rndState.width, storageKey]);
+    }, [isInitialMount, loading, rndState.x, rndState.y, rndState.width, rndState.height, storageKey]);
 
     const clamp = useCallback(() => {
-        setRndState(prev => clampToViewport(prev));
+        setRndState(prev => {
+            const clamped = clampToViewport(prev);
+            if (clamped.x === prev.x && clamped.y === prev.y && clamped.width === prev.width && clamped.height === prev.height) {
+                return prev;
+            }
+            return clamped;
+        });
     }, []);
 
     useWindowEvent('resize', clamp);
@@ -324,42 +332,57 @@ export function AnalysisWindow({
 function defaultPosition() {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const width = vw - 40; // 100% width with 20px margin on both sides
-
+    
     // Safety margin at the top to avoid overlap with fixed UI (search, toolbar, asset bar)
     const topMargin = 180;
+    
+    const width = Math.min(800, vw - 40); // Max 800px or full width minus margins
+    const height = 'auto';
 
     return {
-        x: 20,
-        y: Math.max(topMargin, vh - 600),
+        x: Math.max(20, (vw - width) / 2),
+        y: Math.max(topMargin + 20, vh - 600),
         width,
-        height: 'auto',
+        height,
     };
 }
 
 function clampToViewport(pos: { x: number; y: number; width: number | string; height: number | string }) {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-
     const topMargin = 180;
 
-    // Width defaults to full width if not specified/numeric
-    const w = typeof pos.width === 'number' ? pos.width : (vw - 40);
-
-    // Handle 'auto' height during initial clamp
-    if (pos.height === 'auto') {
-        return {
-            x: Math.max(10, Math.min(pos.x, vw - w - 10)),
-            y: Math.max(topMargin, pos.y),
-            width: w,
-            height: 'auto'
-        };
+    // 1. Clamp Width
+    const maxW = vw - 20;
+    let w: number;
+    if (typeof pos.width === 'number') {
+        w = Math.min(pos.width, maxW);
+    } else if (pos.width === 'auto') {
+        w = Math.min(800, maxW);
+    } else {
+        w = Math.min(parseInt(pos.width) || 800, maxW);
     }
+    w = Math.max(300, w); // Min width safety
 
-    const h = Math.min(typeof pos.height === 'number' ? pos.height : parseInt(pos.height as string), vh - topMargin - 10);
+    // 2. Clamp Height
+    const maxH = vh - topMargin - 20;
+    let h: number | 'auto';
+    if (pos.height === 'auto') {
+        h = 'auto';
+    } else if (typeof pos.height === 'number') {
+        h = Math.min(pos.height, maxH);
+    } else {
+        h = Math.min(parseInt(pos.height) || 400, maxH);
+    }
+    if (typeof h === 'number') h = Math.max(200, h); // Min height safety
 
-    const x = Math.max(10, Math.min(pos.x, vw - w - 10));
-    const y = Math.max(topMargin, Math.min(pos.y, vh - h - 10));
+    // 3. Clamp Position
+    const maxX = Math.max(10, vw - w - 10);
+    const x = Math.max(10, Math.min(pos.x, maxX));
+
+    const effectiveH = typeof h === 'number' ? h : 400;
+    const maxY = Math.max(topMargin + 10, vh - effectiveH - 10);
+    const y = Math.max(topMargin + 10, Math.min(pos.y, maxY));
 
     return { x, y, width: w, height: h };
 }

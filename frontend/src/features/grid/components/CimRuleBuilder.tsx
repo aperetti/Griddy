@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Button, Group, Text, ActionIcon, Stack, SegmentedControl, Box, Badge, Tooltip, Collapse } from '@mantine/core';
+import { 
+    Button, Group, Text, ActionIcon, Stack, 
+    SegmentedControl, Box, Badge, Tooltip, 
+    Collapse, TextInput, Select as MantineSelect 
+} from '@mantine/core';
 import { Sparkles, Plus, Trash2, FolderPlus, Info } from 'lucide-react';
 import { fetchCimSchema } from '../../../shared/api';
 import { RuleAssistant } from './RuleAssistant';
@@ -78,7 +82,7 @@ const removeNode = (root: ConditionGroup, id: string): ConditionGroup => {
 
 // ── Sub-components moved outside to maintain focus ────────────────
 
-const ConditionRow = ({ 
+const ConditionRow = React.memo(({ 
     condition, 
     handleUpdateCondition, 
     handleRemove,
@@ -88,80 +92,73 @@ const ConditionRow = ({
     handleUpdateCondition: (id: string, updates: Partial<Condition>) => void,
     handleRemove: (id: string) => void,
     currentClassAttributes: any[]
-}) => (
-    <Group gap="xs" wrap="nowrap" align="flex-end" style={{ background: 'rgba(0,0,0,0.1)', padding: '8px', borderRadius: '4px' }}>
-        <Box style={{ flex: 2, minWidth: 100 }}>
-            <Text size="10px" c="dimmed" mb={2}>Path</Text>
-            <input
-                list={`attrs-${condition.id}`}
-                value={condition.path}
-                onClick={(e) => e.stopPropagation()}
-                onChange={(e) => handleUpdateCondition(condition.id, { path: e.target.value })}
-                style={{ width: '100%', padding: '6px', background: '#2a2a2a', color: 'white', border: '1px solid #444', borderRadius: '4px', fontSize: '13px' }}
-                placeholder="attribute.path"
-            />
-            <datalist id={`attrs-${condition.id}`}>
-                {(() => {
-                    const pathParts = condition.path.split('.');
-                    const prefix = pathParts.slice(0, -1).join('.');
-                    
-                    let opts: string[] = [];
-                    
-                    if (condition.path.startsWith('hierarchy')) {
-                        const hierarchyKeys = ['mrid', 'name', 'class', 'attributes', 'children'];
-                        if (condition.path === 'hierarchy' || condition.path === 'hierarchy.') {
-                            opts = hierarchyKeys.map(k => `hierarchy.${k}`);
-                        } else if (condition.path.includes('attributes.')) {
-                            opts = currentClassAttributes.map((a: any) => `${prefix}.${a.name}`);
-                        }
-                    } else {
-                        opts = currentClassAttributes.map((attr: any) => attr.name);
-                        opts.push('hierarchy');
-                    }
-                    
-                    return opts.map(opt => (
-                        <option key={opt} value={opt} />
-                    ));
-                })()}
-            </datalist>
-        </Box>
-        <Box style={{ flex: 1, minWidth: 80 }}>
-            <Text size="10px" c="dimmed" mb={2}>Op</Text>
-            <select
-                value={condition.op}
-                onClick={(e) => e.stopPropagation()}
-                onChange={(e) => handleUpdateCondition(condition.id, { op: e.target.value })}
-                style={{ width: '100%', padding: '6px', background: '#2a2a2a', color: 'white', border: '1px solid #444', borderRadius: '4px', fontSize: '13px' }}
-            >
-                <option value="==">==</option>
-                <option value="!=">!=</option>
-                <option value=">">&gt;</option>
-                <option value="<">&lt;</option>
-                <option value=">=">&gt;=</option>
-                <option value="<=">&lt;=</option>
-                <option value="contains">contains</option>
-                <option value="exists">exists</option>
-                <option value="not_exists">not exists</option>
-                <option value="length_gt">length &gt;</option>
-            </select>
-        </Box>
-        {condition.op !== 'exists' && condition.op !== 'not_exists' && (
+}) => {
+    // Local state for the value to prevent focus loss during rapid typing
+    const [localValue, setLocalValue] = useState(condition.value);
+
+    // Sync local value when external value changes (e.g. from Assistant)
+    useEffect(() => {
+        setLocalValue(condition.value || '');
+    }, [condition.value]);
+
+    return (
+        <Group gap="xs" wrap="nowrap" align="flex-end" style={{ background: 'rgba(0,0,0,0.1)', padding: '8px', borderRadius: '4px' }}>
             <Box style={{ flex: 2, minWidth: 100 }}>
-                <Text size="10px" c="dimmed" mb={2}>Value</Text>
-                <input
-                    value={condition.value}
+                <Text size="10px" c="dimmed" mb={2}>Path</Text>
+                <TextInput
+                    size="xs"
+                    value={condition.path}
+                    placeholder="attribute.path"
                     onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => handleUpdateCondition(condition.id, { value: e.target.value })}
-                    style={{ width: '100%', padding: '6px', background: '#2a2a2a', color: 'white', border: '1px solid #444', borderRadius: '4px', fontSize: '13px' }}
-                    placeholder="value"
+                    onChange={(e) => handleUpdateCondition(condition.id, { path: e.target.value })}
+                    styles={{ input: { background: '#2a2a2a', color: 'white', border: '1px solid #444' } }}
                 />
             </Box>
-        )}
-        <ActionIcon variant="light" color="red" size="lg" onClick={() => handleRemove(condition.id)}>
-            <Trash2 size={16} />
-        </ActionIcon>
-    </Group>
-);
+            <Box style={{ flex: 1, minWidth: 80 }}>
+                <Text size="10px" c="dimmed" mb={2}>Op</Text>
+                <MantineSelect
+                    size="xs"
+                    value={condition.op}
+                    data={[
+                        { value: '==', label: '==' },
+                        { value: '!=', label: '!=' },
+                        { value: '>', label: '>' },
+                        { value: '<', label: '<' },
+                        { value: '>=', label: '>=' },
+                        { value: '<=', label: '<=' },
+                        { value: 'contains', label: 'contains' },
+                        { value: 'exists', label: 'exists' },
+                        { value: 'not_exists', label: 'not exists' },
+                        { value: 'length_gt', label: 'length >' },
+                    ]}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(val) => handleUpdateCondition(condition.id, { op: val || '==' })}
+                    styles={{ input: { background: '#2a2a2a', color: 'white', border: '1px solid #444' } }}
+                    comboboxProps={{ withinPortal: true, zIndex: 10000 }}
+                />
+            </Box>
+            {condition.op !== 'exists' && condition.op !== 'not_exists' && (
+                <Box style={{ flex: 2, minWidth: 100 }}>
+                    <Text size="10px" c="dimmed" mb={2}>Value</Text>
+                    <TextInput
+                        size="xs"
+                        value={localValue}
+                        placeholder="value"
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => {
+                            setLocalValue(e.target.value);
+                            handleUpdateCondition(condition.id, { value: e.target.value });
+                        }}
+                        styles={{ input: { background: '#2a2a2a', color: 'white', border: '1px solid #444' } }}
+                    />
+                </Box>
+            )}
+            <ActionIcon variant="light" color="red" size="lg" mb={2} onClick={() => handleRemove(condition.id)}>
+                <Trash2 size={16} />
+            </ActionIcon>
+        </Group>
+    );
+});
 
 const ConditionGroupUI = ({ 
     group, 
@@ -300,7 +297,7 @@ export const CimRuleBuilder: React.FC<CimRuleBuilderProps> = ({ value, onChange 
         fetchCimSchema().then(setSchema).catch(console.error);
         const handleResize = () => setIsMobile(window.innerWidth < 768);
         window.addEventListener('resize', handleResize);
-        return () => window.removeResizeListener?.('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
     }, []);
 
     // Sync from parent
@@ -313,7 +310,7 @@ export const CimRuleBuilder: React.FC<CimRuleBuilderProps> = ({ value, onChange 
                 setConfig(withIds);
             }
         } catch { /* ignore */ }
-    }, [value]);
+    }, [value, config]);
 
     const updateConfig = (newConfig: MatchConditions) => {
         setConfig(newConfig);
@@ -396,19 +393,17 @@ export const CimRuleBuilder: React.FC<CimRuleBuilderProps> = ({ value, onChange 
                                 <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
                             </Tooltip>
                         </Group>
-                        <select
-                            value={config.target_class}
-                            onChange={(e) => updateConfig({ ...config, target_class: e.target.value })}
-                            style={{
-                                width: '100%', padding: '6px', background: '#2a2a2a', color: 'white',
-                                border: '1px solid #444', borderRadius: '4px'
-                            }}
-                        >
-                            <option value="">Any Class</option>
-                            {availableClasses.map(cls => (
-                                <option key={cls} value={cls}>{cls}</option>
-                            ))}
-                        </select>
+                        <MantineSelect
+                            size="xs"
+                            value={config.target_class || ''}
+                            onChange={(val) => updateConfig({ ...config, target_class: val || '' })}
+                            placeholder="Any Class"
+                            data={[
+                                { value: '', label: 'Any Class' },
+                                ...availableClasses.map(cls => ({ value: cls, label: cls }))
+                            ]}
+                            styles={{ input: { background: '#2a2a2a', color: 'white', border: '1px solid #444' } }}
+                        />
                     </Box>
 
                     <ConditionGroupUI 

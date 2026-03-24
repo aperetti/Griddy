@@ -6,7 +6,25 @@ Before the app can display anything useful, you need to generate or ingest a gri
 
 When running through Docker, the bootstrapping process is controlled by the `BOOTSTRAP_DATA` environment variable. If set to `true`, the backend will search for a CIM model in the `cim/` directory and generate synthetic readings on startup.
 
-## 2. Ingesting a CIM Model
+## 2. Dedicated Data Generator (Recommended)
+
+For more control or to re-run generation without restarting the backend, use the dedicated `generator` service via the `tools` profile.
+
+### Running Generation
+To trigger a full data generation cycle (ingest model, weather, and readings):
+
+```bash
+docker-compose --profile tools run --rm generator
+```
+
+### Refreshing Data
+If you want to clear existing data and start from a fresh state, use the `REFRESH_DB` environment variable:
+
+```bash
+docker-compose --profile tools run --rm -e REFRESH_DB=true generator
+```
+
+## 3. Ingesting a CIM Model (Manual/Local)
 
 If you have a customized CIM XML file (e.g., IEEE 13-node, 8500-node, or a custom utility model), place it in the `backend/cim/` directory.
 
