@@ -22,9 +22,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend source
 COPY backend/ .
 
-# Copy user auth configs from root
-COPY *.csv* ./
-
 # Copy the CIM model from the parent directory if it's there (orchestrated by compose/build context)
 # Alternatively, we expect it to be in /app/IEEE8500.xml
 

@@ -69,7 +69,7 @@
 ### 3.10 Display Rule Management
 (Includes Advanced Filtering Engine)
 
-*Basic Authentication:* The rule management interface and configuration APIs are protected by HTTP Basic Authentication. Users must sign in with a provisioned account (configured via CSV during deployment) to view, create, edit, or delete display rules.
+*Basic Authentication:* The rule management interface and configuration APIs are protected by HTTP Basic Authentication. Users sign in using secure PBKDF2 hashed credentials stored in the centralized configuration database. Administrators can manage these accounts seamlessly via the Admin Console UI or Docker CLI tools.
 
 Users can create conditional formatting rules based on any attribute of a grid entity (e.g., "Show all transformers with KVA > 500").
 * **Rule Toggling**: Users can enable/disable individual display rules via a toggle switch in the Rule Manager to quickly test different visualization configurations without deleting rules.

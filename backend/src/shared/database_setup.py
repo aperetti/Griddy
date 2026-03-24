@@ -5,6 +5,7 @@ DuckDB is kept purely as an analytics engine for parquet / weather queries.
 """
 import os
 import sqlite3
+import hashlib
 from pathlib import Path
 
 # Robust project root detection (works if run from /app, /app/src, or locally)
@@ -124,6 +125,27 @@ def init_admin_db():
     cursor.execute("SELECT COUNT(*) FROM display_configs")
     if cursor.fetchone()[0] == 0:
         conn.execute("INSERT INTO display_configs (name, is_default) VALUES ('Default Profile', 1)")
+    
+    # ── Users Table ───────────────────────────────────────────────
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            salt TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    cursor.execute("SELECT COUNT(*) FROM users")
+    if cursor.fetchone()[0] == 0:
+        salt = os.urandom(16)
+        password_hash = hashlib.pbkdf2_hmac('sha256', b"admin", salt, 100000)
+        conn.execute(
+            "INSERT INTO users (username, password_hash, salt) VALUES (?, ?, ?)",
+            ("admin", password_hash.hex(), salt.hex())
+        )
+        print("Default admin user created.")
     
     conn.commit()
     conn.close()

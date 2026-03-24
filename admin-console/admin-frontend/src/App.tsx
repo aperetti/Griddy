@@ -4,6 +4,8 @@ import { Settings, Database, Map as MapIcon } from 'lucide-react';
 import { theme } from './theme';
 import { DataPanel } from './features/data/DataPanel';
 import { ConfigPanel } from './features/config/ConfigPanel';
+import { UserManagementPanel } from './features/users/UserManagementPanel';
+import { Users } from 'lucide-react';
 
 export default function App() {
   return (
@@ -32,6 +34,7 @@ export default function App() {
               <Tabs.List mb="xl">
                 <Tabs.Tab value="data" leftSection={<Database size={16} />}>Data Lifecycle</Tabs.Tab>
                 <Tabs.Tab value="config" leftSection={<Settings size={16} />}>System Config</Tabs.Tab>
+                <Tabs.Tab value="users" leftSection={<Users size={16} />}>Users</Tabs.Tab>
                 <Tabs.Tab value="mapping" leftSection={<MapIcon size={16} />}>Schema Mapping</Tabs.Tab>
               </Tabs.List>
 
@@ -41,6 +44,10 @@ export default function App() {
 
               <Tabs.Panel value="config">
                 <ConfigPanel />
+              </Tabs.Panel>
+              
+              <Tabs.Panel value="users">
+                <UserManagementPanel />
               </Tabs.Panel>
               
               <Tabs.Panel value="mapping">

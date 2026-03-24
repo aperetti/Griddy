@@ -57,6 +57,14 @@ export async function getDb(): Promise<Database> {
       created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      salt TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Migration: ensure match_conditions exists in existing databases

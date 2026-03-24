@@ -13,3 +13,9 @@ export const configApi = {
   get: () => api.get('/config').then(res => res.data),
   set: (key: string, value: string) => api.post('/config', { key, value }).then(res => res.data),
 };
+
+export const usersApi = {
+  get: () => api.get('/users').then(res => res.data),
+  set: (username: string, password?: string) => api.post('/users', { username, password }).then(res => res.data),
+  delete: (username: string) => api.delete(`/users/${username}`).then(res => res.data),
+};

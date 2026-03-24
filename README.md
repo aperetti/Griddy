@@ -39,7 +39,7 @@ An interactive, full-stack application for analyzing electrical distribution gri
 ### Prerequisites
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop) (includes Docker Compose)
-- (Optional) Copy `users.csv.example` to `users.csv` in the root directory and update credentials to secure the Rules Engine panel. By default, it uses `admin`/`admin`.
+- A default `admin`/`admin` user is securely generated in the SQLite database on first boot. You can manage additional accounts via the Admin Console UI or the python CLI.
 
 ### Run with Docker Compose
 

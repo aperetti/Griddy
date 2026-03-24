@@ -30,8 +30,7 @@
 #### Display Rules Router (`display_rule_routes.py`)
 - Standard CRUD endpoints (`/configs`, `/rules`) backed by `admin_config.db`.
 - Complex filtering evaluations happen in pure Python.
-- **Security:** Modifying endpoints (and specific admin reading endpoints) are protected via FastAPI `HTTPBasic` authentication. 
-  - Credentials fall back to reading from a `users.csv` file provisioned in the application root/deployment via Docker build contexts.
+- **Security:** Modifying endpoints are protected via FastAPI `HTTPBasic` authentication leveraging a SQLite `users` table with PBKDF2 hashing. Account creation and modification routes are exclusively exposed through the Node/Fastify Admin Console and pure Python CLI overrides.
 *   **Backend (FastAPI & Data Ingestion)**:
     *   **Data Ingestion (CIM):** The CIM ingestor must effectively extract robust asset taxonomy, correctly tagging `Substation`, `Breaker`, `Switch`, `Transformer`, and `Meter` types. Determine the switch 'open' status for visualizations.
     *   **Graph Export Endpoint:** An endpoint to export the full grid (or a simplified version) as JSON (nodes and links) for the frontend visualization library.
