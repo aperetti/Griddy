@@ -89,8 +89,6 @@ services:
     container_name: grid-admin-frontend
     ports:
       - "${ADMIN_FRONTEND_PORT:-8091}:80"
-    environment:
-      - VITE_ADMIN_API_URL=http://localhost:8090/api
     depends_on:
       - admin-backend
     restart: unless-stopped
