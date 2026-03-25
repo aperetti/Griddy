@@ -879,35 +879,35 @@ export default function App() {
                   </Menu.Target>
 
                   <Menu.Dropdown bg="rgba(26, 27, 30, 0.95)" style={{ backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.1)' }}>
-                    <Menu.Label>System Analytics</Menu.Label>
+                    <Menu.Label>Workspace</Menu.Label>
                     <Menu.Item
                       leftSection={<Settings size={16} />}
-                      onClick={() => {
-                        setSettingsOpen(true);
-                      }}
+                      onClick={() => setSettingsOpen(true)}
                     >
-                      Global Analysis Settings
+                      Settings
                     </Menu.Item>
                     <Menu.Item
                       leftSection={<Zap size={16} />}
                       onClick={() => setDisplayRulesOpen(true)}
                     >
-                      Display Rules Manager
+                      Display Rules
                     </Menu.Item>
+
+                    <Menu.Label>Analysis</Menu.Label>
                     <Menu.Item
                       leftSection={<Activity size={16} />}
                       onClick={() => setActiveSidePanel(p => p === 'analytics' ? 'none' : 'analytics')}
                       bg={activeSidePanel === 'analytics' ? 'rgba(51, 154, 240, 0.2)' : undefined}
                     >
-                      Voltage Map Settings
+                      Voltage Map
                     </Menu.Item>
 
-                    <Menu.Label>Resources</Menu.Label>
+                    <Menu.Label>Support</Menu.Label>
                     <Menu.Item
                       leftSection={<Search size={16} />}
                       onClick={() => window.open('/docs/', '_blank')}
                     >
-                      Documentation
+                      Docs
                     </Menu.Item>
 
                     <Menu.Divider />
@@ -916,7 +916,7 @@ export default function App() {
                       color="red"
                       onClick={() => setActiveSidePanel('none')}
                     >
-                      Close All Panels
+                      Close All
                     </Menu.Item>
                   </Menu.Dropdown>
                 </Menu>
