@@ -54,6 +54,10 @@
 * **Dynamic Hiding**: Assets matching a rule should only be rendered when the current map zoom falls within the specified range.
 * **Default Behavior**: If no zoom range is specified, assets should be visible at all levels (unless clustered).
 
+### 3.8 Mobile Responsiveness
+
+* **Minimap Visibility**: To optimize screen real estate on mobile devices, the minimap must be hidden when the viewport width is less than or equal to 768px.
+
 ### 3.5 Display Rule Assistant
 * **Entity Exploration**: Users can select any grid entity to inspect its full CIM attribute set in a dedicated assistant panel.
 * **MRID Link Navigation**: The assistant must detect MRIDs in attribute values and provide "dive" buttons to jump to linked entities (e.g., from a Meter to its parent Transformer).

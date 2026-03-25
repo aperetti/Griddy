@@ -236,6 +236,11 @@ export const Minimap = React.memo<MinimapProps>(({
                 border: '1px solid rgba(255, 255, 255, 0.1)',
                 pointerEvents: 'auto',
                 cursor: isDragging ? 'grabbing' : 'crosshair',
+                position: 'absolute',
+                bottom: 20,
+                left: 20,
+                zIndex: 1000,
+                backgroundColor: '#141517',
             }}
         >
             <canvas

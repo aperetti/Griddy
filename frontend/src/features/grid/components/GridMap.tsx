@@ -52,48 +52,6 @@ const stringToColor = (str: string): [number, number, number] => {
 // Switch and breaker edge_type values
 const SWITCH_EDGE_TYPES = new Set(['Breaker', 'LoadBreakSwitch', 'Fuse', 'Disconnector', 'Recloser']);
 
-// ──────────────────────────────────────────────────────────────────────────
-// Default fallback icons for switches, transformers, and capacitors.
-// These use per-datum SVG data URLs since they are static inline shapes.
-// Rule-matched icons use the sprite atlas (SpriteMap) instead.
-// ──────────────────────────────────────────────────────────────────────────
-
-const SVG_CACHE = new Map<string, string>();
-
-const OPEN_SWITCH_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><line x1="30" y1="10" x2="30" y2="90" stroke="currentColor" stroke-width="8" stroke-linecap="round" /><line x1="70" y1="10" x2="70" y2="90" stroke="currentColor" stroke-width="8" stroke-linecap="round" /></svg>`;
-const CLOSE_SWITCH_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><line x1="30" y1="10" x2="30" y2="90" stroke="currentColor" stroke-width="8" stroke-linecap="round" /><line x1="70" y1="10" x2="70" y2="90" stroke="currentColor" stroke-width="8" stroke-linecap="round" /><line x1="15" y1="65" x2="85" y2="35" stroke="currentColor" stroke-width="8" stroke-linecap="round" /></svg>`;
-const TRANSFORMER_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><polygon points="50,15 15,85 85,85" stroke="currentColor" fill="none" stroke-width="8" stroke-linejoin="round" /></svg>`;
-const CAPACITOR_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="currentColor" font-family="Arial, sans-serif" font-weight="bold" font-size="12">C</text></svg>`;
-
-const getSvgDataUrl = (svg: string, color?: string, css?: string): string => {
-    if (!svg) return '';
-    const cacheKey = `${svg}_${color || ''}_${css || ''}`;
-    if (SVG_CACHE.has(cacheKey)) return SVG_CACHE.get(cacheKey)!;
-
-    let processedSvg = svg;
-
-    if (css && css.trim()) {
-        const styleBlock = `<style>${css}</style>`;
-        processedSvg = processedSvg.includes('</svg>')
-            ? processedSvg.replace('</svg>', `${styleBlock}</svg>`)
-            : `${processedSvg}${styleBlock}`;
-    }
-
-    if (color) {
-        processedSvg = processedSvg
-            .replace(/currentColor/g, color)
-            .replace(/fill=["'](?!none)[^"']+["']/g, `fill="${color}"`)
-            .replace(/stroke=["'](?!none)[^"']+["']/g, `stroke="${color}"`);
-        if (processedSvg === svg && !css) {
-            processedSvg = processedSvg.replace('<svg', `<svg fill="${color}" stroke="${color}"`);
-        }
-    }
-
-    const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(processedSvg)}`;
-    SVG_CACHE.set(cacheKey, url);
-    return url;
-};
-
 
 // Derive a visual category from node.type and attached_equipment.
 // After the CIM refactor, node.type is only "Bus" | "Substation"; richer
@@ -173,14 +131,6 @@ const edgeMidpoint = (d: Edge): [number, number] => [
     (d.sourcePosition[1] + d.targetPosition[1]) / 2,
 ];
 
-const getBearing = (source: [number, number], target: [number, number]) => {
-    // Distort longitude by latitude for geographic bearing
-    const dx = (target[0] - source[0]) * Math.cos((source[1] * Math.PI) / 180);
-    const dy = target[1] - source[1];
-    // Return degrees clockwise from North
-    return 90 - (Math.atan2(dy, dx) * 180) / Math.PI;
-};
-
 export const GridMap = React.memo<GridMapProps>(({
     nodes,
     edges,
@@ -201,6 +151,8 @@ export const GridMap = React.memo<GridMapProps>(({
 }) => {
     const selectedNodeIdsSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
     const [mounted, setMounted] = useState(false);
+    const lastModelIdsRef = useRef<Set<string>>(new Set());
+    const lastHandledTrigger = useRef(0);
     const isDraggingRef = useRef(false);
     const lastDragTime = useRef(0);
     const mouseDownPos = useRef<{x: number, y: number} | null>(null);
@@ -218,79 +170,35 @@ export const GridMap = React.memo<GridMapProps>(({
     });
     const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
     const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
-    const lastFittedNodes = useRef<Node[] | null>(null);
 
+    // Initial and conditional fit-to-bounds
     useEffect(() => {
-        if (nodes.length > 0 && dimensions.width > 0 && nodes !== lastFittedNodes.current && !skipGlobalFit) {
-            console.log('[GridMap] Fitting to extent of', nodes.length, 'nodes');
-            lastFittedNodes.current = nodes;
-            
-            let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
-            nodes.forEach(n => {
-                const [lon, lat] = n.position;
-                if (!isNaN(lon) && !isNaN(lat)) {
-                    minLon = Math.min(minLon, lon);
-                    maxLon = Math.max(maxLon, lon);
-                    minLat = Math.min(minLat, lat);
-                    maxLat = Math.max(maxLat, lat);
-                }
-            });
+        if (nodes.length > 0 && dimensions.width > 0 && !skipGlobalFit) {
+            // Compute current active model IDs for change detection
+            const currentModelIds = new Set(nodes.map(n => n.model_id).filter(Boolean) as string[]);
+            const modelIdsChanged = currentModelIds.size !== lastModelIdsRef.current.size || 
+                                   Array.from(currentModelIds).some(id => !lastModelIdsRef.current.has(id));
 
-            if (minLon === Infinity) return;
+            // Should we perform a fit bounds?
+            // 1. If waitHighlightedNodesTrigger changed (manual request)
+            // 2. If the set of models changed (new model loaded)
+            // 3. If this is the initial mount (lastModelIdsRef is empty)
+            const isInitialFit = lastModelIdsRef.current.size === 0;
+            const isManualFit = fitHighlightedNodesTrigger > lastHandledTrigger.current;
+            const shouldFit = isInitialFit || isManualFit || modelIdsChanged;
 
-            const viewport = new WebMercatorViewport({
-                width: dimensions.width,
-                height: dimensions.height,
-                ...viewState
-            });
+            if (!shouldFit) return;
 
-            const bounds = viewport.fitBounds(
-                [[minLon, minLat], [maxLon, maxLat]],
-                {
-                    padding: Math.min(dimensions.width, dimensions.height) * 0.1,
-                    maxZoom: 18
-                }
-            );
+            if (isManualFit) {
+                lastHandledTrigger.current = fitHighlightedNodesTrigger;
+            }
+            lastModelIdsRef.current = currentModelIds;
 
-            setViewState((prev: any) => ({
-                ...prev,
-                longitude: bounds.longitude,
-                latitude: bounds.latitude,
-                zoom: bounds.zoom,
-                transitionDuration: 1000
-            }));
-        }
-    }, [nodes, dimensions.width, dimensions.height]);
+            const highlightedIds = highlightedNodes;
+            const nodesToFit = highlightedIds.size > 0 
+                ? nodes.filter(n => highlightedIds.has(n.id))
+                : nodes;
 
-    // Handle external navigation from minimap
-    const lastGoTo = useRef<{ longitude: number; latitude: number } | null>(null);
-    useEffect(() => {
-        if (goToLocation && goToLocation !== lastGoTo.current) {
-            lastGoTo.current = goToLocation;
-            setViewState((prev: any) => ({
-                ...prev,
-                longitude: goToLocation.longitude,
-                latitude: goToLocation.latitude,
-                transitionDuration: 300
-            }));
-        }
-    }, [goToLocation]);
-
-    const lastHandledTrigger = useRef(0);
-
-    useEffect(() => {
-        if (fitHighlightedNodesTrigger > 0 && 
-            fitHighlightedNodesTrigger > lastHandledTrigger.current && 
-            highlightedNodes.size > 0 && 
-            dimensions.width > 0) {
-            
-            lastHandledTrigger.current = fitHighlightedNodesTrigger;
-            
-            const nodesToFit = nodes.filter(n => 
-                highlightedNodes.has(n.id) && 
-                !isNaN(n.position[0]) && 
-                !isNaN(n.position[1])
-            );
             if (nodesToFit.length === 0) return;
 
             const viewport = new WebMercatorViewport({
@@ -322,11 +230,15 @@ export const GridMap = React.memo<GridMapProps>(({
             let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
             nodesToFit.forEach(n => {
                 const [lon, lat] = n.position;
-                minLon = Math.min(minLon, lon);
-                maxLon = Math.max(maxLon, lon);
-                minLat = Math.min(minLat, lat);
-                maxLat = Math.max(maxLat, lat);
+                if (!isNaN(lon) && !isNaN(lat)) {
+                    minLon = Math.min(minLon, lon);
+                    maxLon = Math.max(maxLon, lon);
+                    minLat = Math.min(minLat, lat);
+                    maxLat = Math.max(maxLat, lat);
+                }
             });
+
+            if (minLon === Infinity) return;
 
             let targetLon, targetLat, targetZoom;
 
@@ -355,7 +267,21 @@ export const GridMap = React.memo<GridMapProps>(({
                 transitionDuration: 1000
             }));
         }
-    }, [fitHighlightedNodesTrigger, highlightedNodes, nodes, dimensions]);
+    }, [nodes, dimensions.width, dimensions.height, fitHighlightedNodesTrigger, highlightedNodes, skipGlobalFit]);
+
+    // Handle external navigation from search/HUD
+    const lastGoTo = useRef<{ longitude: number; latitude: number } | null>(null);
+    useEffect(() => {
+        if (goToLocation && goToLocation !== lastGoTo.current) {
+            lastGoTo.current = goToLocation;
+            setViewState((prev: any) => ({
+                ...prev,
+                longitude: goToLocation.longitude,
+                latitude: goToLocation.latitude,
+                transitionDuration: 300
+            }));
+        }
+    }, [goToLocation]);
 
     // The original `useEffect` for mounting and dimensions.
     // This `useEffect` should remain as is.
@@ -371,7 +297,7 @@ export const GridMap = React.memo<GridMapProps>(({
         window.addEventListener('resize', updateSize);
         return () => window.removeEventListener('resize', updateSize);
     }, []);
-    
+
     const nodePositions = useMemo(() => {
         const posMap: Record<string, [number, number]> = {};
         nodes.forEach(node => {
@@ -388,30 +314,9 @@ export const GridMap = React.memo<GridMapProps>(({
         }));
     }, [edges, nodePositions]);
 
-    // Edges that carry switch/breaker equipment (for icon rendering)
-    const switchEdgesOpen = useMemo(() => offsetEdges.filter(e => 
-        SWITCH_EDGE_TYPES.has(e.edge_type ?? '') && e.is_open && !e.display_icon &&
-        (e.display_min_zoom === undefined || viewState.zoom >= e.display_min_zoom) &&
-        (e.display_max_zoom === undefined || viewState.zoom <= e.display_max_zoom)
-    ), [offsetEdges, viewState.zoom]);
-
-    const switchEdgesClosed = useMemo(() => offsetEdges.filter(e => 
-        SWITCH_EDGE_TYPES.has(e.edge_type ?? '') && !e.is_open && !e.display_icon &&
-        (e.display_min_zoom === undefined || viewState.zoom >= e.display_min_zoom) &&
-        (e.display_max_zoom === undefined || viewState.zoom <= e.display_max_zoom)
-    ), [offsetEdges, viewState.zoom]);
-
-    const transformerEdges = useMemo(() => 
-        offsetEdges.filter(e => 
-            (e.edge_type === 'PowerTransformer' || e.edge_type === 'TransformerTank') && !e.display_icon &&
-            (e.display_min_zoom === undefined || viewState.zoom >= e.display_min_zoom) &&
-            (e.display_max_zoom === undefined || viewState.zoom <= e.display_max_zoom)
-        ), 
-    [offsetEdges, viewState.zoom]);
-
     const visualEdgePaths = useMemo(() => {
         const OFFSET = 0.00004; // ~4-5 meters
-        const visibleEdges = offsetEdges.filter(e => 
+        const visibleEdges = offsetEdges.filter(e =>
             (e.display_min_zoom === undefined || viewState.zoom >= e.display_min_zoom) &&
             (e.display_max_zoom === undefined || viewState.zoom <= e.display_max_zoom)
         );
@@ -675,146 +580,6 @@ export const GridMap = React.memo<GridMapProps>(({
             }
         }),
         new IconLayer({
-            id: 'grid-switches-open',
-            data: switchEdgesOpen,
-            getPosition: (d: Edge) => edgeMidpoint(d),
-            getIcon: (d: Edge) => {
-                const colorArr = getEdgeColor(d, highlightedEdges.has(d.id ?? ''), hoveredEdgeId === d.id, d.circuit_id);
-                const colorHex = `#${colorArr.map(c => c.toString(16).padStart(2, '0')).join('')}`;
-                return {
-                    url: getSvgDataUrl(OPEN_SWITCH_SVG, colorHex),
-                    width: 100,
-                    height: 100,
-                    anchorY: 50,
-                    mask: false
-                };
-            },
-            getAngle: (d: Edge) => getBearing(d.sourcePosition, d.targetPosition) + 90,
-            getSize: (d: Edge) => highlightedEdges.has(d.id ?? '') ? 36 : 24,
-            sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
-            sizeMinPixels: 1,
-            updateTriggers: { 
-                getSize: [highlightedEdges],
-                getIcon: [highlightedEdges, hoveredEdgeId]
-            },
-            pickable: true,
-            autoHighlight: false,
-            onHover: (info) => {
-                setHoveredEdgeId(info.object ? (info.object.id ?? null) : null);
-            },
-            onClick: (info, event) => {
-                if (isDraggingRef.current) return;
-                const srcEvent = (event as any).srcEvent as MouseEvent;
-                if (info.object && srcEvent && onEdgeClick) {
-                    onEdgeClick(info.object as Edge, srcEvent.shiftKey || srcEvent.ctrlKey);
-                }
-            }
-        }),
-        new IconLayer({
-            id: 'grid-switches-closed',
-            data: switchEdgesClosed,
-            getPosition: (d: Edge) => edgeMidpoint(d),
-            getIcon: (d: Edge) => {
-                const colorArr = getEdgeColor(d, highlightedEdges.has(d.id ?? ''), hoveredEdgeId === d.id, d.circuit_id);
-                const colorHex = `#${colorArr.map(c => c.toString(16).padStart(2, '0')).join('')}`;
-                return {
-                    url: getSvgDataUrl(CLOSE_SWITCH_SVG, colorHex),
-                    width: 100,
-                    height: 100,
-                    anchorY: 50,
-                    mask: false
-                };
-            },
-            getAngle: (d: Edge) => getBearing(d.sourcePosition, d.targetPosition) + 90,
-            getSize: (d: Edge) => highlightedEdges.has(d.id ?? '') ? 36 : 24,
-            sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
-            sizeMinPixels: 1,
-            updateTriggers: { 
-                getSize: [highlightedEdges],
-                getIcon: [highlightedEdges, hoveredEdgeId]
-            },
-            pickable: true,
-            autoHighlight: false,
-            onHover: (info) => {
-                setHoveredEdgeId(info.object ? (info.object.id ?? null) : null);
-            },
-            onClick: (info, event) => {
-                if (isDraggingRef.current) return;
-                const srcEvent = (event as any).srcEvent as MouseEvent;
-                if (info.object && srcEvent && onEdgeClick) {
-                    onEdgeClick(info.object as Edge, srcEvent.shiftKey || srcEvent.ctrlKey);
-                }
-            }
-        }),
-        new IconLayer({
-            id: 'grid-transformers',
-            data: transformerEdges,
-            getPosition: (d: Edge) => d.targetPosition,
-            getIcon: (d: Edge) => {
-                const colorArr = getEdgeColor(d, highlightedEdges.has(d.id ?? ''), hoveredEdgeId === d.id, d.circuit_id);
-                const colorHex = `#${colorArr.map(c => c.toString(16).padStart(2, '0')).join('')}`;
-                return {
-                    url: getSvgDataUrl(TRANSFORMER_SVG, colorHex),
-                    width: 100,
-                    height: 100,
-                    anchorY: 50,
-                    mask: false
-                };
-            },
-            getSize: (d: Edge) => highlightedEdges.has(d.id ?? '') ? 20 : 16,
-            sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
-            sizeMinPixels: 1,
-            updateTriggers: { 
-                getSize: [highlightedEdges],
-                getIcon: [highlightedEdges, hoveredEdgeId]
-            },
-            pickable: true,
-            autoHighlight: false,
-            onHover: (info) => {
-                setHoveredEdgeId(info.object ? (info.object.id ?? null) : null);
-            },
-            onClick: (info, event) => {
-                if (isDraggingRef.current) return;
-                const srcEvent = (event as any).srcEvent as MouseEvent;
-                if (info.object && srcEvent && onEdgeClick) {
-                    onEdgeClick(info.object as Edge, srcEvent.shiftKey || srcEvent.ctrlKey);
-                }
-            }
-        }),
-        new IconLayer<Node>({
-            id: 'grid-capacitors',
-            data: clusteredData.nodesToRender.filter(n => getVisualType(n) === 'Capacitor' && !n.display_icon),
-            getPosition: (d: Node) => d.position,
-            getIcon: (d: Node) => {
-                const colorArr = getNodeColor(d, getVisualType(d), highlightedNodes.has(d.id), selectedNodeIdsSet.has(d.id), d.circuit_id);
-                const colorHex = `#${colorArr.map(c => c.toString(16).padStart(2, '0')).join('')}`;
-                return {
-                    url: getSvgDataUrl(CAPACITOR_SVG, colorHex),
-                    width: 100,
-                    height: 100,
-                    anchorY: 50,
-                    mask: false
-                };
-            },
-            getSize: (d: Node) => hoveredNodeId === d.id ? 50 : 30,
-            sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
-            sizeMinPixels: 1,
-            updateTriggers: { 
-                getSize: [hoveredNodeId],
-                getIcon: [highlightedNodes, selectedNodeIdsSet, hoveredNodeId]
-            },
-            pickable: true,
-            autoHighlight: false,
-            onHover: (info) => {
-                setHoveredNodeId(info.object ? (info.object.id ?? null) : null);
-            },
-            onClick: (info, event) => {
-                if (isDraggingRef.current) return;
-                const srcEvent = (event as any).srcEvent as MouseEvent;
-                if (info.object && srcEvent) {
-                    onNodeClick(info.object, srcEvent.shiftKey || srcEvent.ctrlKey);
-                }
-            }
         }),
         spriteMap && new IconLayer<Node>({
             id: 'grid-nodes-custom',
@@ -930,7 +695,7 @@ export const GridMap = React.memo<GridMapProps>(({
                 getPosition: [clusteredData.clusters]
             }
         })
-    ], [clusteredData, visualEdgePaths, hoveredNodeId, hoveredEdgeId, highlightedNodes, highlightedEdges, selectedNodeIdsSet, switchEdgesOpen, switchEdgesClosed, transformerEdges, nodeAverages, voltageScale, onNodeClick, onEdgeClick, viewState.zoom, nodePositions]);
+    ], [clusteredData, visualEdgePaths, hoveredNodeId, hoveredEdgeId, highlightedNodes, highlightedEdges, selectedNodeIdsSet, nodeAverages, voltageScale, onNodeClick, onEdgeClick, viewState.zoom, nodePositions]);
 
     const getTooltipContent = (object: any) => {
         if (!object) return null;

@@ -1,1078 +1,347 @@
 import '@mantine/core/styles.css';
 import '@mantine/dates/styles.css';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { 
+  MantineProvider, 
+  Box
+} from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
-import { MantineProvider, Box, Group, Stack, Tooltip, ActionIcon, Paper, Menu } from '@mantine/core';
-import { Menu as MenuIcon, X, Search, Activity, Settings, Zap } from 'lucide-react';
 
 import { GridMap } from './features/grid/components/GridMap';
 import { Minimap } from './features/grid/components/Minimap';
-import { AnalysisToolbar } from './features/grid/components/AnalysisToolbar';
-import { AnalyticsPanel } from './features/analytics/components/AnalyticsPanel';
-import { ConsumptionTimeSeriesModal } from './features/analytics/components/ConsumptionTimeSeriesModal';
-import { VoltageDistributionModal } from './features/analytics/components/VoltageDistributionModal';
 import { VoltageScalePanel } from './features/analytics/components/VoltageScalePanel';
-import { GlobalSettingsModal, type GlobalConfig } from './features/analytics/components/GlobalSettingsModal';
-import { DiagnosticModal } from './features/analytics/components/DiagnosticModal';
-import { GlobalSearch } from './features/grid/components/GlobalSearch';
-import { ModelSwitcher } from './features/grid/components/ModelSwitcher';
+import { AnalyticsDashboard } from './features/analytics/components/AnalyticsDashboard';
+import { AnalyticsSidebar } from './features/analytics/components/AnalyticsSidebar';
+import { GlobalSettingsModal } from './features/analytics/components/GlobalSettingsModal';
 import { DisplayRulesManager } from './features/grid/components/DisplayRulesManager';
-import {
-  fetchTopology,
-  fetchConsumption,
-  fetchVoltageDistribution,
-  fetchMapVoltage,
-  fetchVoltageEstimate,
-  fetchConsumptionEstimate,
-  fetchMapVoltageEstimate
-} from './shared/api';
+import { OverlayControls } from './features/ui/OverlayControls';
+import { AnalysisWindowLayer } from './features/analytics/components/AnalysisWindowLayer';
+import { AnalysisToolbar } from './features/grid/components/AnalysisToolbar';
+
+import { useTopology } from './hooks/useTopology';
+import { useAnalyticsState, SETTINGS_KEY } from './hooks/useAnalyticsState';
+import { useAnalysisExecution } from './hooks/useAnalysisExecution';
+import { fetchTopology, fetchModels } from './shared/api';
 import type { Node, Edge } from './shared/types';
 
-const DEFAULT_CONFIG: GlobalConfig = {
-  defaultDuration: '1M',
-  customDays: 30,
-  endDateType: 'now',
-  fixedEndDate: new Date().toISOString()
-};
-
-type AnalysisType = 'consumption' | 'voltage' | 'diagnostic';
-
-interface AnalysisInstance {
-  id: string;
-  type: AnalysisType;
-  nodeIds: string[];
-  nodeName: string;
-  isOpen: boolean;
-  isMinimized: boolean;
-  loading: boolean;
-  data: any[];
-  estimatedRows?: number;
-  assetType?: 'Node' | 'Edge';
-  // Voltage specific
-  degrees?: number | null;
-  scatterData?: any[];
-  timeSeriesData?: any[];
-  // Large query handling
-  isPaused?: boolean;
-  pendingRequest?: { nodeIds: string[], start: string, end: string, degrees?: number | null };
-  zIndex?: number;
-}
-
-const calculateRange = (config: GlobalConfig) => {
+const calculateRange = (config: any) => {
   const end = config.endDateType === 'now' ? new Date() : new Date(config.fixedEndDate);
   const start = new Date(end.getTime());
-
   const duration = config.defaultDuration || '1M';
 
-  if (duration === '1D') {
-    start.setDate(end.getDate() - 1);
-  } else if (duration === '1W') {
-    start.setDate(end.getDate() - 7);
-  } else if (duration === '1M') {
-    start.setMonth(end.getMonth() - 1);
-  } else if (duration === '1Y') {
-    start.setFullYear(end.getFullYear() - 1);
-  } else if (duration === 'custom') {
-    start.setDate(end.getDate() - (config.customDays || 30));
-  } else {
-    start.setMonth(end.getMonth() - 1);
-  }
+  if (duration === '1D') start.setDate(end.getDate() - 1);
+  else if (duration === '1W') start.setDate(end.getDate() - 7);
+  else if (duration === '1M') start.setMonth(end.getMonth() - 1);
+  else if (duration === '3M') start.setMonth(end.getMonth() - 3);
+  else if (config.customDays) start.setDate(end.getDate() - config.customDays);
+  else start.setDate(end.getDate() - 30); // Robust fallback
 
-  // Final check for zero duration (edge case where math fails)
-  if (start.getTime() === end.getTime()) {
-    console.warn('[App] Range calculation resulted in zero duration! Falling back to 1M.');
-    start.setMonth(end.getMonth() - 1);
-  }
-
-  return {
-    start: start.toISOString().split('.')[0],
-    end: end.toISOString().split('.')[0]
+  return { 
+    start: start.toISOString().split('.')[0], 
+    end: end.toISOString().split('.')[0] 
   };
 };
 
 export default function App() {
-  const [nodes, setNodes] = useState<Node[]>([]);
-  const [edges, setEdges] = useState<Edge[]>([]);
-  const [selectedNodes, setSelectedNodes] = useState<Node[]>([]);
+  const isMobile = useMediaQuery('(max-width: 768px)');
+  // Local UI State
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [menuOpened, setMenuOpened] = useState(false);
   const [displayRulesOpen, setDisplayRulesOpen] = useState(false);
-  const [activeModelIds, setActiveModelIds] = useState<string[]>([]);
+  const [displayRulesZIndex, setDisplayRulesZIndex] = useState(1005);
+  const [voltageScale, setVoltageScale] = useState(() => {
+    const saved = localStorage.getItem('voltageScale');
+    return saved ? JSON.parse(saved) : { min: 0.9, max: 1.1, low: 0.95, high: 1.05 };
+  });
+  const [viewState, setViewState] = useState<any>(null);
+  const [targetLocation, setTargetLocation] = useState<{ longitude: number; latitude: number } | null>(null);
 
-  const [globalConfig, setGlobalConfig] = useState<GlobalConfig>(() => {
-    const saved = localStorage.getItem('globalConfig');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        // Merge with DEFAULT_CONFIG to ensure new fields (like endDateType) are present
-        return { ...DEFAULT_CONFIG, ...parsed };
-      } catch (e) {
-        console.error('Failed to parse saved globalConfig', e);
-      }
+  // Hooks
+  const topology = useTopology();
+  const analytics = useAnalyticsState();
+  
+  const [dateRange, setDateRange] = useState(() => calculateRange(analytics.globalConfig));
+  useEffect(() => {
+    if (analytics.globalConfig.endDateType === 'now') {
+      setDateRange(calculateRange(analytics.globalConfig));
     }
-    return DEFAULT_CONFIG;
+  }, [analytics.globalConfig]);
+
+  const execution = useAnalysisExecution({
+    dateRange,
+    updateWindow: analytics.updateWindow,
+    setAnalysisWindows: analytics.setAnalysisWindows,
+    bringWindowToFront: analytics.bringWindowToFront
   });
 
-  const [dateRange, setDateRange] = useState(() => calculateRange(globalConfig));
-  useEffect(() => {
-    localStorage.setItem('globalConfig', JSON.stringify(globalConfig));
-    // When config changes, we might want to refresh the dateRange if it's "now" based
-    if (globalConfig.endDateType === 'now') {
-      setDateRange(calculateRange(globalConfig));
-    }
-  }, [globalConfig]);
-
-  const [activeSidePanel, setActiveSidePanel] = useState<'none' | 'analytics'>('none');
-  const [loading, setLoading] = useState(false);
-  const [mapVoltageEstimatedRows, setMapVoltageEstimatedRows] = useState<number | undefined>();
-
-  const [analysisWindows, setAnalysisWindows] = useState<AnalysisInstance[]>([]);
-
-  const updateWindow = (id: string, updates: Partial<AnalysisInstance>) => {
-    setAnalysisWindows(prev => prev.map(w => w.id === id ? { ...w, ...updates } : w));
-  };
-
-  const removeWindow = (id: string) => {
-    setAnalysisWindows(prev => prev.filter(w => w.id !== id));
-  };
-
-  const [highlightedNodes, setHighlightedNodes] = useState<Set<string>>(new Set());
-  const [highlightedEdges, setHighlightedEdges] = useState<Set<string>>(new Set());
-  const [fitBoundsTrigger, setFitBoundsTrigger] = useState(0);
-  const [nodeAverages, setNodeAverages] = useState<Record<string, number> | null>(null);
-  const [nodeCurrents, setNodeCurrents] = useState<Record<string, { a: number, b: number, c: number }> | null>(null);
-  const [topologyLoading, setTopologyLoading] = useState(false);
-  const [topologyVersion, setTopologyVersion] = useState(0);
-  const refreshTopology = useCallback(() => {
-    setIsSearching(true);
-    setTopologyVersion(v => v + 1);
-  }, []);
-  const [maxZIndex, setMaxZIndex] = useState(1000);
-  const [displayRulesZIndex, setDisplayRulesZIndex] = useState(1005);
-
-  const bringWindowToFront = useCallback((id: string) => {
-    setMaxZIndex(prev => {
-      const newZ = prev + 1;
-      setAnalysisWindows(current => current.map(w =>
-        w.id === id ? { ...w, zIndex: newZ } : w
-      ));
-      return newZ;
-    });
-  }, []);
-
   const bringDisplayRulesToFront = useCallback(() => {
-    setMaxZIndex(prev => {
+    analytics.setMaxZIndex(prev => {
       const newZ = prev + 1;
       setDisplayRulesZIndex(newZ);
       return newZ;
     });
-  }, []);
-  const [isSearching, setIsSearching] = useState(false);
-  const [mainViewState, setMainViewState] = useState<any>(null);
-  const [goToLocation, setGoToLocation] = useState<{ longitude: number; latitude: number } | null>(null);
+  }, [analytics]);
 
-  const [voltageScale, setVoltageScale] = useState(() => {
-    const saved = localStorage.getItem('voltageScale');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error('Failed to parse saved voltageScale', e);
-      }
-    }
-    return {
-      criticalHigh: 1.06,
-      highWarning: 1.05,
-      lowWarning: 0.95,
-      criticalLow: 0.90,
-      baseVoltage: 120
-    };
-  });
+  const lastActiveModelIds = useRef<string[]>([]);
 
+  // Initial Load & Topology Refresh
   useEffect(() => {
-    localStorage.setItem('voltageScale', JSON.stringify(voltageScale));
-  }, [voltageScale]);
-
-  // Deep-link support: Handle ?node=ID URL parameter
-  useEffect(() => {
-    console.log('[App] Deep-link check, nodes.length:', nodes.length);
-    if (nodes.length > 0) {
-      const params = new URLSearchParams(window.location.search);
-      const nodeId = params.get('node');
-      console.log('[App] URL node param:', nodeId);
-      if (nodeId) {
-        const node = nodes.find(n => n.id === nodeId);
-        if (node) {
-          console.log('[App] AUTO-SELECTING node:', nodeId);
-          setSelectedNodes([node]);
-          setFitBoundsTrigger(prev => prev + 1);
-        } else {
-          console.error('[App] URL node not found in topology:', nodeId);
-        }
-      }
-    }
-  }, [nodes]);
-
-
-  const handleClearSelection = useCallback(() => setSelectedNodes([]), []);
-  const handleSearchSelect = useCallback(async (item: any) => {
-    // If item has a model_id that is not currently active, activate it
-    if (item.model_id && !activeModelIds.includes(item.model_id)) {
-      console.log('[App] Activating model from search result:', item.model_id);
-      setIsSearching(true);
-      setActiveModelIds(prev => [...prev, item.model_id]);
-      // The useEffect for activeModelIds will trigger topology reload
-    }
-
-    if (item.type === 'node') {
-      // Node selected
-      setSelectedNodes([{ ...item, type: 'ConnectivityNode' }]);
-      setHighlightedNodes(new Set([item.id]));
-      setHighlightedEdges(new Set());
-    } else if (item.type === 'equipment') {
-      // Equipment selected - find parent node if possible, otherwise select as node
-      setSelectedNodes([{ ...item, type: 'Equipment' }]);
-      setHighlightedNodes(new Set([item.id]));
-      setHighlightedEdges(new Set());
-    } else {
-      // Edge selected
-      const edge = item as Edge;
-      const source = nodes.find(n => n.id === edge.source);
-      const target = nodes.find(n => n.id === edge.target);
-      if (source && target) {
-        setSelectedNodes([source, target]);
-        setHighlightedNodes(new Set([source.id, target.id]));
-        setHighlightedEdges(new Set([edge.id || `${edge.source}-${edge.target}`]));
-      }
-    }
-    setFitBoundsTrigger(prev => prev + 1);
-  }, [nodes, activeModelIds]);
-  const isMobile = useMediaQuery('(max-width: 768px)');
-
-  const onNodeClick = useCallback((node: Node, multiSelect: boolean) => {
-    console.log('[App] onNodeClick:', node.id, 'multiSelect:', multiSelect, 'isMobile:', isMobile);
-    setSelectedNodes(prev => {
-      // On mobile, default to multi-select (toggle behavior)
-      const effectiveMultiSelect = isMobile ? true : multiSelect;
-      
-      if (!effectiveMultiSelect) return [node];
-      
-      const exists = prev.find(n => n.id === node.id);
-      if (exists) return prev.filter(n => n.id !== node.id);
-      return [...prev, node];
-    });
-  }, [isMobile]);
-
-  const onEdgeClick = useCallback((edge: Edge, multiSelect: boolean) => {
-    // Select the downstream node (target)
-    const targetNode = nodes.find(n => n.id === edge.target);
-    if (!targetNode) return;
-    onNodeClick(targetNode, multiSelect);
-  }, [nodes, onNodeClick]);
-
-  // Reload topology when model selection changes
-  const handleModelsChange = useCallback((modelIds: string[]) => {
-    setActiveModelIds(modelIds);
-  }, []);
-
-  const handleZoomToModel = useCallback((modelId: string) => {
-    const modelNodes = nodes.filter(n => n.model_id === modelId);
-    if (modelNodes.length === 0) {
-      console.warn('[App] No nodes found for model:', modelId);
-      return;
-    }
-    setHighlightedNodes(new Set(modelNodes.map(n => n.id)));
-    setFitBoundsTrigger(prev => prev + 1);
-  }, [nodes]);
-
-  // Initial model loading: ensure at least one model is active
-  useEffect(() => {
-    if (activeModelIds.length === 0) {
-      import('./shared/api').then(({ fetchModels }) => {
-        fetchModels().then(models => {
+    const load = async () => {
+      // Initialize with a single model if nothing is active
+      if (topology.activeModelIds.length === 0) {
+        try {
+          const models = await fetchModels();
           if (models.length > 0) {
-            console.log('[App] Initializing with first model:', models[0].model_id);
-            setActiveModelIds([models[0].model_id]);
+            topology.setActiveModelIds([models[0].model_id]);
+            return;
           }
-        });
-      });
-    }
-  }, []);
-
-  useEffect(() => {
-    // Only fetch once we know which models are active (initial load or model toggle)
-    if (activeModelIds.length === 0) return;
-    
-    setTopologyLoading(true);
-    fetchTopology(activeModelIds)
-      .then(data => {
-        setNodes(data.nodes);
-        setEdges(data.edges);
-        if (data.nodes.length === 0) {
-          console.warn('[App] Topology returned 0 nodes');
+        } catch (err) {
+          console.error('[App] Failed to fetch models for initialization:', err);
         }
-      })
-      .catch(err => console.error('[App] Failed to fetch topology:', err))
-      .finally(() => {
-        setTopologyLoading(false);
-        // Reset searching state after topology is loaded and any potential zooms have triggered
-        setTimeout(() => setIsSearching(false), 1500);
-      });
-  }, [activeModelIds, topologyVersion]);
-  const handleShowDiagnostic = async (targetId?: string, targetType?: 'Node' | 'Edge') => {
-    const id = targetId || selectedNodes[selectedNodes.length - 1]?.id;
-    if (!id) return;
-    
-    const type = targetType || (selectedNodes.find(n => n.id === id) ? 'Node' as const : 'Edge' as const);
-    
-    const windowId = `diagnostic-${id}`;
-    
-    const nodeLabel = targetId 
-        ? `${type} ${targetId}` 
-        : (selectedNodes.find(n => n.id === id)?.name || id);
+      }
 
-    setAnalysisWindows(prev => prev.map(w =>
-      (w.id !== windowId)
-        ? { ...w, isMinimized: true }
-        : w
-    ));
-
-    const existing = analysisWindows.find(w => w.id === windowId);
-    if (existing) {
-      bringWindowToFront(windowId);
-      updateWindow(windowId, { isOpen: true, isMinimized: false });
-      return;
-    }
-
-    const newZ = maxZIndex + 1;
-    setMaxZIndex(newZ);
-    const newWindow: AnalysisInstance = {
-      id: windowId,
-      type: 'diagnostic',
-      nodeIds: [id],
-      nodeName: nodeLabel,
-      assetType: type,
-      isOpen: true,
-      isMinimized: false,
-      loading: false,
-      data: [],
-      zIndex: newZ
-    };
-    setAnalysisWindows(prev => [...prev, newWindow]);
-  };
-
-  const handleZoomToAsset = useCallback((id: string, type: 'Node' | 'Edge') => {
-    // Helper to find the nearest geographic coordinate starting from any node ID
-    const findNearestGeographicNodeId = (startId: string): string | null => {
-      const queue: string[] = [startId];
-      const visited = new Set<string>();
+      const current = topology.activeModelIds;
+      const prev = lastActiveModelIds.current;
       
-      while (queue.length > 0) {
-        const currentId = queue.shift()!;
-        if (visited.has(currentId)) continue;
-        visited.add(currentId);
-        
-        const node = nodes.find(n => n.id === currentId);
-        if (node && !isNaN(node.position[0]) && !isNaN(node.position[1])) {
-          return currentId;
+      const added = current.filter(id => !prev.includes(id));
+      const removed = prev.filter(id => !current.includes(id));
+
+      // Force full reload if topologyVersion changes (manual refresh)
+      const isRefresh = topology.topologyVersion > 0 && added.length === 0 && removed.length === 0;
+
+      if (isRefresh) {
+        topology.setTopologyLoading(true);
+        try {
+          const data = await fetchTopology(current);
+          topology.setNodes(data.nodes);
+          topology.setEdges(data.edges);
+          lastActiveModelIds.current = current;
+        } finally {
+          topology.setTopologyLoading(false);
+          topology.setIsSearching(false);
         }
-        
-        // Find neighbors through edges
-        const neighbors = edges
-          .filter(e => e.source === currentId || e.target === currentId)
-          .map(e => (e.source === currentId ? e.target : e.source));
-        
-        queue.push(...neighbors);
-      }
-      return null;
-    };
-
-    if (type === 'Node') {
-      // 1. Check if it's a direct Node
-      let targetNodeId: string | null = id;
-      const node = nodes.find(n => n.id === id);
-      
-      if (!node) {
-        // 2. Check if it's an AttachedEquipment mrid
-        const parentNode = nodes.find(n => n.attached_equipment?.some(eq => eq.mrid === id));
-        if (parentNode) {
-          targetNodeId = parentNode.id;
-        } else {
-          targetNodeId = null;
-        }
-      }
-
-      if (targetNodeId) {
-        const geoId = findNearestGeographicNodeId(targetNodeId);
-        if (geoId) {
-          setHighlightedNodes(new Set([geoId]));
-          setHighlightedEdges(new Set());
-          setFitBoundsTrigger(prev => prev + 1);
-        }
-      }
-    } else {
-      const edge = edges.find(e => e.id === id || `${e.source}-${e.target}` === id);
-      if (edge) {
-        const geoSource = findNearestGeographicNodeId(edge.source);
-        const geoTarget = findNearestGeographicNodeId(edge.target);
-        const highlights = new Set<string>();
-        if (geoSource) highlights.add(geoSource);
-        if (geoTarget) highlights.add(geoTarget);
-        
-        if (highlights.size > 0) {
-          setHighlightedNodes(highlights);
-          setHighlightedEdges(new Set([edge.id || `${edge.source}-${edge.target}`]));
-          setFitBoundsTrigger(prev => prev + 1);
-        }
-      }
-    }
-  }, [nodes, edges, setHighlightedNodes, setHighlightedEdges, setFitBoundsTrigger]);
-
-  const handleRunVoltageMap = async (agg: string) => {
-    setLoading(true);
-    setMapVoltageEstimatedRows(undefined);
-
-    const firstNodeId = selectedNodes.length > 0 ? selectedNodes[0].id : null;
-
-    // Fetch estimate separately to unblock the loading UI
-    fetchMapVoltageEstimate(dateRange.start, dateRange.end, agg, firstNodeId)
-      .then(res => setMapVoltageEstimatedRows(res.estimated_rows))
-      .catch(err => console.error('[App] Map estimate failed:', err));
-
-    try {
-      const res = await fetchMapVoltage(dateRange.start, dateRange.end, agg, firstNodeId);
-
-      if (res.estimated_rows !== undefined) {
-        setMapVoltageEstimatedRows(res.estimated_rows);
-      }
-
-      if (res.node_voltages) {
-        setNodeAverages(res.node_voltages);
-        setNodeCurrents(res.node_currents || null);
-        // We highlight the area if a specific node was queried
-        if (firstNodeId) {
-          const keys = Object.keys(res.node_voltages);
-          setHighlightedNodes(new Set(keys));
-          // For map voltage we don't have explicit edges yet in the same way, 
-          // but we can clear them or try to infer. Let's clear for now.
-          setHighlightedEdges(new Set());
-        } else {
-          setHighlightedNodes(new Set());
-          setHighlightedEdges(new Set());
-        }
-      }
-    } catch (err) {
-      console.error('[App] Failed to fetch map voltage overlay:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const performConsumptionFetch = async (windowId: string, nodeIds: string[], start: string, end: string) => {
-    try {
-      const res = await fetchConsumption(nodeIds, start, end);
-      if (res.downstream_node_ids) {
-        setHighlightedNodes(new Set(res.downstream_node_ids));
-      } else {
-        setHighlightedNodes(new Set());
-      }
-      if (res.downstream_edge_ids) {
-        setHighlightedEdges(new Set(res.downstream_edge_ids));
-      } else {
-        setHighlightedEdges(new Set());
-      }
-      
-      updateWindow(windowId, {
-        data: (res.time_series && res.time_series.length > 0) ? res.time_series : [],
-        estimatedRows: res.estimated_rows,
-        loading: false,
-        isMinimized: false
-      });
-
-    } catch (err) {
-      console.error('[App] Failed to fetch consumption:', err);
-      updateWindow(windowId, { loading: false });
-    } finally {
-      setFitBoundsTrigger(prev => prev + 1);
-    }
-  };
-
-  const handleShowConsumption = async (rangeOption?: string, overrideNode?: Node) => {
-    const nodesToQuery = overrideNode ? [overrideNode] : selectedNodes;
-    if (nodesToQuery.length === 0) return;
-    if (overrideNode) setSelectedNodes([overrideNode]);
-
-    const nodeLabel = nodesToQuery.length > 1
-      ? `${nodesToQuery.length} Assets Aggregate`
-      : (nodesToQuery[0]?.name || nodesToQuery[0]?.id || '');
-
-    const nodeIds = nodesToQuery.map(n => n.id);
-    const windowId = `consumption-${nodeIds.join('-')}`;
-
-    const range = calculateRange(globalConfig);
-    let start = range.start;
-    let end = range.end;
-    if (globalConfig.endDateType === 'now') {
-      setDateRange(range);
-    }
-
-    if (rangeOption) {
-      const endDate = new Date();
-      const startDate = new Date();
-      if (rangeOption === '1W') startDate.setDate(startDate.getDate() - 7);
-      if (rangeOption === '1M') startDate.setMonth(startDate.getMonth() - 1);
-      if (rangeOption === '1Y') startDate.setFullYear(startDate.getFullYear() - 1);
-
-      start = startDate.toISOString().split('.')[0];
-      end = endDate.toISOString().split('.')[0];
-      setDateRange({ start, end });
-    }
-
-    // Global minimization: minimize ALL other windows regardless of type
-    setAnalysisWindows(prev => prev.map(w =>
-      (w.id !== windowId)
-        ? { ...w, isMinimized: true }
-        : w
-    ));
-
-    const existing = analysisWindows.find(w => w.id === windowId);
-    if (existing) {
-      updateWindow(windowId, { isOpen: true, isMinimized: false });
-      return;
-    }
-
-    const newWindow: AnalysisInstance = {
-      id: windowId,
-      type: 'consumption',
-      nodeIds,
-      nodeName: nodeLabel,
-      isOpen: true,
-      isMinimized: false,
-      loading: true,
-      data: [],
-      isPaused: false,
-      zIndex: maxZIndex + 1
-    };
-    setMaxZIndex(prev => prev + 1);
-    setAnalysisWindows(prev => [...prev, newWindow]);
-
-    try {
-      const estRes = await fetchConsumptionEstimate(nodeIds, start, end);
-      updateWindow(windowId, { estimatedRows: estRes.estimated_rows });
-
-      if (estRes.estimated_rows > 10000000) {
-        updateWindow(windowId, {
-          isPaused: true,
-          pendingRequest: { nodeIds, start, end },
-          loading: false
-        });
         return;
       }
 
-      await performConsumptionFetch(windowId, nodeIds, start, end);
-    } catch (err) {
-      console.error('[App] Consumption safety check failed:', err);
-      updateWindow(windowId, { loading: false });
-    }
-  };
-
-  const handleConfirmConsumption = async (windowId: string) => {
-    const win = analysisWindows.find(w => w.id === windowId);
-    if (!win || !win.pendingRequest) return;
-    updateWindow(windowId, { isPaused: false, loading: true });
-    const { nodeIds, start, end } = win.pendingRequest;
-    await performConsumptionFetch(windowId, nodeIds, start, end);
-  };
-
-  const performVoltageFetch = async (windowId: string, nodeIds: string[], start: string, end: string, degreesToUse: number | null) => {
-    try {
-      const res = await fetchVoltageDistribution(nodeIds, start, end, degreesToUse === null ? undefined : degreesToUse);
-      if (res.downstream_node_ids) {
-        setHighlightedNodes(new Set(res.downstream_node_ids));
-      } else {
-        setHighlightedNodes(new Set());
-      }
-      if (res.downstream_edge_ids) {
-        setHighlightedEdges(new Set(res.downstream_edge_ids));
-      } else {
-        setHighlightedEdges(new Set());
-      }
-      
-      const distribution = res.distribution ? res.distribution.map((d: any) => ({
-        voltage: d.voltage.toString() + 'V',
-        a: d.phase_a,
-        b: d.phase_b,
-        c: d.phase_c,
-      })) : [];
-
-      let scatterData: any[] = [];
-      if (res.scatter) {
-        const maxCount = Math.max(...res.scatter.map((d: any) => d.count || 1), 1);
-        scatterData = [
-          {
-            color: 'cyan.6',
-            name: 'Voltage vs Loading Density',
-            data: res.scatter.map((d: any) => ({
-              x: d.loading,
-              y: d.voltage,
-              count: d.count || 1,
-              maxCount: maxCount
-            }))
+      // Incremental Update logic
+      if (added.length > 0 || removed.length > 0) {
+        topology.setTopologyLoading(true);
+        try {
+          // Remove nodes/edges for models that are no longer active
+          if (removed.length > 0) {
+            const removedSet = new Set(removed);
+            topology.setNodes(nodes => nodes.filter(n => !n.model_id || !removedSet.has(n.model_id)));
+            topology.setEdges(edges => edges.filter(e => !e.model_id || !removedSet.has(e.model_id)));
           }
-        ];
+
+          // Fetch and add nodes/edges for new models
+          if (added.length > 0) {
+            const data = await fetchTopology(added);
+            topology.setNodes(nodes => [...nodes, ...data.nodes]);
+            topology.setEdges(edges => [...edges, ...data.edges]);
+          }
+          
+          lastActiveModelIds.current = current;
+        } catch (err) {
+          console.error('[App] Incremental topology load failed:', err);
+        } finally {
+          topology.setTopologyLoading(false);
+          topology.setIsSearching(false);
+        }
       }
+    };
+    load();
+  }, [topology.topologyVersion, topology.activeModelIds]);
 
-      if (res.node_averages) {
-        setNodeAverages(res.node_averages);
-      }
+  const onNodeClick = useCallback((node: Node, multi: boolean) => {
+    const isMulti = multi || !!isMobile;
+    topology.setHighlightedNodes(prev => {
+      const next = new Set(isMulti ? Array.from(prev) : []);
+      next.add(node.id);
+      return next;
+    });
+    
+    setTargetLocation(null);
+  }, [topology, isMobile]);
 
-      updateWindow(windowId, {
-        data: distribution,
-        scatterData,
-        timeSeriesData: res.timeseries || [],
-        estimatedRows: res.estimated_rows,
-        loading: false,
-        isMinimized: false
-      });
+  const onEdgeClick = useCallback((edge: Edge, multi: boolean) => {
+    const isMulti = multi || !!isMobile;
+    topology.setHighlightedEdges(prev => {
+      const next = new Set(isMulti ? Array.from(prev) : []);
+      next.add(edge.id || `${edge.source}-${edge.target}`);
+      return next;
+    });
 
-    } catch (err) {
-      console.error('[App] Failed to fetch voltage distribution:', err);
-      updateWindow(windowId, { loading: false });
-    } finally {
-      setFitBoundsTrigger(prev => prev + 1);
-    }
-  };
-
-  const handleShowVoltageDistribution = async (rangeOption?: string, overrideNode?: Node, degrees?: number | null) => {
-    const nodesToQuery = overrideNode ? [overrideNode] : selectedNodes;
-    if (nodesToQuery.length === 0) return;
-    if (overrideNode) setSelectedNodes([overrideNode]);
-
-    const nodeIds = nodesToQuery.map(n => n.id);
-    const nodeLabel = nodesToQuery[0]?.name || nodesToQuery[0]?.id || '';
-    const windowId = `voltage-${nodeIds.join('-')}`;
-
-    const range = calculateRange(globalConfig);
-    let start = range.start;
-    let end = range.end;
-    if (globalConfig.endDateType === 'now') {
-      setDateRange(range);
-    }
-
-    if (rangeOption) {
-      const endDate = new Date();
-      const startDate = new Date();
-      if (rangeOption === '1W') startDate.setDate(startDate.getDate() - 7);
-      if (rangeOption === '1M') startDate.setMonth(startDate.getMonth() - 1);
-      if (rangeOption === '1Y') startDate.setFullYear(startDate.getFullYear() - 1);
-
-      start = startDate.toISOString().split('.')[0];
-      end = endDate.toISOString().split('.')[0];
-      setDateRange({ start, end });
-    }
-
-    // Global minimization: minimize ALL other windows regardless of type
-    setAnalysisWindows(prev => prev.map(w =>
-      (w.id !== windowId)
-        ? { ...w, isMinimized: true }
-        : w
-    ));
-
-    const existing = analysisWindows.find(w => w.id === windowId);
-    const currentDegrees = existing?.degrees ?? 5;
-    const degreesToUse = degrees !== undefined ? degrees : currentDegrees;
-
-    if (existing && degrees === undefined) {
-      updateWindow(windowId, { isOpen: true, isMinimized: false });
-      return;
-    }
-
-    if (existing) {
-        const newZ = maxZIndex + 1;
-        setMaxZIndex(newZ);
-        updateWindow(windowId, { loading: true, degrees: degreesToUse, isMinimized: false, isOpen: true, zIndex: newZ });
-    } else {
-        const newZ = maxZIndex + 1;
-        setMaxZIndex(newZ);
-        const newWindow: AnalysisInstance = {
-            id: windowId,
-            type: 'voltage',
-            nodeIds,
-            nodeName: nodeLabel,
-            isOpen: true,
-            isMinimized: false,
-            loading: true,
-            data: [],
-            degrees: degreesToUse,
-            isPaused: false,
-            zIndex: newZ
-        };
-        setAnalysisWindows(prev => [...prev, newWindow]);
-    }
-
-    setNodeAverages(null);
-
-    try {
-      const estRes = await fetchVoltageEstimate(nodeIds, start, end, degreesToUse === null ? undefined : degreesToUse);
-      updateWindow(windowId, { estimatedRows: estRes.estimated_rows });
-
-      if (estRes.estimated_rows > 10000000) {
-        updateWindow(windowId, {
-          isPaused: true,
-          pendingRequest: { nodeIds, start, end, degrees: degreesToUse },
-          loading: false
-        });
-        return;
-      }
-
-      await performVoltageFetch(windowId, nodeIds, start, end, degreesToUse);
-    } catch (err) {
-      console.error('[App] Voltage safety check failed:', err);
-      updateWindow(windowId, { loading: false });
-    }
-  };
-
-  const handleConfirmVoltage = async (windowId: string) => {
-    const win = analysisWindows.find(w => w.id === windowId);
-    if (!win || !win.pendingRequest) return;
-    updateWindow(windowId, { isPaused: false, loading: true });
-    const { nodeIds, start, end, degrees } = win.pendingRequest;
-    await performVoltageFetch(windowId, nodeIds, start, end, degrees!);
-  };
+    setTargetLocation(null);
+  }, [topology, isMobile]);
 
   return (
     <MantineProvider defaultColorScheme="dark">
       <GlobalSettingsModal
         opened={settingsOpen}
         onClose={() => setSettingsOpen(false)}
-        config={globalConfig}
+        config={analytics.globalConfig}
         onSave={(newConfig) => {
-          setGlobalConfig(newConfig);
-          const newRange = calculateRange(newConfig);
-          setDateRange(newRange);
+          analytics.setGlobalConfig(newConfig);
+          localStorage.setItem(SETTINGS_KEY, JSON.stringify(newConfig));
+          if (newConfig.layoutMode === 'grid') {
+            analytics.setAnalysisWindows(prev => prev.map(w => ({ ...w, isMinimized: true })));
+          }
         }}
       />
-      <DisplayRulesManager 
-        opened={displayRulesOpen} 
-        onClose={() => setDisplayRulesOpen(false)} 
+      
+      <DisplayRulesManager
+        opened={displayRulesOpen}
+        onClose={() => setDisplayRulesOpen(false)}
         onFocus={bringDisplayRulesToFront}
         zIndex={displayRulesZIndex}
-        onRulesChanged={refreshTopology}
+        onRulesChanged={topology.refreshTopology}
       />
 
-      <Box h="100vh" w="100vw" style={{ position: 'relative', overflow: 'hidden' }}>
-
-
-          {/* Deck.GL Interactive Grid Map */}
-          <Box style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
-            <GridMap
-              nodes={nodes}
-              edges={edges}
-              onNodeClick={onNodeClick}
-              onEdgeClick={onEdgeClick}
-              highlightedNodes={highlightedNodes}
-              highlightedEdges={highlightedEdges}
-              selectedNodeIds={selectedNodes.map(n => n.id)}
-              nodeAverages={nodeAverages}
-              nodeCurrents={nodeCurrents}
-              onMapClick={handleClearSelection}
-              voltageScale={voltageScale}
-              fitHighlightedNodesTrigger={fitBoundsTrigger}
-              skipGlobalFit={isSearching}
-              onViewStateChange={setMainViewState}
-              goToLocation={goToLocation}
-              spriteVersion={topologyVersion}
+      <Box style={{ height: '100vh', width: '100vw', background: '#101113', overflow: 'hidden', display: 'flex' }}>
+        {/* Map Container */}
+        <Box style={{ flex: 1, position: 'relative', height: '100%', zIndex: 0 }}>
+          <GridMap
+            nodes={topology.nodes}
+            edges={topology.edges}
+            onNodeClick={(node, multiSelect) => onNodeClick(node, multiSelect)}
+            onEdgeClick={(edge, multiSelect) => onEdgeClick(edge, multiSelect)}
+            highlightedNodes={topology.highlightedNodes}
+            highlightedEdges={topology.highlightedEdges}
+            nodeAverages={topology.nodeAverages}
+            nodeCurrents={topology.nodeCurrents}
+            onMapClick={topology.handleClearSelection}
+            voltageScale={voltageScale}
+            onViewStateChange={setViewState}
+            goToLocation={targetLocation}
+          />
+          
+          {!isMobile && (
+            <Minimap 
+              nodes={topology.nodes} 
+              edges={topology.edges}
+              viewState={viewState}
+              onNavigate={(lon, lat) => setTargetLocation({ longitude: lon, latitude: lat })}
+              selectedNodeIds={Array.from(topology.highlightedNodes)}
+            />
+          )}
+          
+          <VoltageScalePanel 
+            voltageScale={voltageScale} 
+            setVoltageScale={setVoltageScale}
+            visible={analytics.analysisWindows.some(w => w.type === 'voltage' && w.isOpen)}
+          />
+ 
+          <OverlayControls
+            activeModelIds={topology.activeModelIds}
+            setActiveModelIds={topology.setActiveModelIds}
+            onSearchSelect={onNodeClick}
+            onSettingsClick={() => setSettingsOpen(true)}
+            onDisplayRulesClick={() => setDisplayRulesOpen(true)}
+            onRefreshTopology={topology.refreshTopology}
+            onClearSelection={topology.handleClearSelection}
+            showAnalyticsSidebar={analytics.globalConfig.showAnalyticsSidebar}
+            onToggleSidebar={() => analytics.setGlobalConfig(prev => ({ ...prev, showAnalyticsSidebar: !prev.showAnalyticsSidebar }))}
+            isMobile={isMobile}
+          />
+          {/* Selection HUD - positioned under search */}
+          <Box style={{ 
+            position: 'absolute', 
+            top: isMobile ? 85 : 75, // Closer to menu but not overlapping
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1000,
+            pointerEvents: 'none',
+            maxWidth: 'calc(100vw - 20px)'
+          }}>
+            <AnalysisToolbar
+              selectedNodes={topology.nodes.filter(n => topology.highlightedNodes.has(n.id))}
+              selectedEdgeCount={topology.highlightedEdges.size}
+              onClearSelection={topology.handleClearSelection}
+              onViewConsumption={() => {
+                let nodeIds = Array.from(topology.highlightedNodes);
+                if (nodeIds.length === 0 && topology.highlightedEdges.size > 0) {
+                  const edgeIds = Array.from(topology.highlightedEdges);
+                  nodeIds = Array.from(new Set(
+                    edgeIds.map(eid => 
+                      topology.edges.find(e => e.id === eid || `${e.source}-${e.target}` === eid)?.target
+                    ).filter(Boolean) as string[]
+                  ));
+                }
+                const name = nodeIds.length === 1 ? (topology.nodes.find(n => n.id === nodeIds[0])?.name || 'Selected Asset') : `${nodeIds.length} Assets`;
+                execution.handleRunConsumption(nodeIds, name);
+              }}
+              onViewVoltage={() => {
+                let nodeIds = Array.from(topology.highlightedNodes);
+                if (nodeIds.length === 0 && topology.highlightedEdges.size > 0) {
+                  const edgeIds = Array.from(topology.highlightedEdges);
+                  nodeIds = Array.from(new Set(
+                    edgeIds.map(eid => 
+                      topology.edges.find(e => e.id === eid || `${e.source}-${e.target}` === eid)?.target
+                    ).filter(Boolean) as string[]
+                  ));
+                }
+                const name = nodeIds.length === 1 ? (topology.nodes.find(n => n.id === nodeIds[0])?.name || 'Selected Asset') : `${nodeIds.length} Assets`;
+                execution.handleRunVoltageMap(nodeIds, name);
+              }}
+              onViewDiagnostic={() => {
+                const firstId = Array.from(topology.highlightedNodes)[0];
+                if (firstId) {
+                  const node = topology.nodes.find(n => n.id === firstId);
+                  const name = node?.name || 'Diagnostic';
+                  analytics.setAnalysisWindows(prev => [...prev, {
+                    id: `diag-${Date.now()}`,
+                    type: 'diagnostic',
+                    nodeIds: [firstId],
+                    nodeName: name,
+                    isOpen: true,
+                    isMinimized: false,
+                    loading: false,
+                    data: [],
+                    zIndex: 1000
+                  }]);
+                }
+              }}
+              visible={topology.highlightedNodes.size > 0 || topology.highlightedEdges.size > 0}
+              dateRange={dateRange}
+              configLabel="Global Profile"
+              onOpenSettings={() => setSettingsOpen(true)}
             />
           </Box>
 
-
-          {/* Persistent Overlay Panels */}
-          <VoltageScalePanel
-            voltageScale={voltageScale}
-            setVoltageScale={setVoltageScale}
-            visible={!!nodeAverages}
+          <AnalysisWindowLayer
+            windows={analytics.analysisWindows.filter(win => win.isOpen && !analytics.pinnedWindowIds.includes(win.id))}
+            onClose={analytics.removeWindow}
+            onPin={analytics.togglePin}
+            onConfirmConsumption={(win) => execution.performConsumptionFetch(win.id, win.nodeIds, dateRange.start, dateRange.end)}
+            onConfirmVoltage={(win) => execution.performVoltageFetch(win.id, win.nodeIds, dateRange.start, dateRange.end, win.degrees ?? 5)}
+            onShowVoltageDistribution={execution.handleRunVoltageMap}
+            pinnedIds={analytics.pinnedWindowIds}
+            isPinnedList={false}
           />
-
-          {/* Floating Action Button and Analysis Toolbar */}
-          <Box style={{ position: 'absolute', top: 20, right: 20, zIndex: 10000, pointerEvents: 'none' }}>
-            <Stack align="flex-end" gap="sm" style={{ pointerEvents: 'none' }}>
-              <Group gap="xs" wrap="nowrap" justify="flex-end" style={{ pointerEvents: 'auto' }}>
-                <GlobalSearch 
-                  onSearchSelect={handleSearchSelect} 
-                  isMobile={isMobile} 
-                  loading={topologyLoading}
-                />
-
-                  <ModelSwitcher 
-                    activeModelIds={activeModelIds}
-                    onModelsChange={handleModelsChange} 
-                    onZoomToModel={handleZoomToModel}
-                    loading={topologyLoading}
-                  />
-
-
- 
-                {selectedNodes.length > 0 && (
-                  <Tooltip label="Diagnostic View" position="bottom" withArrow>
-                    <ActionIcon
-                      variant="filled"
-                      color="teal"
-                      size="xl"
-                      radius="md"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleShowDiagnostic();
-                      }}
-                      style={{
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                      }}
-                    >
-                      <Activity size={20} />
-                    </ActionIcon>
-                  </Tooltip>
-                )}
-
-                <Tooltip label="Global Settings" position="bottom" withArrow>
-                  <ActionIcon
-                    variant="filled"
-                    color={settingsOpen ? "blue" : "gray"}
-                    size="xl"
-                    radius="md"
-                    onClick={(e) => {
-                      console.log('Settings clicked');
-                      e.stopPropagation();
-                      setSettingsOpen(true);
-                    }}
-                    style={{
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                    }}
-                  >
-                    <Settings size={20} />
-                  </ActionIcon>
-                </Tooltip>
-
-                  <Menu 
-                    shadow="md" 
-                    width={200} 
-                    position="bottom-end" 
-                    withArrow 
-                    offset={10}
-                    opened={menuOpened}
-                    onChange={setMenuOpened}
-                    zIndex={11000}
-                  >
-                  <Menu.Target>
-                    <ActionIcon
-                      variant="filled"
-                      color={menuOpened ? "blue" : "gray"}
-                      size="xl"
-                      radius="md"
-                      style={{
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                        border: '1px solid rgba(255,255,255,0.1)'
-                      }}
-                    >
-                      <MenuIcon />
-                    </ActionIcon>
-                  </Menu.Target>
-
-                  <Menu.Dropdown bg="rgba(26, 27, 30, 0.95)" style={{ backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.1)' }}>
-                    <Menu.Label>Workspace</Menu.Label>
-                    <Menu.Item
-                      leftSection={<Settings size={16} />}
-                      onClick={() => setSettingsOpen(true)}
-                    >
-                      Settings
-                    </Menu.Item>
-                    <Menu.Item
-                      leftSection={<Zap size={16} />}
-                      onClick={() => setDisplayRulesOpen(true)}
-                    >
-                      Display Rules
-                    </Menu.Item>
-
-                    <Menu.Label>Analysis</Menu.Label>
-                    <Menu.Item
-                      leftSection={<Activity size={16} />}
-                      onClick={() => setActiveSidePanel(p => p === 'analytics' ? 'none' : 'analytics')}
-                      bg={activeSidePanel === 'analytics' ? 'rgba(51, 154, 240, 0.2)' : undefined}
-                    >
-                      Voltage Map
-                    </Menu.Item>
-
-                    <Menu.Label>Support</Menu.Label>
-                    <Menu.Item
-                      leftSection={<Search size={16} />}
-                      onClick={() => window.open('/docs/', '_blank')}
-                    >
-                      Docs
-                    </Menu.Item>
-
-                    <Menu.Divider />
-                    <Menu.Item
-                      leftSection={<X size={16} />}
-                      color="red"
-                      onClick={() => setActiveSidePanel('none')}
-                    >
-                      Close All
-                    </Menu.Item>
-                  </Menu.Dropdown>
-                </Menu>
-              </Group>
-
-              <AnalysisToolbar
-                selectedNodes={selectedNodes}
-                onClearSelection={handleClearSelection}
-                onViewConsumption={() => handleShowConsumption()}
-                onViewVoltage={() => handleShowVoltageDistribution()}
-                onViewDiagnostic={() => handleShowDiagnostic()}
-                visible={selectedNodes.length > 0}
-                dateRange={dateRange}
-                configLabel={globalConfig.defaultDuration === 'custom' ? `${globalConfig.customDays} Days` : globalConfig.defaultDuration}
-                onOpenSettings={() => setSettingsOpen(true)}
-              />
-
-            </Stack>
-          </Box>
-
-          {/* Minimap - bottom right corner, desktop only */}
-          {!isMobile && nodes.length > 0 && (
-            <Box style={{ position: 'absolute', bottom: 20, right: 20, zIndex: 100, pointerEvents: 'none' }}>
-              <Minimap
-                nodes={nodes}
-                edges={edges}
-                viewState={mainViewState}
-                selectedNodeIds={selectedNodes.map(n => n.id)}
-                onNavigate={(lon, lat) => setGoToLocation({ longitude: lon, latitude: lat })}
-              />
-            </Box>
-          )}
-
-          {activeSidePanel !== 'none' && (
-            <Box
-              style={{ position: 'absolute', top: 80, right: 20, zIndex: 10, pointerEvents: 'none' }}
-              w={{ base: 'calc(100vw - 40px)', sm: 400 }}
-            >
-              <Stack gap="16px">
-
-                {activeSidePanel === 'analytics' && (
-                  <div style={{ pointerEvents: 'auto' }}>
-                    <AnalyticsPanel
-                      dateRange={dateRange}
-                      setDateRange={setDateRange}
-                      loading={loading}
-                      estimatedRows={mapVoltageEstimatedRows}
-                      onRunVoltageMap={handleRunVoltageMap}
-                    />
-                  </div>
-                )}
-              </Stack>
-            </Box>
-          )}
-
-          {analysisWindows.map(win => (
-            win.type === 'consumption' ? (
-              <ConsumptionTimeSeriesModal
-                key={win.id}
-                isOpen={win.isOpen}
-                onClose={() => removeWindow(win.id)}
-                onFocus={() => bringWindowToFront(win.id)}
-                zIndex={win.zIndex}
-                loading={win.loading}
-                data={win.data}
-                estimatedRows={win.estimatedRows}
-                nodeName={win.nodeName}
-                isMinimized={win.isMinimized}
-                onMinimize={() => updateWindow(win.id, { isMinimized: true })}
-                isPaused={win.isPaused ?? false}
-                onConfirm={() => handleConfirmConsumption(win.id)}
-              />
-            ) : win.type === 'voltage' ? (
-              <VoltageDistributionModal
-                key={win.id}
-                isOpen={win.isOpen}
-                onClose={() => removeWindow(win.id)}
-                onFocus={() => bringWindowToFront(win.id)}
-                zIndex={win.zIndex}
-                loading={win.loading}
-                data={win.data}
-                scatterData={win.scatterData || []}
-                timeSeriesData={win.timeSeriesData || []}
-                estimatedRows={win.estimatedRows}
-                nodeName={win.nodeName}
-                degrees={win.degrees ?? 5}
-                onDegreesChange={(d: number | null) => handleShowVoltageDistribution(undefined, undefined, d)}
-                isMinimized={win.isMinimized}
-                onMinimize={() => updateWindow(win.id, { isMinimized: true })}
-                isPaused={win.isPaused ?? false}
-                onConfirm={() => handleConfirmVoltage(win.id)}
-              />
-            ) : win.type === 'diagnostic' ? (
-              <DiagnosticModal
-                key={win.id}
-                isOpen={win.isOpen}
-                onClose={() => removeWindow(win.id)}
-                onFocus={() => bringWindowToFront(win.id)}
-                zIndex={win.zIndex}
-                id={win.nodeIds[0]}
-                type={win.assetType || 'Node'}
-                title={win.nodeName}
-                onZoomTo={handleZoomToAsset}
-              />
-            ) : null
-          ))}
-
-          {/* Minimized Modal Tabs */}
-          <Box style={{ position: 'absolute', bottom: 20, left: 20, zIndex: 9999, display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            {analysisWindows.filter(w => w.isOpen && w.isMinimized).map(win => (
-              <Paper
-                key={win.id}
-                withBorder
-                px="sm"
-                py="xs"
-                style={{
-                  cursor: 'pointer',
-                  background: 'rgba(26, 27, 30, 0.95)',
-                  backdropFilter: 'blur(10px)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                  border: '1px solid rgba(255,255,255,0.1)'
-                }}
-                onClick={() => {
-                  bringWindowToFront(win.id);
-                  updateWindow(win.id, { isMinimized: false });
-                }}
-              >
-                <Group gap="xs" wrap="nowrap">
-                  {win.type === 'consumption' ? (
-                    <Zap size={14} color="#339af0" />
-                  ) : win.type === 'voltage' ? (
-                    <Activity size={14} color="#fab005" />
-                  ) : (
-                    <Search size={14} color="#20c997" />
-                  )}
-                  <Box style={{ fontSize: '12px', fontWeight: 500 }}>
-                    {win.nodeName} ({win.type.charAt(0).toUpperCase() + win.type.slice(1)})
-                  </Box>
-                  <ActionIcon
-                    size="xs"
-                    variant="subtle"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeWindow(win.id);
-                    }}
-                  >
-                    <X size={12} />
-                  </ActionIcon>
-                </Group>
-              </Paper>
-            ))}
-          </Box>
         </Box>
-    </MantineProvider >
+
+        {/* Right Resizable Sidebar */}
+        {analytics.globalConfig.showAnalyticsSidebar && (
+          <AnalyticsSidebar
+            width={analytics.sidebarWidth}
+            onWidthChange={analytics.setSidebarWidth}
+            onClose={() => analytics.setGlobalConfig(prev => ({ ...prev, showAnalyticsSidebar: false }))}
+          >
+            <AnalyticsDashboard columns={1}>
+              <AnalysisWindowLayer
+                isPinnedList
+                windows={analytics.analysisWindows.filter(w => w.isOpen && analytics.pinnedWindowIds.includes(w.id))}
+                onClose={analytics.removeWindow}
+                onPin={analytics.togglePin}
+                onConfirmConsumption={(win) => execution.performConsumptionFetch(win.id, win.nodeIds, dateRange.start, dateRange.end)}
+                onConfirmVoltage={(win) => execution.performVoltageFetch(win.id, win.nodeIds, dateRange.start, dateRange.end, win.degrees ?? 5)}
+                onShowVoltageDistribution={execution.handleRunVoltageMap}
+                pinnedIds={analytics.pinnedWindowIds}
+              />
+            </AnalyticsDashboard>
+          </AnalyticsSidebar>
+        )}
+      </Box>
+    </MantineProvider>
   );
 }

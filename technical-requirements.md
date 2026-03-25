@@ -26,8 +26,9 @@
         *   Implement `CimRuleBuilder.tsx` as a recursive component that renders `ConditionGroup` components.
         *   Each group manages its own `logical_op` (AND/OR) and a list of `conditions` (either simple condition objects or nested groups).
     *   **Zoom-Level Rendering**:
-        *   The frontend must filter rendered nodes and edges based on the `min_zoom` and `max_zoom` properties of the matching display rule.
-        *   This filtering should happen in real-time in the `GridMap` based on `viewState.zoom`.
+        *   **Visibility Ranges**: Display rules must support defining a valid zoom range (`min_zoom` to `max_zoom`) for matched assets.
+        *   **Dynamic Hiding**: Assets matching a rule should only be rendered when the current map zoom falls within the specified range.
+    *   **Mobile Minimap**: The minimap must be hidden on mobile viewports (width <= 768px) to maximize usable map area. This is controlled via the `isMobile` media query in `App.tsx`.
 #### Display Rules Router (`display_rule_routes.py`)
 - Standard CRUD endpoints (`/configs`, `/rules`) backed by `admin_config.db`.
 - Complex filtering evaluations happen in pure Python.

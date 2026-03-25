@@ -4,6 +4,7 @@ import type { Node } from '../../../shared/types';
 
 interface AnalysisToolbarProps {
     selectedNodes: Node[];
+    selectedEdgeCount: number;
     onClearSelection: () => void;
     onViewConsumption: () => void;
     onViewVoltage: () => void;
@@ -16,6 +17,7 @@ interface AnalysisToolbarProps {
 
 export function AnalysisToolbar({
     selectedNodes,
+    selectedEdgeCount,
     onClearSelection,
     onViewConsumption,
     onViewVoltage,
@@ -25,80 +27,93 @@ export function AnalysisToolbar({
     configLabel,
     onOpenSettings
 }: AnalysisToolbarProps) {
-    const count = selectedNodes.length;
+    const count = selectedNodes.length + selectedEdgeCount;
 
     return (
         <Transition mounted={visible} transition="slide-left" duration={400} timingFunction="ease">
             {(styles) => (
                 <Paper
                     shadow="md"
-                    p="xs"
+                    p="6px"
                     radius="md"
                     style={{
                         ...styles,
                         backgroundColor: 'rgba(26, 27, 30, 0.85)',
                         backdropFilter: 'blur(12px)',
                         border: '1px solid rgba(255, 255, 255, 0.1)',
-                        pointerEvents: 'auto'
+                        pointerEvents: 'auto',
+                        maxWidth: '100%'
                     }}
                 >
-                    <Group gap="xs">
-                        <Group gap="xs" onClick={(e) => {
+                    <Group gap="xs" wrap="nowrap" style={{ maxWidth: '100%' }}>
+                        <Group gap="4px" onClick={(e) => {
                             e.stopPropagation();
                             onClearSelection();
-                        }} style={{ cursor: 'pointer' }}>
-                            <Badge color="blue" variant="filled" size="lg" radius="sm">
+                        }} style={{ cursor: 'pointer', flexShrink: 0 }}>
+                            <Badge color="blue" variant="filled" size="sm" radius="sm">
                                 {count}
                             </Badge>
-                            <Text size="xs" fw={500} c="dimmed" visibleFrom="xs">
-                                Assets Selected
+                            <Text size="xs" fw={700} c="dimmed" visibleFrom="md">
+                                Selected
                             </Text>
                         </Group>
+
+                        <Divider orientation="vertical" />
 
                         <Stack gap={0} onClick={(e) => {
                             e.stopPropagation();
                             onOpenSettings();
-                        }} style={{ cursor: 'pointer' }}>
-                            <Text size="10px" c="blue.4" fw={600} style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                {configLabel} • {new Date(dateRange.start).toLocaleDateString()} - {new Date(dateRange.end).toLocaleDateString()}
+                        }} style={{ cursor: 'pointer', flexShrink: 1, minWidth: 0 }}>
+                            <Text size="10px" c="blue.4" fw={700} style={{ 
+                                textTransform: 'uppercase', 
+                                letterSpacing: '0.5px',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                maxWidth: '120px'
+                            }}>
+                                {configLabel} • {new Date(dateRange.start).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} - {new Date(dateRange.end).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                             </Text>
                         </Stack>
 
                         <Divider orientation="vertical" />
 
-                        <Tooltip label="Joint Consumption Analysis" position="bottom" withArrow>
+                        <Tooltip label={(selectedNodes.length === 0 && selectedEdgeCount === 0) ? "Select an asset for analysis" : "Joint Consumption Analysis"} position="bottom" withArrow>
                             <ActionIcon
                                 variant="light"
-                                color="blue"
-                                size="lg"
+                                color={(selectedNodes.length === 0 && selectedEdgeCount === 0) ? "gray" : "blue"}
+                                size="md"
                                 onClick={onViewConsumption}
-                                radius="md"
+                                disabled={selectedNodes.length === 0 && selectedEdgeCount === 0}
+                                radius="sm"
                                 data-testid="btn-consumption"
                             >
                                 <BarChart3 size={18} />
                             </ActionIcon>
                         </Tooltip>
 
-                        <Tooltip label="Joint Voltage Distribution" position="bottom" withArrow>
+                        <Tooltip label={(selectedNodes.length === 0 && selectedEdgeCount === 0) ? "Select an asset for analysis" : "Joint Voltage Distribution"} position="bottom" withArrow>
                             <ActionIcon
                                 variant="light"
-                                color="cyan"
-                                size="lg"
+                                color={(selectedNodes.length === 0 && selectedEdgeCount === 0) ? "gray" : "cyan"}
+                                size="md"
                                 onClick={onViewVoltage}
-                                radius="md"
+                                disabled={selectedNodes.length === 0 && selectedEdgeCount === 0}
+                                radius="sm"
                                 data-testid="btn-voltage"
                             >
                                 <Activity size={18} />
                             </ActionIcon>
                         </Tooltip>
 
-                        <Tooltip label="CIM Diagnostic View" position="bottom" withArrow>
+                        <Tooltip label={(selectedNodes.length === 0 && selectedEdgeCount === 0) ? "Select an asset for analysis" : "CIM Diagnostic View"} position="bottom" withArrow>
                             <ActionIcon
                                 variant="light"
-                                color="teal"
-                                size="lg"
+                                color={(selectedNodes.length === 0 && selectedEdgeCount === 0) ? "gray" : "teal"}
+                                size="md"
                                 onClick={onViewDiagnostic}
-                                radius="md"
+                                disabled={selectedNodes.length === 0 && selectedEdgeCount === 0}
+                                radius="sm"
                                 data-testid="btn-diagnostic"
                             >
                                 <Database size={18} />
@@ -111,9 +126,9 @@ export function AnalysisToolbar({
                             <ActionIcon
                                 variant="subtle"
                                 color="gray"
-                                size="lg"
+                                size="md"
                                 onClick={onClearSelection}
-                                radius="md"
+                                radius="sm"
                             >
                                 <X size={18} />
                             </ActionIcon>

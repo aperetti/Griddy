@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { Stack, Text, ScrollArea, Table, Loader, Alert, Badge, Group, Code, Tabs, Box, Button } from '@mantine/core';
 import { AlertCircle, Database, Network, List, Share2, MapPin, Zap, Activity } from 'lucide-react';
 import { AnalysisWindow } from './AnalysisWindow';
@@ -19,7 +19,7 @@ interface DiagnosticModalProps {
     zIndex?: number;
 }
 
-export function DiagnosticModal({ 
+export const DiagnosticModal = memo(function DiagnosticModal({ 
     isOpen, 
     onClose, 
     id: initialId, 
@@ -239,4 +239,4 @@ export function DiagnosticModal({
             </Stack>
         </AnalysisWindow>
     );
-}
+});

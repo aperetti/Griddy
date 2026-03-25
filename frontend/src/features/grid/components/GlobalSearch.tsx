@@ -89,12 +89,15 @@ export function GlobalSearch({ onSearchSelect, isMobile, loading: modelLoading }
       autoFocus={isMobile}
       comboboxProps={{ withinPortal: true, zIndex: 1000 }}
       styles={{
-        root: { width: isMobile ? 'calc(100vw - 120px)' : 300 },
+        root: { width: isMobile ? 'calc(100vw - 120px)' : '100%' },
         input: {
           backgroundColor: 'rgba(26, 27, 30, 0.7)',
           backdropFilter: 'blur(10px)',
           border: '1px solid rgba(255, 255, 255, 0.1)',
           color: '#fff',
+          height: 44,
+          minHeight: 44,
+          fontSize: 16, // Better for mobile accessibility
         },
         dropdown: {
           backgroundColor: 'rgba(26, 27, 30, 0.95)',
