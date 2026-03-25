@@ -16,3 +16,8 @@
 **Vulnerability:** SQL injection vulnerability in `backend/src/analytics/calculate_consumption.py` where `VALUES` clauses were dynamically generated using f-string concatenation containing `node_id`.
 **Learning:** Even when building complex mapping CTEs like `phase_weights` in DuckDB, string concatenation should be avoided as it permits SQL injection vectors if input nodes are tampered with.
 **Prevention:** Construct a string of placeholders `(?, ?, ?, ?)` for each row in the `VALUES` clause, then pass a flattened list of all parameters (e.g., node IDs and their respective phase weights) in the query execution to ensure they are handled safely by the parameterised engine.
+
+## 2026-03-24 - [Overly Permissive CORS Configuration]
+**Vulnerability:** HIGH: The FastAPI backend had an overly permissive CORS configuration (`allow_origins=["*"]`), which allowed any domain to make cross-origin requests, potentially exposing sensitive grid data and APIs.
+**Learning:** Development defaults often leak into production environments if not explicitly restricted.
+**Prevention:** Always restrict CORS `allow_origins` using environment variables (e.g., `ALLOWED_ORIGINS`) and default to a strict list of internal and trusted local ports (e.g., 3000, 3001, 8000, 8080).
