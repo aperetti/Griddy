@@ -21,3 +21,7 @@
 **Vulnerability:** HIGH: The FastAPI backend had an overly permissive CORS configuration (`allow_origins=["*"]`), which allowed any domain to make cross-origin requests, potentially exposing sensitive grid data and APIs.
 **Learning:** Development defaults often leak into production environments if not explicitly restricted.
 **Prevention:** Always restrict CORS `allow_origins` using environment variables (e.g., `ALLOWED_ORIGINS`) and default to a strict list of internal and trusted local ports (e.g., 3000, 3001, 8000, 8080).
+## 2025-03-25 - [Fix unauthenticated admin config override endpoints]
+**Vulnerability:** The admin-tagged configuration endpoints (`GET /api/cim/config` and `POST /api/cim/config`) allowed unauthenticated users to read and manipulate global configuration overrides.
+**Learning:** Endpoints meant for administrators were missing required dependency injections for authentication (`Depends(get_current_username)`), leaving them open to the public even though they were correctly categorized in the Swagger docs using `tags=["admin"]`.
+**Prevention:** Always explicitly enforce authentication on sensitive endpoints at the route declaration level using FastAPI dependencies, and do not rely solely on tags or external documentation to restrict access.
