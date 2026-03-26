@@ -16,26 +16,17 @@ class TestDisplayRuleEngine(unittest.TestCase):
         cursor.execute("CREATE TABLE display_configs (id INTEGER PRIMARY KEY, name TEXT, is_default INTEGER)")
         cursor.execute("""
             CREATE TABLE display_config_rules (
-                id INTEGER PRIMARY KEY, 
-                config_id INTEGER, 
-                name TEXT, 
-                priority INTEGER, 
-                match_conditions TEXT, 
-                visual_type TEXT,
-                match_equipment TEXT,
-                match_edge_types TEXT,
-                size REAL,
-                label TEXT,
-                enabled INTEGER DEFAULT 1,
-                icon TEXT,
-                color_hex TEXT,
-                radial_offset REAL,
-                cluster_enabled INTEGER,
-                cluster_radius REAL,
-                cluster_max_zoom REAL,
-                min_zoom REAL,
-                max_zoom REAL,
-                css_overrides TEXT
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                config_id           INTEGER NOT NULL,
+                name                TEXT NOT NULL,
+                priority            INTEGER DEFAULT 0,
+                match_conditions    TEXT,
+                config              TEXT,
+                enabled             INTEGER DEFAULT 1,
+                match_equipment     TEXT,
+                match_edge_types    TEXT,
+                created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
         
@@ -58,19 +49,27 @@ class TestDisplayRuleEngine(unittest.TestCase):
     def add_rule(self, name, priority, conditions, visual_type, match_equipment=None, match_edge_types=None, size=1.0, label="", enabled=1):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
+        
+        # Pack visual properties into the consolidated 'config' JSON
+        config_data = {
+            "visual_type": visual_type,
+            "size": size,
+            "label": label,
+            "color_hex": None,  # Default or add as parameter if needed
+            "css_overrides": []
+        }
+        
         cursor.execute("""
             INSERT INTO display_config_rules 
-            (config_id, name, priority, match_conditions, visual_type, match_equipment, match_edge_types, size, label, enabled)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (config_id, name, priority, match_conditions, config, enabled, match_equipment, match_edge_types)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             self.config_id, name, priority, 
             json.dumps(conditions) if isinstance(conditions, dict) else conditions,
-            visual_type, 
+            json.dumps(config_data), 
+            enabled,
             json.dumps(match_equipment) if match_equipment else None,
-            json.dumps(match_edge_types) if match_edge_types else None,
-            size,
-            label,
-            enabled
+            json.dumps(match_edge_types) if match_edge_types else None
         ))
         conn.commit()
         conn.close()

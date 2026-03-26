@@ -154,22 +154,26 @@ class SpriteGenerator:
         try:
             with sqlite3.connect(ADMIN_SQLITE_PATH) as conn:
                 conn.row_factory = sqlite3.Row
-                rules = conn.execute("SELECT * FROM display_config_rules WHERE enabled = 1 AND icon IS NOT NULL").fetchall()
+                rules = conn.execute("SELECT * FROM display_config_rules WHERE enabled = 1").fetchall()
                 for rule in rules:
                     d = dict(rule)
+                    try:
+                        config = json.loads(d['config']) if d.get('config') else {}
+                    except:
+                        config = {}
                     
+                    icon_svg = config.get('icon')
+                    if not icon_svg:
+                        continue
+                        
                     css_str = ""
-                    if d.get('css_overrides') and d['css_overrides'].strip() != '[]':
-                        try:
-                            overrides = json.loads(d['css_overrides'])
-                            if isinstance(overrides, list):
-                                css_str = "\n".join(o.get('css', '') for o in overrides if isinstance(o, dict))
-                        except json.JSONDecodeError:
-                            pass
+                    overrides = config.get('css_overrides')
+                    if overrides and isinstance(overrides, list):
+                        css_str = "\n".join(o.get('css', '') for o in overrides if isinstance(o, dict))
 
                     items.append({
                         "id": f"rule_{d['id']}",
-                        "svg": self._process_svg(d['icon'], color=d.get('color_hex'), css=css_str),
+                        "svg": self._process_svg(icon_svg, color=config.get('color_hex'), css=css_str),
                         "name": d['name']
                     })
         except Exception as e:

@@ -50,17 +50,12 @@ class DisplayRuleEngine:
                 except:
                     rule['match_conditions'] = {}
                 
-                # Parse css_overrides JSON: [{"conditions": {...}, "css": "..."}]
+                # Parse config JSON
                 try:
-                    rule['css_overrides'] = json.loads(rule['css_overrides']) if rule.get('css_overrides') else []
+                    parsed_config = json.loads(rule['config']) if rule.get('config') else {}
+                    rule['config'] = parsed_config if isinstance(parsed_config, dict) else {}
                 except:
-                    rule['css_overrides'] = []
-                
-                # Ensure size and label have safe defaults if missing from DB
-                rule['size'] = rule.get('size', 1.0)
-                rule['label'] = rule.get('label', "")
-                rule['min_zoom'] = rule.get('min_zoom', 0.0)
-                rule['max_zoom'] = rule.get('max_zoom', 24.0)
+                    rule['config'] = {}
                 
                 self._rules.append(rule)
 
@@ -81,26 +76,27 @@ class DisplayRuleEngine:
             # Nodes can match on equipment type or properties
             match, objects_to_check = self._matches_rule(rule, node_data, is_edge=False)
             if match:
+                config = rule.get('config', {})
                 # Evaluate CSS overrides
                 active_css = []
-                for override in rule.get('css_overrides', []):
+                for override in (config.get('css_overrides') or []):
                     if self._check_conditions(override.get('conditions', {}), objects_to_check):
                         active_css.append(override.get('css', ""))
                 
                 return {
                     "rule_id": rule.get('id'),
-                    "visual_type": rule['visual_type'],
-                    "size": rule.get('size', 1.0),
-                    "label": rule.get('label', ""),
-                    "icon": rule.get('icon'),
-                    "color_hex": rule.get('color_hex'),
-                    "radial_offset": rule.get('radial_offset', 0.0),
-                    "cluster_enabled": bool(rule.get('cluster_enabled', 0)),
-                    "cluster_radius": rule.get('cluster_radius', 40.0),
-                    "cluster_max_zoom": rule.get('cluster_max_zoom', 20.0),
-                    "cluster_min_points": rule.get('cluster_min_points', 2),
-                    "min_zoom": rule.get('min_zoom', 0.0),
-                    "max_zoom": rule.get('max_zoom', 24.0),
+                    "visual_type": config.get('visual_type', 'Custom'),
+                    "size": config.get('size', 1.0),
+                    "label": config.get('label', ""),
+                    "icon": config.get('icon'),
+                    "color_hex": config.get('color_hex'),
+                    "radial_offset": config.get('radial_offset', 0.0),
+                    "cluster_enabled": bool(config.get('cluster_enabled', False)),
+                    "cluster_radius": config.get('cluster_radius', 40.0),
+                    "cluster_max_zoom": config.get('cluster_max_zoom', 20.0),
+                    "cluster_min_points": config.get('cluster_min_points', 2),
+                    "min_zoom": config.get('min_zoom', 0.0),
+                    "max_zoom": config.get('max_zoom', 24.0),
                     "display_css": "\n".join(active_css) if active_css else ""
                 }
         
@@ -117,26 +113,27 @@ class DisplayRuleEngine:
             # Edges can match on edge_type or properties
             match, objects_to_check = self._matches_rule(rule, edge_data, is_edge=True)
             if match:
+                config = rule.get('config', {})
                 # Evaluate CSS overrides
                 active_css = []
-                for override in rule.get('css_overrides', []):
+                for override in (config.get('css_overrides') or []):
                     if self._check_conditions(override.get('conditions', {}), objects_to_check):
                         active_css.append(override.get('css', ""))
                         
                 return {
                     "rule_id": rule.get('id'),
-                    "visual_type": rule['visual_type'],
-                    "size": rule.get('size', 1.0),
-                    "label": rule.get('label', ""),
-                    "icon": rule.get('icon'),
-                    "color_hex": rule.get('color_hex'),
-                    "radial_offset": rule.get('radial_offset', 0.0),
-                    "cluster_enabled": bool(rule.get('cluster_enabled', 0)),
-                    "cluster_radius": rule.get('cluster_radius', 40.0),
-                    "cluster_max_zoom": rule.get('cluster_max_zoom', 20.0),
-                    "cluster_min_points": rule.get('cluster_min_points', 2),
-                    "min_zoom": rule.get('min_zoom', 0.0),
-                    "max_zoom": rule.get('max_zoom', 24.0),
+                    "visual_type": config.get('visual_type', 'Custom'),
+                    "size": config.get('size', 1.0),
+                    "label": config.get('label', ""),
+                    "icon": config.get('icon'),
+                    "color_hex": config.get('color_hex'),
+                    "radial_offset": config.get('radial_offset', 0.0),
+                    "cluster_enabled": bool(config.get('cluster_enabled', False)),
+                    "cluster_radius": config.get('cluster_radius', 40.0),
+                    "cluster_max_zoom": config.get('cluster_max_zoom', 20.0),
+                    "cluster_min_points": config.get('cluster_min_points', 2),
+                    "min_zoom": config.get('min_zoom', 0.0),
+                    "max_zoom": config.get('max_zoom', 24.0),
                     "display_css": "\n".join(active_css) if active_css else ""
                 }
         

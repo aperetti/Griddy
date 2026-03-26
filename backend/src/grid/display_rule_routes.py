@@ -12,28 +12,32 @@ from fastapi import Depends
 router = APIRouter(prefix="/api/display-rules", tags=["display-rules"])
 
 # ── Models ────────────────────────────────────────────────────────
-class DisplayConfigUpdate(BaseModel):
-    name: str
-    description: Optional[str] = None
-    is_default: Optional[bool] = False
+class RuleConfig(BaseModel):
+    visual_type: str = "Custom"
+    icon: Optional[str] = None
+    color_hex: Optional[str] = None
+    size: float = 1.0
+    label: str = ""
+    css_overrides: List[Any] = []
+    radial_offset: float = 0.0
+    cluster_enabled: bool = False
+    cluster_radius: float = 40.0
+    cluster_max_zoom: float = 20.0
+    cluster_min_points: int = 2
+    min_zoom: float = 0.0
+    max_zoom: float = 24.0
 
 class RuleUpdate(BaseModel):
     name: str
-    visual_type: str
     priority: int = 0
     match_conditions: Optional[Dict[str, Any]] = None
-    icon: Optional[str] = None
-    color_hex: Optional[str] = None
-    size: Optional[float] = 1.0
-    label: Optional[str] = ""
-    cluster_enabled: Optional[bool] = False
-    cluster_radius: Optional[float] = 40.0
-    cluster_max_zoom: Optional[float] = 20.0
-    cluster_min_points: Optional[int] = 2
-    min_zoom: Optional[float] = 0.0
-    max_zoom: Optional[float] = 24.0
-    css_overrides: Optional[List[Any]] = []
     enabled: bool = True
+    config: RuleConfig = RuleConfig()
+
+class DisplayConfigUpdate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    is_default: bool = False
 
 # ── Helpers ───────────────────────────────────────────────────────
 def _get_admin_conn():
@@ -74,6 +78,23 @@ async def set_default_config(config_id: int, username: str = Depends(get_current
             return {"success": True}
     return await run_in_threadpool(_set)
 
+@router.delete("/configs/{config_id}")
+async def delete_display_config(config_id: int, username: str = Depends(get_current_username)):
+    def _delete():
+        with _get_admin_conn() as conn:
+            # Check if it's the default
+            row = conn.execute("SELECT is_default FROM display_configs WHERE id = ?", (config_id,)).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Config not found")
+            
+            if row['is_default']:
+                 raise HTTPException(status_code=400, detail="Cannot delete the default profile")
+            
+            conn.execute("DELETE FROM display_configs WHERE id = ?", (config_id,))
+            # display_config_rules has ON DELETE CASCADE in schema (from database_setup.py)
+            return {"success": True}
+    return await run_in_threadpool(_delete)
+
 @router.get("/configs/{config_id}/rules")
 async def list_config_rules(config_id: int, username: str = Depends(get_current_username)):
     def _list():
@@ -87,11 +108,19 @@ async def list_config_rules(config_id: int, username: str = Depends(get_current_
                 d = dict(row)
                 if d.get('match_conditions'):
                     try: d['match_conditions'] = json.loads(d['match_conditions'])
-                    except: pass
-                # css_overrides is now stored as a string, so parse it
-                if d.get('css_overrides'):
-                    try: d['css_overrides'] = json.loads(d['css_overrides'])
-                    except: pass
+                    except: d['match_conditions'] = {}
+                
+                if d.get('config'):
+                    try: 
+                        config_data = json.loads(d['config'])
+                        # Flatten or keep nested? The frontend currently expects flat.
+                        # Wait, the frontend refactor will expect nested.
+                        d['config'] = config_data
+                    except: 
+                        d['config'] = {}
+                else:
+                    d['config'] = {}
+                
                 results.append(d)
             return results
     return await run_in_threadpool(_list)
@@ -102,17 +131,11 @@ async def add_config_rule(config_id: int, rule: RuleUpdate, username: str = Depe
         with _get_admin_conn() as conn:
             cursor = conn.execute(
                 """INSERT INTO display_config_rules
-                   (config_id, name, visual_type, priority, match_conditions, icon, color_hex, size, label,
-                    cluster_enabled, cluster_radius, cluster_max_zoom, cluster_min_points,
-                    min_zoom, max_zoom,
-                    css_overrides, enabled, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
-                (config_id, rule.name, rule.visual_type, rule.priority,
+                   (config_id, name, priority, match_conditions, config, enabled, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
+                (config_id, rule.name, rule.priority,
                  json.dumps(rule.match_conditions) if rule.match_conditions else None,
-                 rule.icon, rule.color_hex, rule.size, rule.label,
-                 1 if rule.cluster_enabled else 0, rule.cluster_radius, rule.cluster_max_zoom, rule.cluster_min_points,
-                 rule.min_zoom, rule.max_zoom,
-                 json.dumps(rule.css_overrides) if rule.css_overrides is not None else "[]",
+                 json.dumps(rule.config.dict()),
                  1 if rule.enabled else 0)
             )
             display_engine.load_rules()
@@ -125,18 +148,11 @@ async def update_config_rule(rule_id: int, rule: RuleUpdate, username: str = Dep
         with _get_admin_conn() as conn:
             conn.execute(
                 """UPDATE display_config_rules SET
-                   name = ?, visual_type = ?, priority = ?, match_conditions = ?, icon = ?, color_hex = ?,
-                   size = ?, label = ?,
-                   cluster_enabled = ?, cluster_radius = ?, cluster_max_zoom = ?, cluster_min_points = ?,
-                   min_zoom = ?, max_zoom = ?,
-                   css_overrides = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
+                   name = ?, priority = ?, match_conditions = ?, config = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
                    WHERE id = ?""",
-                (rule.name, rule.visual_type, rule.priority,
+                (rule.name, rule.priority,
                  json.dumps(rule.match_conditions) if rule.match_conditions else None,
-                 rule.icon, rule.color_hex, rule.size, rule.label,
-                 1 if rule.cluster_enabled else 0, rule.cluster_radius, rule.cluster_max_zoom, rule.cluster_min_points,
-                 rule.min_zoom, rule.max_zoom,
-                 json.dumps(rule.css_overrides) if rule.css_overrides is not None else "[]",
+                 json.dumps(rule.config.dict()),
                  1 if rule.enabled else 0, rule_id)
             )
             display_engine.load_rules()
@@ -166,16 +182,10 @@ async def duplicate_config_rule(rule_id: int, username: str = Depends(get_curren
             new_name = f"{d['name']} (Copy)"
             cursor = conn.execute(
                 """INSERT INTO display_config_rules
-                   (config_id, name, visual_type, priority, match_conditions, icon, color_hex, size, label,
-                    cluster_enabled, cluster_radius, cluster_max_zoom, cluster_min_points,
-                    min_zoom, max_zoom,
-                    css_overrides, enabled, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
-                (d['config_id'], new_name, d['visual_type'], d['priority'],
-                 d['match_conditions'], d['icon'], d['color_hex'], d['size'], d['label'],
-                 d['cluster_enabled'], d['cluster_radius'], d['cluster_max_zoom'], d['cluster_min_points'],
-                 d['min_zoom'], d['max_zoom'],
-                 d['css_overrides'], d['enabled'])
+                   (config_id, name, priority, match_conditions, config, enabled, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
+                (d['config_id'], new_name, d['priority'],
+                 d['match_conditions'], d['config'], d['enabled'])
             )
             display_engine.load_rules()
             return {"id": cursor.lastrowid, "name": new_name}
@@ -200,10 +210,14 @@ async def get_active_config():
                 rd = dict(r)
                 if rd.get('match_conditions'):
                     try: rd['match_conditions'] = json.loads(rd['match_conditions'])
-                    except: pass
-                if rd.get('css_overrides'):
-                    try: rd['css_overrides'] = json.loads(rd['css_overrides'])
-                    except: pass
+                    except: rd['match_conditions'] = {}
+                
+                if rd.get('config'):
+                    try: rd['config'] = json.loads(rd['config'])
+                    except: rd['config'] = {}
+                else:
+                    rd['config'] = {}
+                    
                 rule_list.append(rd)
                 
             return {

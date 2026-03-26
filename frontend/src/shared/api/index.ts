@@ -89,29 +89,33 @@ export interface DisplayConfig {
     is_readonly: boolean;
 }
 
-export interface DisplayRule {
-    id: number;
-    config_id: number;
-    name: string;
-    priority: number;
+export interface RuleConfig {
     visual_type: string;
     icon?: string;
     color_hex?: string;
     size?: number;
     label?: string;
+    radial_offset?: number;
     cluster_enabled?: boolean;
     cluster_radius?: number;
     cluster_max_zoom?: number;
     cluster_min_points?: number;
     min_zoom?: number;
     max_zoom?: number;
-    display_css?: string;
     css_overrides?: Array<{
         conditions: any;
         css: string;
     }>;
+}
+
+export interface DisplayRule {
+    id: number;
+    config_id: number;
+    name: string;
+    priority: number;
     match_conditions: any; // Can be string (from inputs) or object (from API)
     enabled: boolean;
+    config: RuleConfig;
 }
 
 const getAuthHeaders = (): Record<string, string> => {
@@ -136,6 +140,29 @@ export const fetchDisplayRules = async (configId: number): Promise<DisplayRule[]
     });
     if (res.status === 401) throw new Error('Unauthorized');
     return res.json();
+};
+
+export const createDisplayConfig = async (name: string, description: string = ""): Promise<DisplayConfig> => {
+    const res = await fetch(`${ADMIN_API_BASE}/display-rules/configs`, {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json',
+            ...getAuthHeaders()
+        },
+        body: JSON.stringify({ name, description })
+    });
+    if (res.status === 401) throw new Error('Unauthorized');
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+};
+
+export const deleteDisplayConfig = async (configId: number): Promise<void> => {
+    const res = await fetch(`${ADMIN_API_BASE}/display-rules/configs/${configId}`, {
+        method: 'DELETE',
+        headers: { ...getAuthHeaders() }
+    });
+    if (res.status === 401) throw new Error('Unauthorized');
+    if (!res.ok) throw new Error(await res.text());
 };
 
 export const setDefaultDisplayConfig = async (configId: number): Promise<void> => {

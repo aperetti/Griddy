@@ -61,64 +61,22 @@ def init_admin_db():
     
     # Table for display rules within a configuration
     # match_conditions stores JSON of CIM conditions
+    # config stores JSON of display configuration (icon, color, etc.)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS display_config_rules (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
             config_id           INTEGER NOT NULL REFERENCES display_configs(id) ON DELETE CASCADE,
             name                TEXT NOT NULL,
-            visual_type         TEXT NOT NULL,
             priority            INTEGER DEFAULT 0,
-            match_edge_types    TEXT,
-            match_equipment     TEXT,
-            match_has_property  TEXT,
             match_conditions    TEXT,
-            icon                TEXT,
-            color_hex           TEXT,
-            size                REAL DEFAULT 1.0,
-            label               TEXT,
-            css_overrides       TEXT,
-            radial_offset       REAL DEFAULT 0.0,
-            cluster_enabled     INTEGER DEFAULT 0,
-            cluster_radius      REAL DEFAULT 40.0,
-            cluster_max_zoom    REAL DEFAULT 20.0,
-            cluster_min_points  INTEGER DEFAULT 2,
-            min_zoom            REAL DEFAULT 0.0,
-            max_zoom            REAL DEFAULT 24.0,
+            config              TEXT,
             enabled             INTEGER DEFAULT 1,
             created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
     
-    # Migration: Add css_overrides if it doesn't exist
-    try:
-        conn.execute("ALTER TABLE display_config_rules ADD COLUMN css_overrides TEXT")
-    except sqlite3.OperationalError:
-        pass # Already exists
-    
-    try:
-        conn.execute("ALTER TABLE display_config_rules ADD COLUMN radial_offset REAL DEFAULT 0.0")
-    except sqlite3.OperationalError:
-        pass # Already exists
-
-    try:
-        conn.execute("ALTER TABLE display_config_rules ADD COLUMN cluster_enabled INTEGER DEFAULT 0")
-        conn.execute("ALTER TABLE display_config_rules ADD COLUMN cluster_radius REAL DEFAULT 40.0")
-        conn.execute("ALTER TABLE display_config_rules ADD COLUMN cluster_max_zoom REAL DEFAULT 20.0")
-        conn.execute("ALTER TABLE display_config_rules ADD COLUMN cluster_min_points INTEGER DEFAULT 2")
-    except sqlite3.OperationalError:
-        pass # Already exists
-
-    try:
-        conn.execute("ALTER TABLE display_config_rules ADD COLUMN min_zoom REAL DEFAULT 0.0")
-        conn.execute("ALTER TABLE display_config_rules ADD COLUMN max_zoom REAL DEFAULT 24.0")
-    except sqlite3.OperationalError:
-        pass # Already exists
-
-    try:
-        conn.execute("ALTER TABLE display_config_rules ADD COLUMN enabled INTEGER DEFAULT 1")
-    except sqlite3.OperationalError:
-        pass # Already exists
+    # (Migrations for old schema are no longer needed as the table was recreated with consolidated 'config' column)
     
     # Ensure at least one default config exists
     cursor = conn.cursor()

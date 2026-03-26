@@ -6,21 +6,20 @@ import {
     NumberInput, JsonInput, Paper, Divider,
     ColorSwatch, Box, PasswordInput,
     Alert, FileButton, Grid, Textarea, Switch,
-    Fieldset
+    Fieldset, Menu, rem, Tooltip
 } from '@mantine/core';
 import {
     X, Upload, Maximize2, Trash2, Plus,
-    AlertCircle, Code, Eye, Info, Copy, Lock
+    AlertCircle, Code, Eye, Info, Copy, Lock,
+    ArrowLeft, Download, MoreVertical
 } from 'lucide-react';
 import { AnalysisWindow } from '../../analytics/components/AnalysisWindow';
-import {
-    Tooltip
-} from '@mantine/core';
 import {
     fetchDisplayConfigs, fetchDisplayRules,
     saveDisplayRule, deleteDisplayRule,
     duplicateDisplayRule,
     setDefaultDisplayConfig,
+    createDisplayConfig, deleteDisplayConfig,
     type DisplayConfig, type DisplayRule
 } from '../../../shared/api';
 import { CimRuleBuilder } from './CimRuleBuilder';
@@ -55,6 +54,10 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
     const [authPassword, setAuthPassword] = useState('');
     const [authError, setAuthError] = useState<string | null>(null);
     const [isAuthenticating, setIsAuthenticating] = useState(false);
+    
+    // Profile Management State
+    const [isCreatingConfig, setIsCreatingConfig] = useState(false);
+    const [newConfigName, setNewConfigName] = useState('');
     const isMobile = useMediaQuery('(max-width: 768px)');
 
     useEffect(() => {
@@ -162,7 +165,10 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
             const content = e.target?.result as string;
             const trimmed = content.trim();
             if (trimmed.startsWith('<svg') || trimmed.includes('<svg')) {
-                setEditingRule(prev => prev ? { ...prev, icon: content } : null);
+                setEditingRule(prev => prev ? { 
+                    ...prev, 
+                    config: { ...(prev.config || {}), icon: content } as any
+                } : null);
             } else {
                 console.warn('Uploaded file does not appear to be an SVG');
             }
@@ -171,12 +177,15 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
     };
 
     const openEditor = () => {
-        setEditorValue(editingRule?.icon || '');
+        setEditorValue(editingRule?.config?.icon || '');
         setIsEditorOpen(true);
     };
 
     const saveFromEditor = () => {
-        setEditingRule(prev => prev ? { ...prev, icon: editorValue } : null);
+        setEditingRule(prev => prev ? { 
+            ...prev, 
+            config: { ...(prev.config || {}), icon: editorValue } as any
+        } : null);
         setIsEditorOpen(false);
     };
 
@@ -186,44 +195,52 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
             enabled: true,
             priority: 0,
             match_conditions: '{}',
-            visual_type: 'Custom',
-            color_hex: '',
-            size: 1.0,
-            label: '',
-            cluster_enabled: false,
-            cluster_radius: 40,
-            cluster_max_zoom: 20,
-            cluster_min_points: 2,
-            min_zoom: 0,
-            max_zoom: 24,
-            css_overrides: []
+            config: {
+                visual_type: 'Custom',
+                color_hex: '',
+                size: 1.0,
+                label: '',
+                cluster_enabled: false,
+                cluster_radius: 40,
+                cluster_max_zoom: 20,
+                cluster_min_points: 2,
+                min_zoom: 0,
+                max_zoom: 24,
+                css_overrides: []
+            }
         });
     };
 
     const addOverride = () => {
         setEditingRule(prev => {
             if (!prev) return null;
-            const overrides = [...(prev.css_overrides || [])];
+            const config = { ...(prev.config || {}) } as any;
+            const overrides = [...(config.css_overrides || [])];
             overrides.push({ conditions: {}, css: '' });
-            return { ...prev, css_overrides: overrides };
+            config.css_overrides = overrides;
+            return { ...prev, config };
         });
     };
 
     const removeOverride = (index: number) => {
         setEditingRule(prev => {
             if (!prev) return null;
-            const overrides = [...(prev.css_overrides || [])];
+            const config = { ...(prev.config || {}) } as any;
+            const overrides = [...(config.css_overrides || [])];
             overrides.splice(index, 1);
-            return { ...prev, css_overrides: overrides };
+            config.css_overrides = overrides;
+            return { ...prev, config };
         });
     };
 
     const updateOverride = (index: number, override: any) => {
         setEditingRule(prev => {
             if (!prev) return null;
-            const overrides = [...(prev.css_overrides || [])];
+            const config = { ...(prev.config || {}) } as any;
+            const overrides = [...(config.css_overrides || [])];
             overrides[index] = override;
-            return { ...prev, css_overrides: overrides };
+            config.css_overrides = overrides;
+            return { ...prev, config };
         });
     };
 
@@ -249,6 +266,116 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
         } finally {
             setIsAuthenticating(false);
         }
+    };
+    
+    const handleExportConfig = () => {
+        if (!selectedConfigId) return;
+        const config = configs.find(c => c.id === selectedConfigId);
+        if (!config) return;
+        
+        const exportData = {
+            metadata: {
+                name: config.name,
+                description: config.description,
+                is_default: config.is_default,
+                version: "1.0"
+            },
+            rules: rules.map(rule => ({
+                name: rule.name,
+                priority: rule.priority,
+                enabled: rule.enabled,
+                match_conditions: rule.match_conditions,
+                config: rule.config
+            }))
+        };
+        
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${config.name.replace(/\s+/g, '_')}_config.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
+    const handleCreateConfig = async () => {
+        if (!newConfigName.trim()) return;
+        try {
+            const newConfig = await createDisplayConfig(newConfigName.trim());
+            setConfigs(prev => [...prev, newConfig]);
+            setSelectedConfigId(newConfig.id);
+            setNewConfigName('');
+            setIsCreatingConfig(false);
+        } catch (e) {
+            setSaveError(e instanceof Error ? e.message : 'Failed to create config');
+        }
+    };
+
+    const handleDeleteConfig = async () => {
+        if (!selectedConfigId) return;
+        const config = configs.find(c => c.id === selectedConfigId);
+        if (!config) return;
+        if (config.is_default) {
+            setSaveError("Cannot delete the default profile.");
+            return;
+        }
+        
+        if (!window.confirm(`Are you sure you want to delete the profile "${config.name}"? This will also delete all its rules.`)) {
+            return;
+        }
+        
+        try {
+            await deleteDisplayConfig(selectedConfigId);
+            setConfigs(prev => prev.filter(c => c.id !== selectedConfigId));
+            setSelectedConfigId(configs.find(c => c.is_default)?.id || null);
+        } catch (e) {
+            setSaveError(e instanceof Error ? e.message : 'Failed to delete config');
+        }
+    };
+
+    const handleImportConfig = async (file: File | null) => {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const data = JSON.parse(e.target?.result as string);
+                if (!data.metadata || !data.rules) {
+                    throw new Error("Invalid format: Missing metadata or rules");
+                }
+                
+                // 1. Create the config
+                const baseName = data.metadata.name || "Imported Profile";
+                let finalName = baseName;
+                let counter = 1;
+                while (configs.some(c => c.name === finalName)) {
+                    finalName = `${baseName} (${counter++})`;
+                }
+                
+                const newConfig = await createDisplayConfig(finalName, data.metadata.description);
+                
+                // 2. Import rules
+                for (const ruleData of data.rules) {
+                    await saveDisplayRule({
+                        config_id: newConfig.id,
+                        name: ruleData.name,
+                        priority: ruleData.priority,
+                        enabled: ruleData.enabled,
+                        match_conditions: ruleData.match_conditions,
+                        config: ruleData.config
+                    });
+                }
+                
+                // Refresh list and select new one
+                const updatedConfigs = await fetchDisplayConfigs();
+                setConfigs(updatedConfigs);
+                setSelectedConfigId(newConfig.id);
+            } catch (err) {
+                setSaveError(e instanceof Error ? (e as any).message : 'Import failed: Invalid JSON format');
+            }
+        };
+        reader.readAsText(file);
     };
 
     return (
@@ -317,28 +444,95 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                         {saveError}
                     </Alert>
                 )}
-                <Group justify="space-between" align="center" wrap="nowrap">
-                    <Select
-                        label="Configuration Profile"
-                        placeholder="Select a profile"
-                        data={Array.isArray(configs) ? configs.map(c => ({ value: c.id.toString(), label: c.name + (c.is_default ? ' (Default)' : '') })) : []}
-                        value={selectedConfigId?.toString()}
-                        onChange={(val) => setSelectedConfigId(val ? parseInt(val) : null)}
-                        style={{ flex: 1 }}
-                        size="xs"
-                        comboboxProps={{ zIndex: zIndex + 1000 }}
-                    />
-                    <Button
-                        variant="light"
-                        color="blue"
-                        size="xs"
-                        mt={window.innerWidth < 600 ? 0 : 20}
-                        disabled={!selectedConfigId || configs.find(c => c.id === selectedConfigId)?.is_default}
-                        onClick={() => selectedConfigId && handleSetDefault(selectedConfigId)}
-                    >
-                        Set Default
-                    </Button>
-                </Group>
+                {isCreatingConfig ? (
+                    <Group gap="xs" align="flex-end">
+                        <TextInput 
+                            label="New Profile Name"
+                            placeholder="Enter profile name..."
+                            value={newConfigName}
+                            onChange={(e) => setNewConfigName(e.currentTarget.value)}
+                            style={{ flex: 1 }}
+                            size="xs"
+                            autoFocus
+                            onKeyDown={(e) => e.key === 'Enter' && handleCreateConfig()}
+                        />
+                        <Button size="xs" onClick={handleCreateConfig} disabled={!newConfigName.trim()}>Create</Button>
+                        <Button size="xs" variant="light" color="gray" onClick={() => { setIsCreatingConfig(false); setNewConfigName(''); }}>Cancel</Button>
+                    </Group>
+                ) : (
+                    <Group justify="space-between" align="flex-end" wrap="nowrap">
+                        <Select
+                            label="Configuration Profile"
+                            placeholder="Select a profile"
+                            data={Array.isArray(configs) ? configs.map(c => ({ value: c.id.toString(), label: c.name + (c.is_default ? ' (Default)' : '') })) : []}
+                            value={selectedConfigId?.toString()}
+                            onChange={(val) => setSelectedConfigId(val ? parseInt(val) : null)}
+                            style={{ flex: 1 }}
+                            size="xs"
+                            comboboxProps={{ zIndex: zIndex + 1000 }}
+                        />
+                        <Group gap="xs" align="center">
+                            <Button
+                                variant="light"
+                                color="blue"
+                                size="xs"
+                                disabled={!selectedConfigId || configs.find(c => c.id === selectedConfigId)?.is_default}
+                                onClick={() => selectedConfigId && handleSetDefault(selectedConfigId)}
+                            >
+                                Set Default
+                            </Button>
+                            
+                            <Menu shadow="md" width={200} zIndex={zIndex + 1100}>
+                                <Menu.Target>
+                                    <ActionIcon variant="light" color="gray" size="md">
+                                        <MoreVertical size={18} />
+                                    </ActionIcon>
+                                </Menu.Target>
+
+                                <Menu.Dropdown>
+                                    <Menu.Label>Profile Options</Menu.Label>
+                                    <Menu.Item 
+                                        leftSection={<Plus style={{ width: rem(14), height: rem(14) }} />}
+                                        onClick={() => setIsCreatingConfig(true)}
+                                    >
+                                        New Profile
+                                    </Menu.Item>
+                                    
+                                    <FileButton onChange={handleImportConfig} accept="application/json">
+                                        {(props) => (
+                                            <Menu.Item 
+                                                {...props}
+                                                leftSection={<Upload style={{ width: rem(14), height: rem(14) }} />}
+                                            >
+                                                Import JSON
+                                            </Menu.Item>
+                                        )}
+                                    </FileButton>
+
+                                    <Menu.Item 
+                                        leftSection={<Download style={{ width: rem(14), height: rem(14) }} />}
+                                        disabled={!selectedConfigId}
+                                        onClick={handleExportConfig}
+                                    >
+                                        Export JSON
+                                    </Menu.Item>
+
+                                    <Menu.Divider />
+
+                                    <Menu.Label>Danger zone</Menu.Label>
+                                    <Menu.Item
+                                        color="red"
+                                        leftSection={<Trash2 style={{ width: rem(14), height: rem(14) }} />}
+                                        disabled={!selectedConfigId || configs.find(c => c.id === selectedConfigId)?.is_default}
+                                        onClick={handleDeleteConfig}
+                                    >
+                                        Delete Profile
+                                    </Menu.Item>
+                                </Menu.Dropdown>
+                            </Menu>
+                        </Group>
+                    </Group>
+                )}
 
                 <Divider label="Rules Priority" labelPosition="center" />
 
@@ -346,7 +540,17 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                     {editingRule ? (
                         <Stack gap="sm">
                             <Group justify="space-between">
-                                <Text fw={700} size="xs">{editingRule.id ? "Edit Rule" : "Add New Rule"}</Text>
+                                <Group gap="xs">
+                                    <ActionIcon 
+                                        variant="subtle" 
+                                        size="xs" 
+                                        onClick={() => setEditingRule(null)}
+                                        title="Back to list"
+                                    >
+                                        <ArrowLeft size={14} />
+                                    </ActionIcon>
+                                    <Text fw={700} size="xs">{editingRule.id ? "Edit Rule" : "Add New Rule"}</Text>
+                                </Group>
                                 <ActionIcon variant="subtle" size="xs" onClick={() => setEditingRule(null)}>
                                     <X size={14} />
                                 </ActionIcon>
@@ -378,8 +582,11 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                                 </Group>
                                             }
                                             placeholder="e.g. Transformer"
-                                            value={editingRule?.visual_type || ''}
-                                            onChange={(e) => setEditingRule(prev => prev ? { ...prev, visual_type: e.target.value } : null)}
+                                            value={editingRule?.config?.visual_type || ''}
+                                            onChange={(e) => setEditingRule(prev => prev ? { 
+                                                ...prev, 
+                                                config: { ...(prev.config || {}), visual_type: e.target.value } as any
+                                            } : null)}
                                             size="xs"
                                         />
                                         <NumberInput
@@ -450,8 +657,11 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                             placeholder="1.0"
                                             step={0.1}
                                             decimalScale={1}
-                                            value={editingRule?.size || 1.0}
-                                            onChange={(val) => setEditingRule(prev => prev ? { ...prev, size: typeof val === 'number' ? val : 1.0 } : null)}
+                                            value={editingRule?.config?.size || 1.0}
+                                            onChange={(val) => setEditingRule(prev => prev ? { 
+                                                ...prev, 
+                                                config: { ...(prev.config || {}), size: typeof val === 'number' ? val : 1.0 } as any
+                                            } : null)}
                                             size="xs"
                                         />
                                     </Grid.Col>
@@ -481,7 +691,7 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                     
                                     <Grid.Col span={{ base: 4, sm: 1 }}>
                                         <Group justify="center" align="center" h="100%">
-                                            {editingRule?.icon && (editingRule.icon.trim().startsWith('<svg') || editingRule.icon.includes('<svg')) ? (
+                                            {editingRule?.config?.icon && (editingRule.config.icon.trim().startsWith('<svg') || editingRule.config.icon.includes('<svg')) ? (
                                                 <Box style={{ 
                                                     width: 32, 
                                                     height: 32, 
@@ -494,7 +704,7 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                                 }}>
                                                     <div 
                                                         style={{ width: '100%', height: '100%', display: 'flex' }}
-                                                        dangerouslySetInnerHTML={{ __html: editingRule.icon }} 
+                                                        dangerouslySetInnerHTML={{ __html: editingRule.config.icon }} 
                                                     />
                                                 </Box>
                                             ) : (
@@ -514,8 +724,11 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                                 </Group>
                                             }
                                             placeholder="Label..."
-                                            value={editingRule?.label || ''}
-                                            onChange={(e) => setEditingRule(prev => prev ? { ...prev, label: e.target.value } : null)}
+                                            value={editingRule?.config?.label || ''}
+                                            onChange={(e) => setEditingRule(prev => prev ? { 
+                                                ...prev, 
+                                                config: { ...(prev.config || {}), label: e.target.value } as any
+                                            } : null)}
                                             size="xs"
                                         />
                                     </Grid.Col>
@@ -539,8 +752,11 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                                 min={0}
                                                 max={24}
                                                 step={0.5}
-                                                value={editingRule?.min_zoom ?? 0}
-                                                onChange={(val) => setEditingRule(prev => prev ? { ...prev, min_zoom: typeof val === 'number' ? val : 0 } : null)}
+                                                value={editingRule?.config?.min_zoom ?? 0}
+                                                onChange={(val) => setEditingRule(prev => prev ? { 
+                                                    ...prev, 
+                                                    config: { ...(prev.config || {}), min_zoom: typeof val === 'number' ? val : 0 } as any
+                                                } : null)}
                                                 size="xs"
                                             />
                                         </Grid.Col>
@@ -559,8 +775,11 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                                 min={0}
                                                 max={24}
                                                 step={0.5}
-                                                value={editingRule?.max_zoom ?? 24}
-                                                onChange={(val) => setEditingRule(prev => prev ? { ...prev, max_zoom: typeof val === 'number' ? val : 24 } : null)}
+                                                value={editingRule?.config?.max_zoom ?? 24}
+                                                onChange={(val) => setEditingRule(prev => prev ? { 
+                                                    ...prev, 
+                                                    config: { ...(prev.config || {}), max_zoom: typeof val === 'number' ? val : 24 } as any
+                                                } : null)}
                                                 size="xs"
                                             />
                                         </Grid.Col>
@@ -575,8 +794,11 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                                     <Switch 
                                                         label="Enable Clustering" 
                                                         size="xs"
-                                                        checked={editingRule?.cluster_enabled || false}
-                                                        onChange={(e) => setEditingRule(prev => prev ? { ...prev, cluster_enabled: e.currentTarget.checked } : null)}
+                                                        checked={editingRule?.config?.cluster_enabled || false}
+                                                        onChange={(e) => setEditingRule(prev => prev ? { 
+                                                            ...prev, 
+                                                            config: { ...(prev.config || {}), cluster_enabled: e.currentTarget.checked } as any
+                                                        } : null)}
                                                     />
                                                     <Tooltip label="Groups nearby assets of this type into single markers at lower zoom levels." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
                                                         <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
@@ -584,25 +806,34 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                                 </Group>
                                             </Group>
 
-                                            {editingRule?.cluster_enabled && (
+                                            {editingRule?.config?.cluster_enabled && (
                                                 <Group grow>
                                                     <NumberInput
                                                         label="Radius"
                                                         size="xs"
-                                                        value={editingRule?.cluster_radius || 50}
-                                                        onChange={(val) => setEditingRule(prev => prev ? { ...prev, cluster_radius: typeof val === 'number' ? val : 50 } : null)}
+                                                        value={editingRule?.config?.cluster_radius || 50}
+                                                        onChange={(val) => setEditingRule(prev => prev ? { 
+                                                            ...prev, 
+                                                            config: { ...(prev.config || {}), cluster_radius: typeof val === 'number' ? val : 50 } as any
+                                                        } : null)}
                                                     />
                                                     <NumberInput
                                                         label="Max Zoom"
                                                         size="xs"
-                                                        value={editingRule?.cluster_max_zoom || 14}
-                                                        onChange={(val) => setEditingRule(prev => prev ? { ...prev, cluster_max_zoom: typeof val === 'number' ? val : 14 } : null)}
+                                                        value={editingRule?.config?.cluster_max_zoom || 14}
+                                                        onChange={(val) => setEditingRule(prev => prev ? { 
+                                                            ...prev, 
+                                                            config: { ...(prev.config || {}), cluster_max_zoom: typeof val === 'number' ? val : 14 } as any
+                                                        } : null)}
                                                     />
                                                     <NumberInput
                                                         label="Min Points"
                                                         size="xs"
-                                                        value={editingRule?.cluster_min_points || 2}
-                                                        onChange={(val) => setEditingRule(prev => prev ? { ...prev, cluster_min_points: typeof val === 'number' ? val : 2 } : null)}
+                                                        value={editingRule?.config?.cluster_min_points || 2}
+                                                        onChange={(val) => setEditingRule(prev => prev ? { 
+                                                            ...prev, 
+                                                            config: { ...(prev.config || {}), cluster_min_points: typeof val === 'number' ? val : 2 } as any
+                                                        } : null)}
                                                     />
                                                 </Group>
                                             )}
@@ -630,7 +861,7 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                             <Divider label="SVG CSS Overrides" labelPosition="center" />
                             
                             <Stack gap="xs">
-                                {editingRule?.css_overrides?.map((override, index) => (
+                                {editingRule?.config?.css_overrides?.map((override: any, index: number) => (
                                     <Paper key={index} withBorder p="xs" style={{ background: 'rgba(255,255,255,0.05)' }}>
                                         <Stack gap="xs">
                                             <Group justify="space-between">
@@ -760,12 +991,12 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                                             />
                                                         </div>
                                                         <Group gap={4} onClick={() => setEditingRule(rule)} style={{ cursor: 'pointer' }}>
-                                                            {rule.color_hex && <ColorSwatch color={rule.color_hex} size={10} />}
+                                                            {rule.config?.color_hex && <ColorSwatch color={rule.config.color_hex} size={10} />}
                                                             <Badge color="blue" variant="light" size="xs" style={{ textTransform: 'none' }}>
-                                                                {rule.visual_type}
-                                                                {rule.size && ` (${rule.size})`}
+                                                                {rule.config?.visual_type}
+                                                                {rule.config?.size && ` (${rule.config.size})`}
                                                             </Badge>
-                                                            {rule.label && <Badge color="gray" variant="outline" size="xs">{rule.label}</Badge>}
+                                                            {rule.config?.label && <Badge color="gray" variant="outline" size="xs">{rule.config.label}</Badge>}
                                                         </Group>
                                                     </Group>
                                                     <Text size="xs" c="dimmed" onClick={() => setEditingRule(rule)} style={{ cursor: 'pointer' }}>Pri: {rule.priority}</Text>
@@ -826,12 +1057,12 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                                 </Table.Td>
                                                 <Table.Td onClick={() => setEditingRule(rule)} style={{ cursor: 'pointer' }}>
                                                     <Group gap={4}>
-                                                        {rule.color_hex && <ColorSwatch color={rule.color_hex} size={10} />}
+                                                        {rule.config?.color_hex && <ColorSwatch color={rule.config.color_hex} size={10} />}
                                                         <Badge color="blue" variant="light" size="xs" style={{ textTransform: 'none' }}>
-                                                            {rule.visual_type}
-                                                            {rule.size && ` (${rule.size})`}
+                                                            {rule.config?.visual_type}
+                                                            {rule.config?.size && ` (${rule.config.size})`}
                                                         </Badge>
-                                                        {rule.label && <Badge color="gray" variant="outline" size="xs">{rule.label}</Badge>}
+                                                        {rule.config?.label && <Badge color="gray" variant="outline" size="xs">{rule.config.label}</Badge>}
                                                     </Group>
                                                 </Table.Td>
                                                 <Table.Td onClick={() => setEditingRule(rule)} style={{ cursor: 'pointer' }}>
