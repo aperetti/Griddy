@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 import sqlite3
 from src.shared.dependencies import registry, ensure_graph_built, ADMIN_SQLITE_PATH
+from src.shared.auth import get_current_username
 
 router = APIRouter(prefix="/api/cim", tags=["discovery"])
 
@@ -17,15 +18,15 @@ def _find_manager_for_mrid(mrid: str):
             if detail is not None:
                 detail["model_id"] = model_id
                 return detail
-    
+
     # Fallback: Search all active managers (robustness for GUIDs not in index)
     for mid, mgr in registry.get_managers():
         detail = mgr.get_equipment_detail(mrid)
         if detail is not None:
             detail["model_id"] = mid
-            registry._mrid_to_model[mrid] = mid # Self-heal index
+            registry._mrid_to_model[mrid] = mid  # Self-heal index
             return detail
-            
+
     return None
 
 
@@ -45,9 +46,9 @@ def _find_manager_for_node(node_id: str):
         detail = mgr.get_node_cim_details(node_id)
         if detail is not None:
             detail["model_id"] = mid
-            registry._node_to_model[node_id] = mid # Self-heal index
+            registry._node_to_model[node_id] = mid  # Self-heal index
             return detail
-            
+
     # Additional Fallback: Check if this was an equipment/edge ID (for Rule Assistant robustness)
     return _find_manager_for_mrid(node_id)
 
@@ -136,7 +137,7 @@ def _get_admin_conn():
 
 
 @router.get("/config", tags=["admin"])
-async def get_config_overrides():
+async def get_config_overrides(username: str = Depends(get_current_username)):
     """Read all configuration overrides from the admin database."""
 
     def _get():
@@ -150,7 +151,9 @@ async def get_config_overrides():
 
 
 @router.post("/config", tags=["admin"])
-async def set_config_override(config: ConfigUpdate):
+async def set_config_override(
+    config: ConfigUpdate, username: str = Depends(get_current_username)
+):
     """Set or update a configuration override."""
 
     def _set():
