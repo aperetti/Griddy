@@ -21,3 +21,7 @@
 **Vulnerability:** HIGH: The FastAPI backend had an overly permissive CORS configuration (`allow_origins=["*"]`), which allowed any domain to make cross-origin requests, potentially exposing sensitive grid data and APIs.
 **Learning:** Development defaults often leak into production environments if not explicitly restricted.
 **Prevention:** Always restrict CORS `allow_origins` using environment variables (e.g., `ALLOWED_ORIGINS`) and default to a strict list of internal and trusted local ports (e.g., 3000, 3001, 8000, 8080).
+## 2024-05-24 - Add authentication to admin config endpoints
+**Vulnerability:** The GET and POST `/api/cim/config` endpoints in `backend/src/discovery/routes.py` lacked authentication, allowing any user to read and modify application configuration settings, which could lead to unauthorized configuration changes or Denial of Service.
+**Learning:** These endpoints were tagged with `tags=["admin"]` for Swagger documentation but didn't actually enforce the authentication dependency (`Depends(get_current_username)`) used by other admin routes. Tagging does not provide access control.
+**Prevention:** Always verify that administrative or sensitive endpoints explicitly enforce authentication using FastAPI's `Depends()` injection rather than relying on route tags.
