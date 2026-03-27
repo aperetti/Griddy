@@ -17,6 +17,11 @@ services:
       - CONFIG_DB_PATH=/data/config/admin_config.db
       - CIM_MODEL_PATH=/app/cim/IEEE8500.xml
       - WEATHER_DATA_PATH=/app/cim/weather.epw
+      - CIMG_URL=bolt://neo4j:7687
+      - CIMG_USERNAME=neo4j
+      - CIMG_PASSWORD=password123
+      - CIMG_CIM_PROFILE=cimhub_2023
+      - CIMG_IEC61970_301=8
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     restart: unless-stopped
@@ -61,6 +66,9 @@ services:
       - CONFIG_DB_PATH=/data/config/admin_config.db
       - CIM_MODEL_PATH=/app/cim/IEEE8500.xml
       - WEATHER_DATA_PATH=/app/cim/weather.epw
+      - CIMG_URL=bolt://neo4j:7687
+      - CIMG_USERNAME=neo4j
+      - CIMG_PASSWORD=password123
       - REFRESH_DB=${REFRESH_DB:-false}
     profiles: [ "tools" ]
     deploy:
@@ -93,6 +101,49 @@ services:
       - admin-backend
     restart: unless-stopped
 
+  neo4j:
+    image: neo4j:5.26.0
+    container_name: grid-neo4j
+    ports:
+      - "7474:7474" # HTTP
+      - "7687:7687" # Bolt
+    environment:
+      - NEO4J_AUTH=${NEO4J_AUTH:-neo4j/password123}
+      - NEO4J_PLUGINS=["apoc"]
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    restart: unless-stopped
+
+  ingestor:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: grid-ingestor
+    volumes:
+      - grid_data:/data
+      - grid_config:/data/config
+      - ./backend:/app
+      - ./backend/cim:/app/cim
+      - ./backend/cim/models:/app/cim/models
+      - ./ingest:/data/ingest
+      - ./archive:/data/archive
+    entrypoint: [ "python", "scripts/monitor_and_ingest.py" ]
+    environment:
+      - INGEST_DIR=/data/ingest
+      - ARCHIVE_DIR=/data/archive
+      - MODELS_DIR=/app/cim/models
+      - INGEST_SCRIPT=/app/scripts/ingest_cim_to_neo4j.py
+      - CIMG_URL=bolt://neo4j:7687
+      - CIMG_USERNAME=neo4j
+      - CIMG_PASSWORD=password123
+      - CIMG_CIM_PROFILE=cimhub_2023
+    depends_on:
+      - neo4j
+    restart: unless-stopped
+
 volumes:
   grid_data:
   grid_config:
+  neo4j_data:
+  neo4j_logs:

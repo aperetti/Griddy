@@ -11,6 +11,8 @@ readings/
 readings_scale/
 # IEEE8500.xml is explicitly allowed per user request
 !IEEE8500.xml
+ingest/
+archive/
 
 # Python
 __pycache__/

@@ -25,10 +25,10 @@ pip --version
 pip list | grep cim
 echo "-------------------------"
 
-echo "1. Ingesting CIM model with CIM-Graph into SQLite..."
-python /app/scripts/ingest_cim_graph.py
+echo "2. Ingesting CIM model with CIM-Graph into Neo4j..."
+python /app/scripts/ingest_cim_to_neo4j.py "$CIM_MODEL_PATH"
 
-echo "2. Ingesting weather data..."
+echo "3. Ingesting weather data..."
 python /app/scripts/ingest_weather.py
 
 echo "3. Generating synthetic readings (weather-aware)..."

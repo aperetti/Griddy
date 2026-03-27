@@ -24,9 +24,27 @@ If you want to clear existing data and start from a fresh state, use the `REFRES
 docker-compose --profile tools run --rm -e REFRESH_DB=true generator
 ```
 
-## 3. Ingesting a CIM Model (Manual/Local)
+## 3. Automated Model Ingestion (Hot-loading)
 
-If you have a customized CIM XML file (e.g., IEEE 13-node, 8500-node, or a custom utility model), place it in the `backend/cim/` directory.
+The project includes an automated ingestion service that monitors a folder for new CIM XML models and "hot-loads" them into Neo4j and the grid-map UI.
+
+### Using the Ingestor:
+1.  **Drop XML File**: Place your CIM XML file into the `ingest/` directory in the project root.
+2.  **Wait for Processing**: The `grid-ingestor` service will:
+    *   Register the model in the backend (`backend/cim/models/`).
+    *   Ingest the data into a dedicated Neo4j database named after the file.
+    *   Move the original file to the `archive/` directory upon completion.
+3.  **Toggle Layers**: Open the Grid-Map UI and use the **Layers** panel to enable the new model.
+
+### Monitoring Progress:
+You can watch the ingestion logs using Docker:
+```bash
+docker compose logs -f ingestor
+```
+
+## 4. Ingesting a CIM Model (Manual/Local)
+
+If you prefer to load a model manually without the automated service, place it in the `backend/cim/models/` directory.
 
 To trigger the ingestion manually, run the following command from the `backend/` directory:
 

@@ -5,6 +5,7 @@ A legacy singleton accessor ``get_instance()`` is retained for backward-compatib
 with scripts that load a single model.
 """
 
+import os
 import logging
 from pathlib import Path
 from typing import Any, Optional
@@ -76,17 +77,49 @@ class CimModelManager:
         if not path.is_file():
             raise FileNotFoundError(f"CIM XML not found: {path}")
 
-        self.model_id = path.stem
+        self.model_id = path.stem if path else "unknown"
 
-        # Deferred import so env vars set in loader.py take effect first
         import cimgraph.data_profile.cimhub_2023 as cim
-        from cimgraph.databases import XMLFile
+        from cimgraph.databases import XMLFile, Neo4jConnection
         from cimgraph.models import FeederModel
 
         self.cim = cim
 
-        xml_file = XMLFile(filename=str(path))
-        self.network = FeederModel(container=cim.Feeder(), connection=xml_file)
+        # Determine connection type and profile
+        neo4j_url = os.getenv("CIMG_URL")
+        profile = os.getenv("CIMG_CIM_PROFILE", "cimhub_2023")
+        os.environ["CIMG_CIM_PROFILE"] = profile
+        
+        # Try Neo4j first if URL is set
+        if neo4j_url:
+            try:
+                # Use model_id as the database name
+                db_name = self.model_id
+                logger.info("Attempting Neo4j connection for model '%s' (DB: %s)...", self.model_id, db_name)
+                
+                connection = Neo4jConnection(database=db_name)
+                self.network = FeederModel(container=cim.Feeder(), connection=connection)
+                
+                # Try a quick test query to see if data exists
+                test_objs = self.network.get_all_attributes(cim.Feeder)
+                if not test_objs:
+                    logger.info("No data found in Neo4j database '%s', falling back to XML.", db_name)
+                    raise ValueError("No data")
+                    
+                logger.info("Successfully loaded model '%s' from Neo4j.", self.model_id)
+                path = None # Mark as Neo4j loaded
+            except Exception as e:
+                logger.warning("Neo4j load failed for '%s' (%s), falling back to XML: %s", self.model_id, str(e), xml_path)
+                path = _resolve_xml_path(xml_path)
+                connection = XMLFile(filename=str(path))
+                self.network = FeederModel(container=cim.Feeder(), connection=connection)
+        else:
+            path = _resolve_xml_path(xml_path)
+            logger.info("Loading CIM model from XML: %s", path)
+            if not path.is_file():
+                raise FileNotFoundError(f"CIM XML not found: {path}")
+            connection = XMLFile(filename=str(path))
+            self.network = FeederModel(container=cim.Feeder(), connection=connection)
 
         # Load equipment catalog classes (not in feeder container by default)
         logger.info("Loading transformer and equipment catalog...")
