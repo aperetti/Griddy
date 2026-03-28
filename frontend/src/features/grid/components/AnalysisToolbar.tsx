@@ -1,5 +1,5 @@
-import { Paper, Group, ActionIcon, Tooltip, Badge, Text, Divider, Transition, Stack } from '@mantine/core';
-import { BarChart3, Activity, X, Database } from 'lucide-react';
+import { Paper, Group, ActionIcon, Tooltip, Badge, Text, Divider, Transition } from '@mantine/core';
+import { BarChart3, Activity, X, Database, Settings } from 'lucide-react';
 import type { Node } from '../../../shared/types';
 
 interface AnalysisToolbarProps {
@@ -59,26 +59,29 @@ export function AnalysisToolbar({
                         </Group>
 
                         <Divider orientation="vertical" />
-
-                        <Stack gap={0} onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenSettings();
-                        }} style={{ cursor: 'pointer', flexShrink: 1, minWidth: 0 }}>
-                            <Text size="10px" c="blue.4" fw={700} style={{ 
-                                textTransform: 'uppercase', 
-                                letterSpacing: '0.5px',
-                                whiteSpace: 'nowrap',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                maxWidth: '120px'
-                            }}>
-                                {configLabel} • {new Date(dateRange.start).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} - {new Date(dateRange.end).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                            </Text>
-                        </Stack>
-
+                        <Tooltip 
+                            label={`${configLabel} • ${new Date(dateRange.start).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} - ${new Date(dateRange.end).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`} 
+                            position="bottom" 
+                            color="dark"
+                            withArrow
+                        >
+                            <ActionIcon
+                                variant="light"
+                                color="blue"
+                                size="md"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onOpenSettings();
+                                }}
+                                radius="sm"
+                                style={{ flexShrink: 0 }}
+                            >
+                                <Settings size={18} />
+                            </ActionIcon>
+                        </Tooltip>
                         <Divider orientation="vertical" />
 
-                        <Tooltip label={(selectedNodes.length === 0 && selectedEdgeCount === 0) ? "Select an asset for analysis" : "Joint Consumption Analysis"} position="bottom" withArrow>
+                        <Tooltip color="dark" label={(selectedNodes.length === 0 && selectedEdgeCount === 0) ? "Select an asset for analysis" : "Joint Consumption Analysis"} position="bottom" withArrow>
                             <ActionIcon
                                 variant="light"
                                 color={(selectedNodes.length === 0 && selectedEdgeCount === 0) ? "gray" : "blue"}
@@ -92,7 +95,7 @@ export function AnalysisToolbar({
                             </ActionIcon>
                         </Tooltip>
 
-                        <Tooltip label={(selectedNodes.length === 0 && selectedEdgeCount === 0) ? "Select an asset for analysis" : "Joint Voltage Distribution"} position="bottom" withArrow>
+                        <Tooltip color="dark" label={(selectedNodes.length === 0 && selectedEdgeCount === 0) ? "Select an asset for analysis" : "Joint Voltage Distribution"} position="bottom" withArrow>
                             <ActionIcon
                                 variant="light"
                                 color={(selectedNodes.length === 0 && selectedEdgeCount === 0) ? "gray" : "cyan"}
@@ -106,7 +109,7 @@ export function AnalysisToolbar({
                             </ActionIcon>
                         </Tooltip>
 
-                        <Tooltip label={(selectedNodes.length === 0 && selectedEdgeCount === 0) ? "Select an asset for analysis" : "CIM Diagnostic View"} position="bottom" withArrow>
+                        <Tooltip color="dark" label={(selectedNodes.length === 0 && selectedEdgeCount === 0) ? "Select an asset for analysis" : "CIM Diagnostic View"} position="bottom" withArrow>
                             <ActionIcon
                                 variant="light"
                                 color={(selectedNodes.length === 0 && selectedEdgeCount === 0) ? "gray" : "teal"}
@@ -122,7 +125,7 @@ export function AnalysisToolbar({
 
                         <Divider orientation="vertical" />
 
-                        <Tooltip label="Clear Selection" position="bottom" withArrow>
+                        <Tooltip color="dark" label="Clear Selection" position="bottom" withArrow>
                             <ActionIcon
                                 variant="subtle"
                                 color="gray"
