@@ -2,7 +2,7 @@
 
 ## 1. Architecture & Design
 * **Architecture**: Organize code by feature (vertical slices) rather than technical layers. A single file NEVER handles more than one responsibility.
-* **Responsiveness**: All overlays and analytical windows must support mobile viewports (minimum 320px width) without horizontal scrolling. Draggable/resizable windows must be clamped to the viewport bounds.
+* **Responsiveness**: All overlays and analytical windows must support mobile viewports (minimum 320px width) without horizontal scrolling. Analytical views are presented as draggable, floating windows that must be clamped to the viewport bounds.
 * **File Structure**: Must propose a file structure following Vertical Slice Architecture before writing any code.
 
 * **Database**: DuckDB must be used as the database, overriding global rule #4. Time-series and cold data should use Parquet format.
@@ -17,7 +17,6 @@
     *   **Clustering**: The frontend must implement geospatial clustering (e.g. using `supercluster`) to aggregate overlapping or nearby nodes based on rules. This replaces the legacy radial de-confliction mechanism.
     *   **View Persistence**: The `GridMap` must support a `skipGlobalFit` mechanism to suppress automatic zoom-to-extent transitions during state-only refreshes (like display rule updates).
     *   **Rule Assistant Integration**:
-        *   Implement a side-by-side layout (50/50 split on desktop) between the Rule Assistant and Rule Builder.
         *   The Assistant must use `lucide-react` icons and Mantine components (`Stack`, `Group`, `Paper`) for a clean, hierarchical display.
         *   **Semantic Paths**: Generate paths using lowercased CIM class names and flatten the `attributes` sub-dictionary to remove redundant path segments.
         *   Support for the `length_gt` operator for array-type attributes.

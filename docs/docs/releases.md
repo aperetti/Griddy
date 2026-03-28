@@ -3,7 +3,15 @@ title: Release Updates
 ---
 # Release Updates
 
-This page tracks the evolution of the Griddy project. We are currently in **Alpha** (v0.2.2-alpha).
+This page tracks the evolution of the Griddy project. We are currently in **Alpha** (v0.2.3-alpha).
+
+## [0.2.3-alpha] - 2026-03-27
+### Removed
+- **Analytics Sidebar**: Completely removed the pinned analytic sidebar from the main interface to maximize grid visibility.
+- **Legacy Layout Modes**: Deprecated the "Grid Sidebar" layout mode in favor of a unified floating window system for all analysis views.
+
+### Changed
+- **UI Simplification**: Cleaned up the main hamburger menu and global settings by removing redundant sidebar configuration options.
 
 ## [0.2.2-alpha] - 2026-03-23
 ### Added
