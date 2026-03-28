@@ -171,6 +171,7 @@ export function GlobalSettingsModal({ opened, onClose, config, onSave }: GlobalS
                                     }
                                 }}
                                 dropdownType="popover"
+                                popoverProps={{ withinPortal: true, zIndex: 100000 }}
                             />
                         )}
 

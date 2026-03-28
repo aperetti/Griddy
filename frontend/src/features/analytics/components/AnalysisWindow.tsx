@@ -84,6 +84,12 @@ function AnalysisWindowComponent({
         saveState(newState);
     };
 
+    const handleResetPosition = () => {
+        const reset = defaultPosition();
+        setRndState(reset);
+        saveState(reset);
+    };
+
     const handleCopy = () => {
         if (!onCopy) return;
 
@@ -133,6 +139,7 @@ function AnalysisWindowComponent({
                     display: 'flex',
                     flexDirection: 'column',
                     flexShrink: 0,
+                    userSelect: 'none'
                 }}
             >
                 <Group justify="space-between" align="center" wrap="nowrap">
@@ -140,20 +147,17 @@ function AnalysisWindowComponent({
                         className={layoutMode === 'floating' ? "analysis-window-handle" : ""}
                         style={{ cursor: layoutMode === 'floating' ? 'grab' : 'default', flex: 1, minWidth: 0 }}
                     >
-                        <Group gap="xs" wrap="nowrap">
-                            {layoutMode === 'floating' && <Maximize2 size={14} style={{ opacity: 0.5, flexShrink: 0 }} />}
-                            <Title
-                                order={5}
-                                style={{
-                                    whiteSpace: 'nowrap',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    fontSize: window.innerWidth < 600 ? '14px' : undefined
-                                }}
-                            >
-                                {title}
-                            </Title>
-                        </Group>
+                        <Title
+                            order={5}
+                            style={{
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                fontSize: window.innerWidth < 600 ? '14px' : undefined
+                            }}
+                        >
+                            {title}
+                        </Title>
                     </Box>
 
                     <Group wrap="nowrap" gap="xs" style={{ flexShrink: 0 }}>
@@ -187,14 +191,23 @@ function AnalysisWindowComponent({
                             </Tooltip>
                         )}
                         {onExport && (
-                            <Tooltip label="Download JSON/CSV" withArrow position="bottom">
+                            <Tooltip label="Download JSON/CSV" withArrow position="bottom" withinPortal zIndex={zIndex + 100}>
                                 <ActionIcon variant="subtle" onClick={onExport}>
                                     <Download size={16} />
                                 </ActionIcon>
                             </Tooltip>
                         )}
+                        
+                        {layoutMode === 'floating' && (
+                            <Tooltip label="Reset Layout" withArrow position="bottom" withinPortal zIndex={zIndex + 100}>
+                                <ActionIcon variant="subtle" color="gray" onClick={handleResetPosition}>
+                                    <Maximize2 size={16} />
+                                </ActionIcon>
+                            </Tooltip>
+                        )}
+
                         {onMinimize && (
-                            <Tooltip label={isMinimized ? "Unpin (Expand)" : "Pin (Collapse)"} withArrow position="bottom">
+                            <Tooltip label={isMinimized ? "Unpin (Expand)" : "Pin (Collapse)"} withArrow position="bottom" withinPortal zIndex={zIndex + 100}>
                                 <ActionIcon 
                                     variant={isMinimized ? "filled" : "subtle"} 
                                     onClick={onMinimize} 
@@ -204,7 +217,8 @@ function AnalysisWindowComponent({
                                 </ActionIcon>
                             </Tooltip>
                         )}
-                        <ActionIcon variant="subtle" onClick={onClose} title="Close">
+                        
+                        <ActionIcon variant="subtle" onClick={onClose} title="Close" color="gray">
                             <X size={16} />
                         </ActionIcon>
                     </Group>
@@ -261,7 +275,7 @@ function AnalysisWindowComponent({
                     ...position,
                 });
             }}
-            minWidth={Math.min(400, window.innerWidth - 20)}
+            minWidth={300}
             minHeight={isMinimized ? 0 : 200}
             bounds="window"
             dragHandleClassName="analysis-window-handle"
@@ -271,10 +285,10 @@ function AnalysisWindowComponent({
             }}
             style={{ 
                 zIndex,
-                pointerEvents: isMinimized ? 'none' : 'auto' // Allow header to still get events? Wait.
+                pointerEvents: isMinimized ? 'none' : 'auto'
             }}
         >
-            <div style={{ pointerEvents: 'auto' }}>
+            <div style={{ pointerEvents: 'auto', width: '100%', height: '100%' }}>
                 {windowContent}
             </div>
         </Rnd>
@@ -286,13 +300,13 @@ function AnalysisWindowComponent({
 function defaultPosition() {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const topMargin = 180;
-    const width = Math.min(800, vw - 40);
-    const height = 'auto';
+    const topMargin = vh < 600 ? 50 : 100;
+    const width = Math.min(900, vw - 40);
+    const height = Math.min(vh - topMargin - 40, 700);
 
     return {
         x: Math.max(20, (vw - width) / 2),
-        y: Math.max(topMargin + 20, vh - 600),
+        y: Math.max(topMargin + 20, (vh - height) / 2 + 50),
         width,
         height,
     };
@@ -301,8 +315,9 @@ function defaultPosition() {
 function clampToViewport(pos: { x: number; y: number; width: number | string; height: number | string }) {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const topMargin = 180;
+    const topMargin = vh < 600 ? 40 : 80;
 
+    // Width
     const maxW = vw - 20;
     let w: number;
     if (typeof pos.width === 'number') {
@@ -314,10 +329,11 @@ function clampToViewport(pos: { x: number; y: number; width: number | string; he
     }
     w = Math.max(300, w);
 
+    // Height
     const maxH = vh - topMargin - 20;
     let h: number | 'auto';
     if (pos.height === 'auto') {
-        h = 'auto';
+        h = Math.min(600, maxH); // Cap auto heights to something sensible
     } else if (typeof pos.height === 'number') {
         h = Math.min(pos.height, maxH);
     } else {
@@ -325,9 +341,11 @@ function clampToViewport(pos: { x: number; y: number; width: number | string; he
     }
     if (typeof h === 'number') h = Math.max(200, h);
 
+    // Position X
     const maxX = Math.max(10, vw - w - 10);
     const x = Math.max(10, Math.min(pos.x, maxX));
 
+    // Position Y
     const effectiveH = typeof h === 'number' ? h : 400;
     const maxY = Math.max(topMargin + 10, vh - effectiveH - 10);
     const y = Math.max(topMargin + 10, Math.min(pos.y, maxY));

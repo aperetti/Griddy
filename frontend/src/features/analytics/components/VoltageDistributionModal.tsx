@@ -76,6 +76,7 @@ export const VoltageDistributionModal = memo(function VoltageDistributionModal({
                     { label: '5 Degrees', value: '5' },
                     { label: '10 Degrees', value: '10' },
                 ]}
+                comboboxProps={{ withinPortal: true, zIndex: 100000 }}
             />
         </Group>
     );

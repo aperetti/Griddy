@@ -134,7 +134,7 @@ const ConditionRow = React.memo(({
                     onClick={(e) => e.stopPropagation()}
                     onChange={(val) => handleUpdateCondition(condition.id, { op: val || '==' })}
                     styles={{ input: { background: '#2a2a2a', color: 'white', border: '1px solid #444' } }}
-                    comboboxProps={{ withinPortal: true, zIndex: 10000 }}
+                    comboboxProps={{ withinPortal: true, zIndex: 100000 }}
                 />
             </Box>
             {condition.op !== 'exists' && condition.op !== 'not_exists' && (
@@ -407,6 +407,7 @@ export const CimRuleBuilder: React.FC<CimRuleBuilderProps> = ({ value, onChange 
                                 ...availableClasses.map(cls => ({ value: cls, label: cls }))
                             ]}
                             styles={{ input: { background: '#2a2a2a', color: 'white', border: '1px solid #444' } }}
+                            comboboxProps={{ withinPortal: true, zIndex: 100000 }}
                         />
                     </Box>
 

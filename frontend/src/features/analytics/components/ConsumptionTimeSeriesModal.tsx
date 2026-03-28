@@ -366,7 +366,7 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
                     onChange={(v) => v && setStartMonth(v)}
                     size="xs"
                     w={80}
-                    comboboxProps={{ withinPortal: true, zIndex: 2000 }}
+                    comboboxProps={{ withinPortal: true, zIndex: 100000 }}
                 />
                 <Text size="xs" c="dimmed">to</Text>
                 <Select
@@ -376,7 +376,7 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
                     onChange={(v) => v && setEndMonth(v)}
                     size="xs"
                     w={80}
-                    comboboxProps={{ withinPortal: true, zIndex: 2000 }}
+                    comboboxProps={{ withinPortal: true, zIndex: 100000 }}
                 />
             </Group>
 
@@ -389,7 +389,7 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
                     onChange={(v) => v && setStartHour(v)}
                     size="xs"
                     w={90}
-                    comboboxProps={{ withinPortal: true, zIndex: 2000 }}
+                    comboboxProps={{ withinPortal: true, zIndex: 100000 }}
                 />
                 <Text size="xs" c="dimmed">to</Text>
                 <Select
@@ -399,7 +399,7 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
                     onChange={(v) => v && setEndHour(v)}
                     size="xs"
                     w={90}
-                    comboboxProps={{ withinPortal: true, zIndex: 2000 }}
+                    comboboxProps={{ withinPortal: true, zIndex: 100000 }}
                 />
             </Group>
             <Text size="xs" c="dimmed" style={{ fontStyle: 'italic' }}>*Month slicer affects Daily Profile; Hour slicer affects Correlation</Text>
