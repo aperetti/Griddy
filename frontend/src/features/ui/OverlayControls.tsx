@@ -11,8 +11,6 @@ interface OverlayControlsProps {
   onDisplayRulesClick: () => void;
   onRefreshTopology: () => void;
   onClearSelection: () => void;
-  showAnalyticsSidebar: boolean;
-  onToggleSidebar: () => void;
   isMobile?: boolean;
 }
 
@@ -24,8 +22,6 @@ export function OverlayControls({
   onDisplayRulesClick,
   onRefreshTopology,
   onClearSelection,
-  showAnalyticsSidebar,
-  onToggleSidebar,
   isMobile
 }: OverlayControlsProps) {
   return (
@@ -77,14 +73,7 @@ export function OverlayControls({
                 </Tooltip>
               </Menu.Target>
               <Menu.Dropdown>
-                <Menu.Label>Analytics</Menu.Label>
-                <Menu.Item
-                  leftSection={<Activity size={14} />}
-                  onClick={onToggleSidebar}
-                  color={showAnalyticsSidebar ? "blue" : undefined}
-                >
-                  {showAnalyticsSidebar ? "Hide Analytics Sidebar" : "Show Analytics Sidebar"}
-                </Menu.Item>
+
 
                 <Menu.Label>Topology</Menu.Label>
                 <Menu.Item leftSection={<Zap size={14} />} onClick={onDisplayRulesClick}>

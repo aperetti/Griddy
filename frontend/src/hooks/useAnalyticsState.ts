@@ -9,10 +9,6 @@ export const DEFAULT_CONFIG: GlobalConfig = {
   customDays: 30,
   endDateType: 'now',
   fixedEndDate: new Date().toISOString(),
-  layoutMode: 'floating',
-  analyticsGridColumns: 2,
-  showAnalyticsSidebar: false, // Turned off by default as requested
-  sidebarWidth: 400
 };
 
 export interface AnalysisType {
@@ -43,7 +39,6 @@ export interface AnalysisInstance {
 export function useAnalyticsState() {
   const [analysisWindows, setAnalysisWindows] = useState<AnalysisInstance[]>([]);
   const [maxZIndex, setMaxZIndex] = useState(1000);
-  const [sidebarWidth, setSidebarWidth] = useState(400);
   const [systemConfig, setSystemConfig] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -101,8 +96,6 @@ export function useAnalyticsState() {
     setAnalysisWindows,
     maxZIndex,
     setMaxZIndex,
-    sidebarWidth,
-    setSidebarWidth,
     globalConfig,
     setGlobalConfig,
     updateWindow,

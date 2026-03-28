@@ -3,16 +3,14 @@ import '@mantine/dates/styles.css';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   MantineProvider,
-  Box,
-  Title
+  Box
 } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 
 import { GridMap } from './features/grid/components/GridMap';
 import { Minimap } from './features/grid/components/Minimap';
 import { VoltageScalePanel } from './features/analytics/components/VoltageScalePanel';
-import { AnalyticsDashboard } from './features/analytics/components/AnalyticsDashboard';
-import { AnalyticsSidebar } from './features/analytics/components/AnalyticsSidebar';
+
 import { GlobalSettingsModal } from './features/analytics/components/GlobalSettingsModal';
 import { DisplayRulesManager } from './features/grid/components/DisplayRulesManager';
 import { OverlayControls } from './features/ui/OverlayControls';
@@ -188,9 +186,6 @@ export default function App() {
         onSave={(newConfig) => {
           analytics.setGlobalConfig(newConfig);
           localStorage.setItem(SETTINGS_KEY, JSON.stringify(newConfig));
-          if (newConfig.layoutMode === 'grid') {
-            analytics.setAnalysisWindows(prev => prev.map(w => ({ ...w, isMinimized: true })));
-          }
         }}
       />
 
@@ -244,8 +239,6 @@ export default function App() {
             onDisplayRulesClick={() => setDisplayRulesOpen(true)}
             onRefreshTopology={topology.refreshTopology}
             onClearSelection={topology.handleClearSelection}
-            showAnalyticsSidebar={analytics.globalConfig.showAnalyticsSidebar}
-            onToggleSidebar={() => analytics.setGlobalConfig(prev => ({ ...prev, showAnalyticsSidebar: !prev.showAnalyticsSidebar }))}
             isMobile={isMobile}
           />
           {/* Selection HUD - positioned under search */}
@@ -332,21 +325,6 @@ export default function App() {
           />
         </Box>
 
-        {/* Right Resizable Sidebar */}
-        {analytics.globalConfig.showAnalyticsSidebar && (
-          <AnalyticsSidebar
-            width={analytics.sidebarWidth}
-            onWidthChange={analytics.setSidebarWidth}
-            onClose={() => analytics.setGlobalConfig(prev => ({ ...prev, showAnalyticsSidebar: false }))}
-          >
-            <AnalyticsDashboard columns={1}>
-              <Box p="md">
-                <Title order={5} mb="sm">Analytics Settings</Title>
-                {/* Future settings here */}
-              </Box>
-            </AnalyticsDashboard>
-          </AnalyticsSidebar>
-        )}
       </Box>
     </MantineProvider>
   );

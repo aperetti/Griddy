@@ -1,4 +1,4 @@
-import { Paper, Stack, Group, Text, NumberInput, SegmentedControl, Button, Divider, Alert, Box, ActionIcon, Title, Checkbox } from '@mantine/core';
+import { Paper, Stack, Group, Text, NumberInput, SegmentedControl, Button, Divider, Alert, Box, ActionIcon, Title } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { useWindowEvent } from '@mantine/hooks';
 import { Settings, Info, X } from 'lucide-react';
@@ -10,10 +10,6 @@ export interface GlobalConfig {
     customDays: number;
     endDateType: 'now' | 'fixed';
     fixedEndDate: string;
-    layoutMode: 'floating' | 'grid';
-    analyticsGridColumns: number;
-    showAnalyticsSidebar: boolean;
-    sidebarWidth: number;
 }
 
 interface GlobalSettingsModalProps {
@@ -180,53 +176,13 @@ export function GlobalSettingsModal({ opened, onClose, config, onSave }: GlobalS
 
                         <Divider label="Analytics Display" labelPosition="center" />
 
-                        <Checkbox
-                            label="Show Analytics Sidebar"
-                            description="Toggle the visibility of the analysis grid sidebar"
-                            checked={localConfig.showAnalyticsSidebar}
-                            onChange={(event) => setLocalConfig({ ...localConfig, showAnalyticsSidebar: event.currentTarget.checked })}
-                            mt="xs"
-                        />
 
-                        <Stack gap="xs" mt="md">
-                            <Text size="sm" fw={500}>Dashboard Layout Mode</Text>
-                            <SegmentedControl
-                                value={localConfig.layoutMode || 'floating'}
-                                onChange={(value) => setLocalConfig({ ...localConfig, layoutMode: value as any })}
-                                data={[
-                                    { label: 'Floating Windows', value: 'floating' },
-                                    { label: 'Grid Sidebar', value: 'grid' },
-                                ]}
-                            />
-                            <Text size="xs" c="dimmed">
-                                {localConfig.layoutMode === 'grid' 
-                                    ? 'Analytic views will be pinned to a resizable left sidebar.'
-                                    : 'Analytic views will open in draggable, floating windows.'}
-                            </Text>
-                        </Stack>
 
-                        {localConfig.layoutMode === 'grid' && (
-                            <NumberInput
-                                label="Sidebar Fixed Width (px)"
-                                description="Default width for the analytics sidebar"
-                                value={localConfig.sidebarWidth || 400}
-                                onChange={(val) => setLocalConfig({ ...localConfig, sidebarWidth: Number(val) || 400 })}
-                                min={200}
-                                max={1000}
-                                step={50}
-                            />
-                        )}
 
-                        {localConfig.layoutMode === 'grid' && (
-                            <NumberInput
-                                label="Grid Columns (Desktop)"
-                                description="Number of columns to show on larger screens"
-                                value={localConfig.analyticsGridColumns || 2}
-                                onChange={(val) => setLocalConfig({ ...localConfig, analyticsGridColumns: Number(val) || 2 })}
-                                min={1}
-                                max={4}
-                            />
-                        )}
+
+
+
+
 
                         <Alert icon={<Info size={16} />} color="blue" variant="light" mt="xs">
                             <Text size="xs">
