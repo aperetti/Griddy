@@ -153,11 +153,8 @@ class CalculateVoltageDistributionUseCase:
 
         try:
             with duckdb.connect(self.db_path, read_only=True) as conn:
-                # We need to repeat query_params for queries that use them multiple times
-                query_params_3x = query_params * 3
-                query_params_2x = query_params * 2
-                results = conn.execute(query, query_params_3x).fetchall()
-                heat_results = conn.execute(heatmap_query, query_params_2x).fetchall()
+                results = conn.execute(query, query_params).fetchall()
+                heat_results = conn.execute(heatmap_query, query_params).fetchall()
                 ts_results = conn.execute(timeseries_query, query_params).fetchall()
                 overall_stats = conn.execute(stats_query, query_params).fetchone()
                 

@@ -37,6 +37,7 @@ export function AnalysisWindowLayer({
               layoutMode="floating"
               onMinimize={() => onMinimize(win.id)}
               isMinimized={win.isMinimized}
+              isPaused={win.isPaused}
               onConfirm={() => onConfirmConsumption(win)}
             />
           );
@@ -63,6 +64,7 @@ export function AnalysisWindowLayer({
               layoutMode="floating"
               onMinimize={() => onMinimize(win.id)}
               isMinimized={win.isMinimized}
+              isPaused={win.isPaused}
               onConfirm={() => onConfirmVoltage(win)}
             />
           );
