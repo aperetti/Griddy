@@ -3,7 +3,8 @@ import '@mantine/dates/styles.css';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   MantineProvider,
-  Box
+  Box,
+  Title
 } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 
@@ -17,6 +18,7 @@ import { DisplayRulesManager } from './features/grid/components/DisplayRulesMana
 import { OverlayControls } from './features/ui/OverlayControls';
 import { AnalysisWindowLayer } from './features/analytics/components/AnalysisWindowLayer';
 import { AnalysisToolbar } from './features/grid/components/AnalysisToolbar';
+import { AnalysisTray } from './features/analytics/components/AnalysisTray';
 
 import { useTopology } from './hooks/useTopology';
 import { useAnalyticsState, SETTINGS_KEY } from './hooks/useAnalyticsState';
@@ -312,14 +314,21 @@ export default function App() {
           </Box>
 
           <AnalysisWindowLayer
-            windows={analytics.analysisWindows.filter(win => win.isOpen && !analytics.pinnedWindowIds.includes(win.id))}
+            windows={analytics.analysisWindows.filter(win => win.isOpen && !win.isMinimized)}
             onClose={analytics.removeWindow}
-            onPin={analytics.togglePin}
+            onMinimize={analytics.toggleMinimize}
             onConfirmConsumption={(win) => execution.performConsumptionFetch(win.id, win.nodeIds, dateRange.start, dateRange.end)}
             onConfirmVoltage={(win) => execution.performVoltageFetch(win.id, win.nodeIds, dateRange.start, dateRange.end, win.degrees ?? 5)}
             onShowVoltageDistribution={execution.handleRunVoltageMap}
-            pinnedIds={analytics.pinnedWindowIds}
-            isPinnedList={false}
+          />
+          
+          <AnalysisTray 
+            minimizedWindows={analytics.analysisWindows.filter(w => w.isOpen && w.isMinimized)}
+            onRestore={(id) => {
+              analytics.updateWindow(id, { isMinimized: false });
+              analytics.bringWindowToFront(id);
+            }}
+            onClose={analytics.removeWindow}
           />
         </Box>
 
@@ -331,16 +340,10 @@ export default function App() {
             onClose={() => analytics.setGlobalConfig(prev => ({ ...prev, showAnalyticsSidebar: false }))}
           >
             <AnalyticsDashboard columns={1}>
-              <AnalysisWindowLayer
-                isPinnedList
-                windows={analytics.analysisWindows.filter(w => w.isOpen && analytics.pinnedWindowIds.includes(w.id))}
-                onClose={analytics.removeWindow}
-                onPin={analytics.togglePin}
-                onConfirmConsumption={(win) => execution.performConsumptionFetch(win.id, win.nodeIds, dateRange.start, dateRange.end)}
-                onConfirmVoltage={(win) => execution.performVoltageFetch(win.id, win.nodeIds, dateRange.start, dateRange.end, win.degrees ?? 5)}
-                onShowVoltageDistribution={execution.handleRunVoltageMap}
-                pinnedIds={analytics.pinnedWindowIds}
-              />
+              <Box p="md">
+                <Title order={5} mb="sm">Analytics Settings</Title>
+                {/* Future settings here */}
+              </Box>
             </AnalyticsDashboard>
           </AnalyticsSidebar>
         )}

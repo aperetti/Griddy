@@ -32,8 +32,6 @@ interface Props {
     onFocus?: () => void;
     zIndex?: number;
     layoutMode?: 'floating' | 'grid';
-    isPinned?: boolean;
-    onPin?: () => void;
 }
 
 const MONTH_OPTIONS = [
@@ -70,8 +68,6 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
     onFocus,
     zIndex,
     layoutMode,
-    isPinned,
-    onPin,
 }: Props) {
     const [startHour, setStartHour] = useState<string>('0');
     const [endHour, setEndHour] = useState<string>('23');
@@ -425,8 +421,6 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
             onCopy={handleCopy}
             loading={loading}
             layoutMode={layoutMode}
-            isPinned={isPinned}
-            onPin={onPin}
         >
             {isPaused ? (
                 <Box style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '20px' }}>

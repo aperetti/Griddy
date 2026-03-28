@@ -1,27 +1,24 @@
 import { ConsumptionTimeSeriesModal } from './ConsumptionTimeSeriesModal';
 import { VoltageDistributionModal } from './VoltageDistributionModal';
+import { DiagnosticModal } from './DiagnosticModal';
 import { type AnalysisInstance } from '../../../hooks/useAnalyticsState';
 
 interface AnalysisWindowLayerProps {
   windows: AnalysisInstance[];
   onClose: (id: string) => void;
-  onPin: (id: string) => void;
   onConfirmConsumption: (win: AnalysisInstance) => void;
   onConfirmVoltage: (win: AnalysisInstance) => void;
   onShowVoltageDistribution: (nodeIds: string[], nodeName: string, degrees?: number) => void;
-  pinnedIds: string[];
-  isPinnedList?: boolean;
+  onMinimize: (id: string) => void;
 }
 
 export function AnalysisWindowLayer({
   windows,
   onClose,
-  onPin,
   onConfirmConsumption,
   onConfirmVoltage,
   onShowVoltageDistribution,
-  pinnedIds,
-  isPinnedList = false
+  onMinimize,
 }: AnalysisWindowLayerProps) {
   return (
     <>
@@ -37,10 +34,9 @@ export function AnalysisWindowLayer({
               data={win.data}
               estimatedRows={win.estimatedRows}
               nodeName={win.nodeName}
-              layoutMode={isPinnedList ? 'grid' : 'floating'}
-              isPinned={pinnedIds.includes(win.id)}
-              onPin={() => onPin(win.id)}
-              isPaused={win.isPaused ?? false}
+              layoutMode="floating"
+              onMinimize={() => onMinimize(win.id)}
+              isMinimized={win.isMinimized}
               onConfirm={() => onConfirmConsumption(win)}
             />
           );
@@ -64,11 +60,25 @@ export function AnalysisWindowLayer({
                   onShowVoltageDistribution(win.nodeIds, win.nodeName, d ?? 5);
                 }
               }}
-              layoutMode={isPinnedList ? 'grid' : 'floating'}
-              isPinned={pinnedIds.includes(win.id)}
-              onPin={() => onPin(win.id)}
-              isPaused={win.isPaused ?? false}
+              layoutMode="floating"
+              onMinimize={() => onMinimize(win.id)}
+              isMinimized={win.isMinimized}
               onConfirm={() => onConfirmVoltage(win)}
+            />
+          );
+        }
+        if (win.type === 'diagnostic') {
+          return (
+            <DiagnosticModal
+              key={win.id}
+              isOpen={win.isOpen}
+              onClose={() => onClose(win.id)}
+              zIndex={win.zIndex || 0}
+              id={win.nodeIds?.[0] || ''}
+              type="Node"
+              title={win.nodeName || 'Diagnostic'}
+              onMinimize={() => onMinimize(win.id)}
+              isMinimized={win.isMinimized}
             />
           );
         }

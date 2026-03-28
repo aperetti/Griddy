@@ -42,7 +42,6 @@ export interface AnalysisInstance {
 
 export function useAnalyticsState() {
   const [analysisWindows, setAnalysisWindows] = useState<AnalysisInstance[]>([]);
-  const [pinnedWindowIds, setPinnedWindowIds] = useState<string[]>([]);
   const [maxZIndex, setMaxZIndex] = useState(1000);
   const [sidebarWidth, setSidebarWidth] = useState(400);
   const [systemConfig, setSystemConfig] = useState<Record<string, string>>({});
@@ -79,20 +78,12 @@ export function useAnalyticsState() {
 
   const removeWindow = useCallback((id: string) => {
     setAnalysisWindows(prev => prev.filter(w => w.id !== id));
-    setPinnedWindowIds(prev => prev.filter(pid => pid !== id));
   }, []);
 
-  const togglePin = useCallback((id: string) => {
-    setPinnedWindowIds(prev => {
-      const isPinned = prev.includes(id);
-      if (isPinned) {
-        return prev.filter(pid => pid !== id);
-      } else {
-        // Auto-show sidebar when pinning
-        setGlobalConfig(cfg => ({ ...cfg, showAnalyticsSidebar: true }));
-        return [...prev, id];
-      }
-    });
+  const toggleMinimize = useCallback((id: string) => {
+    setAnalysisWindows(prev => prev.map(w =>
+      w.id === id ? { ...w, isMinimized: !w.isMinimized } : w
+    ));
   }, []);
 
   const bringWindowToFront = useCallback((id: string) => {
@@ -108,8 +99,6 @@ export function useAnalyticsState() {
   return {
     analysisWindows,
     setAnalysisWindows,
-    pinnedWindowIds,
-    setPinnedWindowIds,
     maxZIndex,
     setMaxZIndex,
     sidebarWidth,
@@ -118,7 +107,7 @@ export function useAnalyticsState() {
     setGlobalConfig,
     updateWindow,
     removeWindow,
-    togglePin,
+    toggleMinimize,
     bringWindowToFront,
     systemConfig
   };

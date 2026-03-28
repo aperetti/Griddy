@@ -24,8 +24,6 @@ interface Props {
     onFocus?: () => void;
     zIndex?: number;
     layoutMode?: 'floating' | 'grid';
-    isPinned?: boolean;
-    onPin?: () => void;
 }
 
 export const VoltageDistributionModal = memo(function VoltageDistributionModal({
@@ -46,8 +44,6 @@ export const VoltageDistributionModal = memo(function VoltageDistributionModal({
     onFocus,
     zIndex,
     layoutMode,
-    isPinned,
-    onPin,
 }: Props) {
     const handleExport = () => {
         if (!data || data.length === 0) return;
@@ -99,8 +95,6 @@ export const VoltageDistributionModal = memo(function VoltageDistributionModal({
             onCopy={handleCopy}
             loading={loading}
             layoutMode={layoutMode}
-            isPinned={isPinned}
-            onPin={onPin}
         >
             {isPaused ? (
                 <Box style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '20px' }}>

@@ -20,8 +20,6 @@ interface AnalysisWindowProps {
     loading?: boolean;
     onFocus?: () => void;
     layoutMode?: 'floating' | 'grid';
-    isPinned?: boolean;
-    onPin?: () => void;
 }
 
 /**
@@ -45,8 +43,6 @@ function AnalysisWindowComponent({
     loading = false,
     onFocus,
     layoutMode = 'floating',
-    isPinned = false,
-    onPin,
 }: AnalysisWindowProps) {
     const [showFilters, setShowFilters] = useState<boolean>(false);
     const [copied, setCopied] = useState(false);
@@ -197,21 +193,16 @@ function AnalysisWindowComponent({
                                 </ActionIcon>
                             </Tooltip>
                         )}
-                        {onPin && (
-                            <Tooltip label={isPinned ? "Unpin from Sidebar" : "Pin to Sidebar"} withArrow position="bottom">
-                                <ActionIcon
-                                    variant="subtle"
-                                    onClick={onPin}
-                                    color={isPinned ? "blue" : "gray"}
+                        {onMinimize && (
+                            <Tooltip label={isMinimized ? "Unpin (Expand)" : "Pin (Collapse)"} withArrow position="bottom">
+                                <ActionIcon 
+                                    variant={isMinimized ? "filled" : "subtle"} 
+                                    onClick={onMinimize} 
+                                    color={isMinimized ? "blue" : "gray"}
                                 >
-                                    {isPinned ? <PinOff size={16} /> : <Pin size={16} />}
+                                    {isMinimized ? <PinOff size={16} /> : <Pin size={16} />}
                                 </ActionIcon>
                             </Tooltip>
-                        )}
-                        {(layoutMode === 'floating' || !isPinned) && onMinimize && (
-                            <ActionIcon variant="subtle" onClick={onMinimize} title="Minimize">
-                                <ChevronDown size={16} />
-                            </ActionIcon>
                         )}
                         <ActionIcon variant="subtle" onClick={onClose} title="Close">
                             <X size={16} />
@@ -229,35 +220,41 @@ function AnalysisWindowComponent({
             </Box>
 
             {/* Content Area */}
-            <Box
-                className="analysis-window-content"
-                style={{
-                    flex: 1,
-                    position: 'relative',
-                    width: '100%',
-                    overflow: 'auto',
-                    padding: '10px',
-                    minHeight: loading ? 300 : undefined,
-                }}
-            >
-                {children}
-            </Box>
+                {!isMinimized && (
+                    <Box
+                        className="analysis-window-content"
+                        style={{
+                            flex: 1,
+                            position: 'relative',
+                            width: '100%',
+                            overflow: 'auto',
+                            padding: '10px',
+                            minHeight: loading ? 300 : undefined,
+                        }}
+                    >
+                        {children}
+                    </Box>
+                )}
         </Paper>
     );
 
-    if (!isOpen || (layoutMode === 'floating' && isMinimized)) return null;
+    if (!isOpen) return null;
 
-    if (layoutMode === 'grid' || isPinned) {
+    if (layoutMode === 'grid') {
         return windowContent;
     }
 
     return (
         <Rnd
             ref={rndRef}
-            size={{ width: rndState.width, height: rndState.height }}
+            size={{ 
+                width: rndState.width, 
+                height: isMinimized ? 'auto' : rndState.height 
+            }}
             position={{ x: rndState.x, y: rndState.y }}
             onDrag={(_e, d) => handleRndChange({ x: d.x, y: d.y })}
             onResize={(_e, _direction, ref, _delta, position) => {
+                if (isMinimized) return;
                 handleRndChange({
                     width: ref.offsetWidth,
                     height: ref.offsetHeight,
@@ -265,16 +262,21 @@ function AnalysisWindowComponent({
                 });
             }}
             minWidth={Math.min(400, window.innerWidth - 20)}
-            minHeight={200}
+            minHeight={isMinimized ? 0 : 200}
             bounds="window"
             dragHandleClassName="analysis-window-handle"
-            enableResizing={{
+            enableResizing={isMinimized ? false : {
                 top: true, right: true, bottom: true, left: true,
                 topRight: true, bottomRight: true, bottomLeft: true, topLeft: true
             }}
-            style={{ zIndex }}
+            style={{ 
+                zIndex,
+                pointerEvents: isMinimized ? 'none' : 'auto' // Allow header to still get events? Wait.
+            }}
         >
-            {windowContent}
+            <div style={{ pointerEvents: 'auto' }}>
+                {windowContent}
+            </div>
         </Rnd>
     );
 }

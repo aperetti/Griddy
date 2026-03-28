@@ -16,6 +16,8 @@ interface DiagnosticModalProps {
     onViewConsumption?: (nodeIds: string[]) => void;
     onViewVoltage?: (nodeIds: string[]) => void;
     onFocus?: () => void;
+    isMinimized?: boolean;
+    onMinimize?: () => void;
     zIndex?: number;
 }
 
@@ -29,6 +31,8 @@ export const DiagnosticModal = memo(function DiagnosticModal({
     onViewConsumption,
     onViewVoltage,
     onFocus,
+    isMinimized,
+    onMinimize,
     zIndex
 }: DiagnosticModalProps) {
     const [currentId, setCurrentId] = useState(initialId);
@@ -128,6 +132,8 @@ export const DiagnosticModal = memo(function DiagnosticModal({
         <AnalysisWindow
             isOpen={isOpen}
             onClose={onClose}
+            onMinimize={onMinimize}
+            isMinimized={isMinimized}
             title={data?.name ? `Diagnostic: ${data.name}` : initialTitle}
             storageKey={`diagnostic-${initialId}`}
             zIndex={zIndex}
