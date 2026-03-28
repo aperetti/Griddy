@@ -5,13 +5,28 @@ title: Release Updates
 
 This page tracks the evolution of the Griddy project. We are currently in **Alpha** (v0.2.3-alpha).
 
-## [0.2.3-alpha] - 2026-03-27
-### Removed
-- **Analytics Sidebar**: Completely removed the pinned analytic sidebar from the main interface to maximize grid visibility.
-- **Legacy Layout Modes**: Deprecated the "Grid Sidebar" layout mode in favor of a unified floating window system for all analysis views.
+## [0.2.3-alpha] - 2026-03-27 (Commit: c075154)
+### Added
+- **Analytic Window Pinning**: Users can now "pin" analysis windows to keep them visible while navigating other parts of the grid.
+- **Neo4j Graph Database**: Transitioned grid model storage and traversal from SQL-only to Neo4j for highly performant graph queries.
+- **Robust Graph Traversal**: Implemented logical flow depth and transformer orientation for more accurate upstream/downstream tracing.
+- **Profile Management**: Introduced JSON-based Profile Management for Display Rules, allowing users to switch between complex visualization presets.
+- **Multi-Model Reading Generation**: Added support for generating synthetic meter readings across multiple grid models simultaneously.
 
 ### Changed
-- **UI Simplification**: Cleaned up the main hamburger menu and global settings by removing redundant sidebar configuration options.
+- **Mobile Optimization**: Automatically hide the minimap on viewports ≤768px to prioritize map visibility.
+- **UI Refinement**: 
+  - Reorganized the Hamburger menu for better clarity and grouping.
+  - Refactored `DisplayRulesManager` into logical sections and removed legacy color pickers in favor of profile-based styling.
+  - Simplified `GlobalSettingsModal` by removing the Analytics Sidebar and legacy layout modes.
+
+### Removed
+- **Analytics Sidebar**: Deprecated the pinned sidebar in favor of a 100% floating window system for all analysis windows.
+- **Legacy Layout Modes**: Removed "Grid Sidebar" layout to optimize the geospatial exploration experience.
+
+### Fixed
+- **Analytics Window Accessibility**: Improved window layering (zIndex) to ensure new analysis windows always appear on top.
+- **CIM Loading**: Resolved a syntax error in the CIM ingestion service and stabilized the Neo4j monitor service.
 
 ## [0.2.2-alpha] - 2026-03-23
 ### Added
