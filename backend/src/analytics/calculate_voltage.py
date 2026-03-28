@@ -57,31 +57,29 @@ class CalculateVoltageDistributionUseCase:
         query_params = nodes_to_query + [start_time, end_time]
         
         query = f"""
-            WITH a_bins AS (
-                SELECT ROUND(voltage_a * 2) / 2.0 as v_bin, COUNT(*) as cnt_a
+            WITH raw_readings AS (
+                SELECT node_id, timestamp, voltage_a, voltage_b, voltage_c
                 FROM read_parquet('{self.parquet_dir}/*.parquet')
                 WHERE node_id IN ({placeholders})
                   AND timestamp >= CAST(? AS TIMESTAMP)
                   AND timestamp <= CAST(? AS TIMESTAMP)
-                  AND voltage_a IS NOT NULL
+            ),
+            a_bins AS (
+                SELECT ROUND(voltage_a * 2) / 2.0 as v_bin, COUNT(*) as cnt_a
+                FROM raw_readings
+                WHERE voltage_a IS NOT NULL
                 GROUP BY 1
             ),
             b_bins AS (
                 SELECT ROUND(voltage_b * 2) / 2.0 as v_bin, COUNT(*) as cnt_b
-                FROM read_parquet('{self.parquet_dir}/*.parquet')
-                WHERE node_id IN ({placeholders})
-                  AND timestamp >= CAST(? AS TIMESTAMP)
-                  AND timestamp <= CAST(? AS TIMESTAMP)
-                  AND voltage_b IS NOT NULL
+                FROM raw_readings
+                WHERE voltage_b IS NOT NULL
                 GROUP BY 1
             ),
             c_bins AS (
                 SELECT ROUND(voltage_c * 2) / 2.0 as v_bin, COUNT(*) as cnt_c
-                FROM read_parquet('{self.parquet_dir}/*.parquet')
-                WHERE node_id IN ({placeholders})
-                  AND timestamp >= CAST(? AS TIMESTAMP)
-                  AND timestamp <= CAST(? AS TIMESTAMP)
-                  AND voltage_c IS NOT NULL
+                FROM raw_readings
+                WHERE voltage_c IS NOT NULL
                 GROUP BY 1
             ),
             all_bins AS (
@@ -104,24 +102,26 @@ class CalculateVoltageDistributionUseCase:
         """
         heatmap_query = f"""
             SELECT * FROM (
-                WITH total_loading AS (
-                    SELECT timestamp, SUM(kwh_dlv) as total_kwh
+                WITH raw_readings AS (
+                    SELECT timestamp, node_id, kwh_dlv, voltage_a
                     FROM read_parquet('{self.parquet_dir}/*.parquet')
                     WHERE node_id IN ({placeholders})
                       AND timestamp >= CAST(? AS TIMESTAMP)
                       AND timestamp <= CAST(? AS TIMESTAMP)
+                ),
+                total_loading AS (
+                    SELECT timestamp, SUM(kwh_dlv) as total_kwh
+                    FROM raw_readings
+                    WHERE kwh_dlv IS NOT NULL
                     GROUP BY timestamp
                 )
                 SELECT 
                     t.total_kwh as loading,
                     r.voltage_a as voltage,
                     CAST(COUNT(*) AS INTEGER) as cnt
-                FROM read_parquet('{self.parquet_dir}/*.parquet') r
+                FROM raw_readings r
                 JOIN total_loading t ON r.timestamp = t.timestamp
-                WHERE r.node_id IN ({placeholders})
-                  AND r.timestamp >= CAST(? AS TIMESTAMP)
-                  AND r.timestamp <= CAST(? AS TIMESTAMP)
-                  AND r.voltage_a IS NOT NULL
+                WHERE r.voltage_a IS NOT NULL
                   AND t.total_kwh IS NOT NULL
                 GROUP BY 1, 2
             ) USING SAMPLE reservoir(10000)

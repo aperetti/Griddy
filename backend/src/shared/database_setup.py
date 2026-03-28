@@ -105,6 +105,23 @@ def init_admin_db():
         )
         print("Default admin user created.")
     
+    # ── Config Overrides ──────────────────────────────────────────
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS config_overrides (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    # Seed default analytics threshold if not exists
+    cursor.execute("SELECT COUNT(*) FROM config_overrides WHERE key = 'analytics_threshold'")
+    if cursor.fetchone()[0] == 0:
+        conn.execute(
+            "INSERT INTO config_overrides (key, value) VALUES (?, ?)",
+            ("analytics_threshold", "2000000")
+        )
+    
     conn.commit()
     conn.close()
     print(f"Admin database initialised at {ADMIN_SQLITE_PATH}")

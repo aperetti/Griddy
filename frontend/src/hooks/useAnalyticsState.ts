@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { type GlobalConfig } from '../features/analytics/components/GlobalSettingsModal';
+import { fetchConfigOverrides } from '../shared/api';
 
 export const SETTINGS_KEY = 'analysis_settings';
 
@@ -44,6 +45,16 @@ export function useAnalyticsState() {
   const [pinnedWindowIds, setPinnedWindowIds] = useState<string[]>([]);
   const [maxZIndex, setMaxZIndex] = useState(1000);
   const [sidebarWidth, setSidebarWidth] = useState(400);
+  const [systemConfig, setSystemConfig] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    fetchConfigOverrides()
+      .then(configs => {
+        const configMap = configs.reduce((acc, curr) => ({ ...acc, [curr.key]: curr.value }), {} as Record<string, string>);
+        setSystemConfig(configMap);
+      })
+      .catch(err => console.error('Failed to fetch system config overrides', err));
+  }, []);
 
   const [globalConfig, setGlobalConfig] = useState<GlobalConfig>(() => {
     const saved = localStorage.getItem('globalConfig');
@@ -108,6 +119,7 @@ export function useAnalyticsState() {
     updateWindow,
     removeWindow,
     togglePin,
-    bringWindowToFront
+    bringWindowToFront,
+    systemConfig
   };
 }

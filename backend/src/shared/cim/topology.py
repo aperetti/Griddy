@@ -188,6 +188,14 @@ class TopologyBuilder:
 
             cn1 = term_list[0][1]
             cn2 = term_list[1][1]
+
+            # Robust Orientation for Transformers:
+            # If we know the primary CN from the index, ensure cn1 is the primary.
+            if eq_type in ("PowerTransformer", "Regulator", "TransformerTank"):
+                primary_cn = idx.transformer_primary_cn.get(eq_mrid)
+                if primary_cn and primary_cn == cn2:
+                    # Swap so cn1 is primary (source-side)
+                    cn1, cn2 = cn2, cn1
             phases = self._get_phases_for_equipment(eq_mrid) or ["A", "B", "C"]
 
             entry = idx.equipment_index.get(eq_mrid)

@@ -1,8 +1,8 @@
 import '@mantine/core/styles.css';
 import '@mantine/dates/styles.css';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { 
-  MantineProvider, 
+import {
+  MantineProvider,
   Box
 } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
@@ -36,9 +36,9 @@ const calculateRange = (config: any) => {
   else if (config.customDays) start.setDate(end.getDate() - config.customDays);
   else start.setDate(end.getDate() - 30); // Robust fallback
 
-  return { 
-    start: start.toISOString().split('.')[0], 
-    end: end.toISOString().split('.')[0] 
+  return {
+    start: start.toISOString().split('.')[0],
+    end: end.toISOString().split('.')[0]
   };
 };
 
@@ -58,7 +58,7 @@ export default function App() {
   // Hooks
   const topology = useTopology();
   const analytics = useAnalyticsState();
-  
+
   const [dateRange, setDateRange] = useState(() => calculateRange(analytics.globalConfig));
   useEffect(() => {
     if (analytics.globalConfig.endDateType === 'now') {
@@ -70,7 +70,10 @@ export default function App() {
     dateRange,
     updateWindow: analytics.updateWindow,
     setAnalysisWindows: analytics.setAnalysisWindows,
-    bringWindowToFront: analytics.bringWindowToFront
+    bringWindowToFront: analytics.bringWindowToFront,
+    systemConfig: analytics.systemConfig,
+    setHighlightedNodes: topology.setHighlightedNodes,
+    setHighlightedEdges: topology.setHighlightedEdges
   });
 
   const bringDisplayRulesToFront = useCallback(() => {
@@ -101,7 +104,7 @@ export default function App() {
 
       const current = topology.activeModelIds;
       const prev = lastActiveModelIds.current;
-      
+
       const added = current.filter(id => !prev.includes(id));
       const removed = prev.filter(id => !current.includes(id));
 
@@ -139,7 +142,7 @@ export default function App() {
             topology.setNodes(nodes => [...nodes, ...data.nodes]);
             topology.setEdges(edges => [...edges, ...data.edges]);
           }
-          
+
           lastActiveModelIds.current = current;
         } catch (err) {
           console.error('[App] Incremental topology load failed:', err);
@@ -159,7 +162,7 @@ export default function App() {
       next.add(node.id);
       return next;
     });
-    
+
     setTargetLocation(null);
   }, [topology, isMobile]);
 
@@ -188,7 +191,7 @@ export default function App() {
           }
         }}
       />
-      
+
       <DisplayRulesManager
         opened={displayRulesOpen}
         onClose={() => setDisplayRulesOpen(false)}
@@ -214,23 +217,23 @@ export default function App() {
             onViewStateChange={setViewState}
             goToLocation={targetLocation}
           />
-          
+
           {!isMobile && (
-            <Minimap 
-              nodes={topology.nodes} 
+            <Minimap
+              nodes={topology.nodes}
               edges={topology.edges}
               viewState={viewState}
               onNavigate={(lon, lat) => setTargetLocation({ longitude: lon, latitude: lat })}
               selectedNodeIds={Array.from(topology.highlightedNodes)}
             />
           )}
-          
-          <VoltageScalePanel 
-            voltageScale={voltageScale} 
+
+          <VoltageScalePanel
+            voltageScale={voltageScale}
             setVoltageScale={setVoltageScale}
             visible={analytics.analysisWindows.some(w => w.type === 'voltage' && w.isOpen)}
           />
- 
+
           <OverlayControls
             activeModelIds={topology.activeModelIds}
             setActiveModelIds={topology.setActiveModelIds}
@@ -244,8 +247,8 @@ export default function App() {
             isMobile={isMobile}
           />
           {/* Selection HUD - positioned under search */}
-          <Box style={{ 
-            position: 'absolute', 
+          <Box style={{
+            position: 'absolute',
             top: isMobile ? 85 : 75, // Closer to menu but not overlapping
             left: '50%',
             transform: 'translateX(-50%)',
@@ -262,7 +265,7 @@ export default function App() {
                 if (nodeIds.length === 0 && topology.highlightedEdges.size > 0) {
                   const edgeIds = Array.from(topology.highlightedEdges);
                   nodeIds = Array.from(new Set(
-                    edgeIds.map(eid => 
+                    edgeIds.map(eid =>
                       topology.edges.find(e => e.id === eid || `${e.source}-${e.target}` === eid)?.target
                     ).filter(Boolean) as string[]
                   ));
@@ -275,7 +278,7 @@ export default function App() {
                 if (nodeIds.length === 0 && topology.highlightedEdges.size > 0) {
                   const edgeIds = Array.from(topology.highlightedEdges);
                   nodeIds = Array.from(new Set(
-                    edgeIds.map(eid => 
+                    edgeIds.map(eid =>
                       topology.edges.find(e => e.id === eid || `${e.source}-${e.target}` === eid)?.target
                     ).filter(Boolean) as string[]
                   ));

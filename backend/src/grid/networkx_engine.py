@@ -1,23 +1,27 @@
-"""NetworkX Graph Engine Implementation."""
 import networkx as nx
-from typing import List
+from typing import List, Dict, Set, Optional, Tuple
 import itertools
+import logging
 from src.shared.graph_engine import GraphEngine
 from src.grid.graph_node import GraphNode
+
+logger = logging.getLogger(__name__)
 
 class NetworkXEngine(GraphEngine):
     """Graph engine implementation using NetworkX."""
     
     def __init__(self):
         self.graph = nx.MultiDiGraph()
-        self.nodes = {} # id -> GraphNode
-        self.pos_to_nodes = {} # (lat, lon) -> list of node_ids
+        self.nodes: Dict[str, GraphNode] = {}
+        self.pos_to_nodes: Dict[Tuple[float, float], List[str]] = {}
+        self.flow_depth: Dict[str, int] = {}  # Node ID -> distance from root source
         
     def build_graph(self, nodes: List[GraphNode] = None, edges: List[dict] = None) -> None:
         """Constructs the directed graph with spatial stitching for coincident nodes."""
         self.graph.clear()
         self.nodes = {}
         self.pos_to_nodes = {}
+        self.flow_depth = {}
         
         # 1. Register all nodes and build spatial index
         if nodes:
@@ -51,26 +55,65 @@ class NetworkXEngine(GraphEngine):
                     # We use a special prefix so they doesn't get confused with real edges
                     self.graph.add_edge(u, v, edge_id=f"stitch_{u}_{v}", virtual=True)
                     self.graph.add_edge(v, u, edge_id=f"stitch_{v}_{u}", virtual=True)
+        
+        # 4. Calculate Logical Flow Depth
+        self._calculate_flow_depth()
+
+    def _calculate_flow_depth(self):
+        """Pre-calculates logical distance from the nearest substation source.
+        Used to ensure traversals only follow intended grid hierarchy.
+        """
+        sources = []
+        for node_id, node in self.nodes.items():
+            is_source = node.type == "Substation"
+            if not is_source:
+                for eq in node.attached_equipment:
+                    if eq.get("type") == "EnergySource":
+                        is_source = True
+                        break
+            if is_source:
+                sources.append(node_id)
+
+        if not sources:
+            logger.warning("No source nodes (Substation/EnergySource) found. Downstream logic will be less robust.")
+            return
+
+        # Use undirected graph to find distances regardless of edge orientation
+        undirected = self.graph.to_undirected()
+        
+        # Calculate distance from sources. 
+        # Real edges have weight 1, virtual stitches have weight 0 (same physical point).
+        def get_weight(u, v, data):
+            return 0 if data.get("virtual") else 1
+
+        try:
+            # We iterate through all edges to ensure weight attribute is present for Dijkstra
+            for u, v, data in undirected.edges(data=True):
+                data['weight'] = 0 if data.get('virtual') else 1
+                
+            self.flow_depth = nx.multi_source_dijkstra_path_length(undirected, sources, weight='weight')
+            logger.info("Computed flow depth for %d nodes from %d sources", len(self.flow_depth), len(sources))
+        except Exception as e:
+            logger.error("Failed to calculate flow depth: %s", str(e))
+            self.flow_depth = {}
 
     def find_downstream(self, start_node_id: str, max_depth: int = None) -> tuple[List[str], List[str]]:
         """Finds all node IDs and edge IDs logically downstream.
-        Traverses the directed graph in the forward direction."""
+        Uses undirected traversal filtered by logical flow depth."""
         resolved_start = self._resolve_start_node(start_node_id)
         if resolved_start is None:
             return [], []
             
-        return self._bfs_traversal(self.graph, resolved_start, max_depth)
+        return self._bfs_traversal(resolved_start, max_depth, direction="downstream")
 
     def find_upstream(self, start_node_id: str, max_depth: int = None) -> tuple[List[str], List[str]]:
         """Finds all node IDs and edge IDs logically upstream.
-        Traverses the directed graph in the reverse direction."""
+        Uses undirected traversal filtered by logical flow depth."""
         resolved_start = self._resolve_start_node(start_node_id)
         if resolved_start is None:
             return [], []
             
-        # Reverse graph to follow flow "upwards"
-        reversed_graph = self.graph.reverse()
-        return self._bfs_traversal(reversed_graph, resolved_start, max_depth)
+        return self._bfs_traversal(resolved_start, max_depth, direction="upstream")
 
     def _resolve_start_node(self, start_node_id: str) -> str | None:
         """Resolves a traversal start node.
@@ -105,47 +148,77 @@ class NetworkXEngine(GraphEngine):
 
         return best_node if best_node is not None else (start_node_id if start_node_id in self.graph else None)
 
-    def _bfs_traversal(self, graph: nx.Graph | nx.DiGraph | nx.MultiDiGraph, start_node_id: str, max_depth: int = None) -> tuple[List[str], List[str]]:
-        """Generic BFS traversal for finding nodes and edges."""
+    def _bfs_traversal(self, start_node_id: str, max_depth: int = None, direction: str = "downstream") -> tuple[List[str], List[str]]:
+        """Generic BFS traversal using undirected graph and logical flow depth filtering.
+        This approach is robust against incorrectly oriented edges in input data.
+        """
         nodes = set()
         edges = set()
         
         queue = [(start_node_id, 0)]
         visited_nodes = {start_node_id}
         
+        # We use an undirected view of the graph so we can find paths even if 
+        # CIM relationship orientation is inconsistent.
+        undirected = self.graph.to_undirected(as_view=True)
+        
         while queue:
             current_node, depth = queue.pop(0)
             if max_depth is not None and depth >= max_depth:
                 continue
                 
-            # For DiGraph and MultiDiGraph, edges(node) returns all outgoing edges
-            # This handles both branched paths and parallel edges between same nodes
-            if hasattr(graph, 'edges'):
-                for _, neighbor, data in graph.edges(current_node, data=True):
+            # neighbors(node) in undirected graph handles all incident edges
+            for neighbor in undirected.neighbors(current_node):
+                if neighbor in visited_nodes:
+                    continue
+
+                # Robustness Check: Enforce logical flow direction via pre-calculated depths
+                if self.flow_depth:
+                    curr_lvl = self.flow_depth.get(current_node)
+                    next_lvl = self.flow_depth.get(neighbor)
+                    
+                    if curr_lvl is not None and next_lvl is not None:
+                        if direction == "downstream" and next_lvl < curr_lvl:
+                            # Moving back toward source during downstream search
+                            continue
+                        if direction == "upstream" and next_lvl > curr_lvl:
+                            # Moving away from source during upstream search
+                            continue
+
+                # Check edge data (there might be multiple edges between u and v in MultiDiGraph)
+                edge_data_list = self.graph.get_edge_data(current_node, neighbor) or {}
+                # Also check reverse edges since we are in undirected mode
+                reverse_data_list = self.graph.get_edge_data(neighbor, current_node) or {}
+                
+                # Check edge data
+                # MultiDiGraph returns a dict of {key: data}, DiGraph returns data dict directly.
+                all_edges = []
+                if self.graph.is_multigraph():
+                    if edge_data_list:
+                        all_edges.extend(edge_data_list.values())
+                    if reverse_data_list:
+                        all_edges.extend(reverse_data_list.values())
+                else:
+                    if edge_data_list:
+                        all_edges.append(edge_data_list)
+                    if reverse_data_list:
+                        all_edges.append(reverse_data_list)
+
+                is_blocked = True
+                for data in all_edges:
                     # Capture real edge IDs (ignore virtual stitch edges for the result)
                     if "edge_id" in data and not data.get("virtual", False):
                         edges.add(data["edge_id"])
                         
-                    # Halt traversal if edge is open
-                    if data.get("is_open", False):
-                        continue
-                        
-                    if neighbor not in visited_nodes:
-                        visited_nodes.add(neighbor)
-                        nodes.add(neighbor)
-                        queue.append((neighbor, depth + 1))
-            else:
-                # Fallback for undirected regular Graph if needed
-                for neighbor in graph.neighbors(current_node):
-                    edge_data = graph.get_edge_data(current_node, neighbor)
-                    if edge_data and "edge_id" in edge_data:
-                        edges.add(edge_data["edge_id"])
-                    
-                    if neighbor not in visited_nodes:
-                        visited_nodes.add(neighbor)
-                        nodes.add(neighbor)
-                        queue.append((neighbor, depth + 1))
-                        
+                    # If AT LEAST ONE edge is not open, we can pass
+                    if not data.get("is_open", False):
+                        is_blocked = False
+                
+                if not is_blocked:
+                    visited_nodes.add(neighbor)
+                    nodes.add(neighbor)
+                    queue.append((neighbor, depth + 1))
+                         
         return list(nodes), list(edges)
 
     def get_node_phases(self, node_ids: List[str]) -> dict[str, List[str]]:

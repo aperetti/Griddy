@@ -369,7 +369,7 @@ export const VoltageDistributionModal = memo(function VoltageDistributionModal({
                                                 borderRadius: 1,
                                                 opacity: 0.5
                                             },
-                                            data: scatterData[0]?.data?.map((d: any) => [d.x, d.y, d.count]) || []
+                                            data: scatterData?.map((d: any) => [d.loading, d.voltage, d.count]) || []
                                         }
                                     ]
                                 }}

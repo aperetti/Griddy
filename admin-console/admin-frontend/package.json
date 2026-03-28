@@ -12,6 +12,7 @@
   "dependencies": {
     "@mantine/core": "^8.3.17",
     "@mantine/dates": "^8.3.17",
+    "@mantine/dropzone": "^8.3.17",
     "@mantine/hooks": "^8.3.17",
     "@mantine/notifications": "^8.3.17",
     "axios": "^1.13.6",

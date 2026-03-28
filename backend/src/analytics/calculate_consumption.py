@@ -94,25 +94,35 @@ class CalculateAggregateConsumptionUseCase:
         query = f"""
             WITH phase_weights(node_id, wa, wb, wc) AS (
                 VALUES {values_clause}
+            ),
+            aggregated AS (
+                SELECT 
+                    r.timestamp,
+                    SUM(COALESCE(r.kwh_dlv, 0)) as total_kwh_dlv,
+                    SUM(COALESCE(r.kwh_rcv, 0)) as total_kwh_rcv,
+                    SUM(COALESCE(r.kwh_dlv, 0) * pw.wa) as kwh_a,
+                    SUM(COALESCE(r.kwh_dlv, 0) * pw.wb) as kwh_b,
+                    SUM(COALESCE(r.kwh_dlv, 0) * pw.wc) as kwh_c
+                FROM read_parquet('{self.parquet_dir.replace("\\", "/")}/*.parquet') r
+                JOIN phase_weights pw ON r.node_id = pw.node_id
+                WHERE r.timestamp >= CAST(? AS TIMESTAMP)
+                  AND r.timestamp <= CAST(? AS TIMESTAMP)
+                GROUP BY r.timestamp
             )
             SELECT 
-                r.timestamp,
-                SUM(COALESCE(r.kwh_dlv, 0)) as total_kwh_dlv,
-                SUM(COALESCE(r.kwh_rcv, 0)) as total_kwh_rcv,
-                SUM(COALESCE(r.kwh_dlv, 0) * pw.wa) as kwh_a,
-                SUM(COALESCE(r.kwh_dlv, 0) * pw.wb) as kwh_b,
-                SUM(COALESCE(r.kwh_dlv, 0) * pw.wc) as kwh_c,
-                MAX(w.temperature) as temperature
-            FROM read_parquet('{self.parquet_dir.replace("\\", "/")}/*.parquet') r
-            JOIN phase_weights pw ON r.node_id = pw.node_id
+                a.timestamp,
+                a.total_kwh_dlv,
+                a.total_kwh_rcv,
+                a.kwh_a,
+                a.kwh_b,
+                a.kwh_c,
+                w.temperature
+            FROM aggregated a
             LEFT JOIN weather_recordings w 
-                ON w.month = EXTRACT(month FROM r.timestamp)
-                AND w.day = EXTRACT(day FROM r.timestamp)
-                AND w.hour = EXTRACT(hour FROM r.timestamp)
-            WHERE r.timestamp >= CAST(? AS TIMESTAMP)
-              AND r.timestamp <= CAST(? AS TIMESTAMP)
-            GROUP BY r.timestamp
-            ORDER BY r.timestamp ASC
+                ON w.month = EXTRACT(month FROM a.timestamp)
+                AND w.day = EXTRACT(day FROM a.timestamp)
+                AND w.hour = EXTRACT(hour FROM a.timestamp)
+            ORDER BY a.timestamp ASC
         """
         
         try:

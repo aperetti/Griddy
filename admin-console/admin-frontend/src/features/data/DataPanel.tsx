@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Button, Group, Paper, Title, Stack, Text, Alert, ThemeIcon } from '@mantine/core';
 import { Database, Play, Info, Activity } from 'lucide-react';
 import { dataApi } from '../../api';
+import { CimUpload } from './CimUpload';
 
 export function DataPanel() {
   const [loading, setLoading] = useState<string | null>(null);
@@ -23,6 +24,7 @@ export function DataPanel() {
   return (
     <Stack gap="md">
       <Title order={4}>Pipeline Control</Title>
+      <CimUpload />
       
       <Group grow>
         <Paper>

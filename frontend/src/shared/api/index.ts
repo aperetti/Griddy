@@ -399,3 +399,9 @@ export const fetchCimSchema = async (): Promise<Record<string, any>> => {
     if (!response.ok) throw new Error('Failed to fetch CIM schema');
     return response.json();
 };
+
+export const fetchConfigOverrides = async (): Promise<Array<{key: string, value: string}>> => {
+    const response = await fetch(`${API_BASE}/cim/config`);
+    if (!response.ok) throw new Error('Failed to fetch configuration overrides');
+    return response.json();
+};

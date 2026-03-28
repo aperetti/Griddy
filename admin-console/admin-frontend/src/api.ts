@@ -7,6 +7,13 @@ const api = axios.create({
 export const dataApi = {
   generate: () => api.post('/data/generate').then(res => res.data),
   ingest: () => api.post('/data/ingest').then(res => res.data),
+  upload: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/data/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    }).then(res => res.data);
+  },
 };
 
 export const configApi = {
