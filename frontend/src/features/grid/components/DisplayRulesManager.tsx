@@ -1,18 +1,19 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { useMediaQuery } from '@mantine/hooks';
 import { 
+    X, Upload, Trash2, Plus,
+    AlertCircle, Code, Eye, Info, Copy, Lock,
+    ArrowLeft, Download, MoreVertical, ListOrdered,
+    ArrowDownAZ, Filter, Package, Maximize2
+} from 'lucide-react';
+import { 
     Table, Button, Group, ActionIcon, 
     Stack, Text, Badge, Select, TextInput, 
     NumberInput, JsonInput, Paper, Divider,
     ColorSwatch, Box, PasswordInput,
     Alert, FileButton, Grid, Textarea, Switch,
-    Fieldset, Menu, rem, Tooltip
+    Fieldset, Menu, rem, Tooltip, SegmentedControl
 } from '@mantine/core';
-import {
-    X, Upload, Maximize2, Trash2, Plus,
-    AlertCircle, Code, Eye, Info, Copy, Lock,
-    ArrowLeft, Download, MoreVertical
-} from 'lucide-react';
 import { AnalysisWindow } from '../../analytics/components/AnalysisWindow';
 import {
     fetchDisplayConfigs, fetchDisplayRules,
@@ -48,6 +49,11 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
     const [saveError, setSaveError] = useState<string | null>(null);
     const [useBuilder, setUseBuilder] = useState(true);
     const [isEditorOpen, setIsEditorOpen] = useState(false);
+    
+    // Grouping and Sorting state
+    const [groupBy, setGroupBy] = useState<'none' | 'cim_class'>('none');
+    const [sortBy, setSortBy] = useState<'priority' | 'name'>('priority');
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
     const [editorValue, setEditorValue] = useState('');
     const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('adminAuth'));
     const [authUsername, setAuthUsername] = useState('');
@@ -103,11 +109,54 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
     const loadRules = async (configId: number) => {
         try {
             const data = await fetchDisplayRules(configId);
-            setRules(data.sort((a, b) => b.priority - a.priority));
+            setRules(data);
         } catch (err) {
             console.error('Failed to load rules', err);
         }
     };
+
+    // Helper to get group name for a rule
+    const getCimClass = (rule: DisplayRule) => {
+        try {
+            const conds = typeof rule.match_conditions === 'string' 
+                ? JSON.parse(rule.match_conditions) 
+                : rule.match_conditions;
+            return conds?.target_class || 'Any Class';
+        } catch {
+            return 'Invalid Rule';
+        }
+    };
+
+    // Processed rules (sorted and grouped)
+    const processedRules = React.useMemo(() => {
+        // 1. Sort the rules
+        const sorted = [...rules].sort((a, b) => {
+            let comparison = 0;
+            if (sortBy === 'priority') {
+                comparison = a.priority - b.priority;
+            } else {
+                comparison = a.name.localeCompare(b.name);
+            }
+            return sortOrder === 'asc' ? comparison : -comparison;
+        });
+
+        // 2. Group if selected
+        if (groupBy === 'none') {
+            return [{ groupName: null, rules: sorted }];
+        }
+
+        const groups: Record<string, DisplayRule[]> = {};
+        sorted.forEach(rule => {
+            const cls = getCimClass(rule);
+            if (!groups[cls]) groups[cls] = [];
+            groups[cls].push(rule);
+        });
+
+        return Object.keys(groups).sort().map(name => ({
+            groupName: name,
+            rules: groups[name]
+        }));
+    }, [rules, groupBy, sortBy, sortOrder]);
 
     const handleSetDefault = async (configId: number) => {
         try {
@@ -642,221 +691,213 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                 </Stack>
                             </Fieldset>
 
-                            <Fieldset legend={<Text size="xs" fw={700}>Visual Appearance</Text>} variant="unstyled" style={{ padding: '0' }}>
-                                <Grid gutter="xs" align="flex-end">
-                                    <Grid.Col span={{ base: 4, sm: 2 }}>
-                                        <NumberInput
-                                            label={
-                                                <Group gap={4} wrap="nowrap">
-                                                    <Text size="xs" fw={500}>Size</Text>
-                                                    <Tooltip label="Scaling factor applied to icons or line widths." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
-                                                        <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
-                                                    </Tooltip>
-                                                </Group>
-                                            }
-                                            placeholder="1.0"
-                                            step={0.1}
-                                            decimalScale={1}
-                                            value={editingRule?.config?.size || 1.0}
-                                            onChange={(val) => setEditingRule(prev => prev ? { 
-                                                ...prev, 
-                                                config: { ...(prev.config || {}), size: typeof val === 'number' ? val : 1.0 } as any
-                                            } : null)}
-                                            size="xs"
-                                        />
-                                    </Grid.Col>
-                                    <Grid.Col span={{ base: 8, sm: 4 }}>
-                                        <Stack gap={4}>
-                                            <Text size="xs" fw={500}>SVG Icon</Text>
-                                            <Group gap="xs" wrap="nowrap">
-                                                <FileButton onChange={handleFileUpload} accept="image/svg+xml">
-                                                    {(props) => (
-                                                        <Button {...props} variant="light" size="xs" leftSection={<Upload size={14} />}>
-                                                            Upload
-                                                        </Button>
-                                                    )}
-                                                </FileButton>
-                                                <Button 
-                                                    variant="light" 
-                                                    size="xs" 
-                                                    leftSection={<Maximize2 size={14} />}
-                                                    onClick={openEditor}
-                                                    style={{ flex: 1 }}
-                                                >
-                                                    {isMobile ? "Live" : "Live Editor"}
-                                                </Button>
-                                            </Group>
-                                        </Stack>
-                                    </Grid.Col>
+                            <Paper withBorder p="md" style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
+                                <Stack gap="md">
+                                    <Text size="xs" fw={700} tt="uppercase" c="dimmed">Visual Settings</Text>
                                     
-                                    <Grid.Col span={{ base: 4, sm: 1 }}>
-                                        <Group justify="center" align="center" h="100%">
-                                            {editingRule?.config?.icon && (editingRule.config.icon.trim().startsWith('<svg') || editingRule.config.icon.includes('<svg')) ? (
-                                                <Box style={{ 
-                                                    width: 32, 
-                                                    height: 32, 
-                                                    display: 'flex', 
-                                                    alignItems: 'center', 
-                                                    justifyContent: 'center',
-                                                    background: 'rgba(255,255,255,0.1)',
-                                                    borderRadius: 4,
-                                                    overflow: 'hidden'
-                                                }}>
-                                                    <div 
-                                                        style={{ width: '100%', height: '100%', display: 'flex' }}
-                                                        dangerouslySetInnerHTML={{ __html: editingRule.config.icon }} 
-                                                    />
-                                                </Box>
-                                            ) : (
-                                                <Box style={{ width: 32, height: 32, border: '1px dashed rgba(255,255,255,0.2)', borderRadius: 4 }} />
-                                            )}
-                                        </Group>
-                                    </Grid.Col>
+                                    <Grid gutter="md">
+                                        <Grid.Col span={9}>
+                                            <Stack gap="sm">
+                                                <Grid gutter="xs" align="flex-end">
+                                                    <Grid.Col span={4}>
+                                                        <NumberInput
+                                                            label={
+                                                                <Group gap={4} wrap="nowrap">
+                                                                    <Text size="xs" fw={500}>Size</Text>
+                                                                    <Tooltip label="Scaling factor applied to icons or line widths." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                                        <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                                                    </Tooltip>
+                                                                </Group>
+                                                            }
+                                                            placeholder="1.0"
+                                                            step={0.1}
+                                                            decimalScale={1}
+                                                            value={editingRule?.config?.size || 1.0}
+                                                            onChange={(val) => setEditingRule(prev => prev ? { 
+                                                                ...prev, 
+                                                                config: { ...(prev.config || {}), size: typeof val === 'number' ? val : 1.0 } as any
+                                                            } : null)}
+                                                            size="xs"
+                                                        />
+                                                    </Grid.Col>
+                                                    <Grid.Col span={8}>
+                                                        <TextInput
+                                                            label={
+                                                                <Group gap={4} wrap="nowrap">
+                                                                    <Text size="xs" fw={500}>Label</Text>
+                                                                    <Tooltip label="Static text that will appear in the node's label on the map view." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
+                                                                        <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
+                                                                    </Tooltip>
+                                                                </Group>
+                                                            }
+                                                            placeholder="Label..."
+                                                            value={editingRule?.config?.label || ''}
+                                                            onChange={(e) => setEditingRule(prev => prev ? { 
+                                                                ...prev, 
+                                                                config: { ...(prev.config || {}), label: e.target.value } as any
+                                                            } : null)}
+                                                            size="xs"
+                                                        />
+                                                    </Grid.Col>
+                                                </Grid>
 
-                                    <Grid.Col span={{ base: 8, sm: 5 }}>
-                                        <TextInput
-                                            label={
-                                                <Group gap={4} wrap="nowrap">
-                                                    <Text size="xs" fw={500}>Label</Text>
-                                                    <Tooltip label="Static text that will appear in the node's label on the map view." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
-                                                        <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
-                                                    </Tooltip>
-                                                </Group>
-                                            }
-                                            placeholder="Label..."
-                                            value={editingRule?.config?.label || ''}
-                                            onChange={(e) => setEditingRule(prev => prev ? { 
-                                                ...prev, 
-                                                config: { ...(prev.config || {}), label: e.target.value } as any
-                                            } : null)}
-                                            size="xs"
-                                        />
-                                    </Grid.Col>
-                                </Grid>
-                            </Fieldset>
-
-                            <Fieldset legend={<Text size="xs" fw={700}>Visibility & Behavior</Text>} variant="unstyled" style={{ padding: '0' }}>
-                                <Stack gap="sm">
-                                    <Grid gutter="xs">
-                                        <Grid.Col span={6}>
-                                            <NumberInput
-                                                label={
-                                                    <Group gap={4} wrap="nowrap">
-                                                        <Text size="xs" fw={500}>Min Zoom</Text>
-                                                        <Tooltip label="Minimum zoom level at which these assets are visible." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
-                                                            <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
-                                                        </Tooltip>
+                                                <Stack gap={4}>
+                                                    <Text size="xs" fw={500}>SVG Icon</Text>
+                                                    <Group gap="xs" wrap="nowrap">
+                                                        <FileButton onChange={handleFileUpload} accept="image/svg+xml">
+                                                            {(props) => (
+                                                                <Button {...props} variant="light" size="xs" leftSection={<Upload size={14} />}>
+                                                                    Upload
+                                                                </Button>
+                                                            )}
+                                                        </FileButton>
+                                                        <Button 
+                                                            variant="light" 
+                                                            size="xs" 
+                                                            leftSection={<Maximize2 size={14} />}
+                                                            onClick={openEditor}
+                                                            style={{ flex: 1 }}
+                                                        >
+                                                            {isMobile ? "Live" : "Live Editor"}
+                                                        </Button>
                                                     </Group>
-                                                }
-                                                placeholder="0"
-                                                min={0}
-                                                max={24}
-                                                step={0.5}
-                                                value={editingRule?.config?.min_zoom ?? 0}
-                                                onChange={(val) => setEditingRule(prev => prev ? { 
-                                                    ...prev, 
-                                                    config: { ...(prev.config || {}), min_zoom: typeof val === 'number' ? val : 0 } as any
-                                                } : null)}
-                                                size="xs"
-                                            />
-                                        </Grid.Col>
+                                                </Stack>
 
-                                        <Grid.Col span={6}>
-                                            <NumberInput
-                                                label={
-                                                    <Group gap={4} wrap="nowrap">
-                                                        <Text size="xs" fw={500}>Max Zoom</Text>
-                                                        <Tooltip label="Maximum zoom level at which these assets are visible." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
-                                                            <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
-                                                        </Tooltip>
+                                                <Grid gutter="xs">
+                                                    <Grid.Col span={6}>
+                                                        <NumberInput
+                                                            label="Min Zoom"
+                                                            placeholder="0"
+                                                            min={0} max={24} step={0.5}
+                                                            value={editingRule?.config?.min_zoom ?? 0}
+                                                            onChange={(val) => setEditingRule(prev => prev ? { 
+                                                                ...prev, config: { ...(prev.config || {}), min_zoom: typeof val === 'number' ? val : 0 } as any
+                                                            } : null)}
+                                                            size="xs"
+                                                        />
+                                                    </Grid.Col>
+                                                    <Grid.Col span={6}>
+                                                        <NumberInput
+                                                            label="Max Zoom"
+                                                            placeholder="24"
+                                                            min={0} max={24} step={0.5}
+                                                            value={editingRule?.config?.max_zoom ?? 24}
+                                                            onChange={(val) => setEditingRule(prev => prev ? { 
+                                                                ...prev, config: { ...(prev.config || {}), max_zoom: typeof val === 'number' ? val : 24 } as any
+                                                            } : null)}
+                                                            size="xs"
+                                                        />
+                                                    </Grid.Col>
+                                                </Grid>
+
+                                                <Stack gap="xs">
+                                                    <Group justify="space-between">
+                                                        <Group gap="xs">
+                                                            <Switch 
+                                                                label={<Text size="xs" fw={500}>Geospatial Clustering</Text>}
+                                                                size="xs"
+                                                                checked={editingRule?.config?.cluster_enabled || false}
+                                                                onChange={(e) => setEditingRule(prev => prev ? { 
+                                                                    ...prev, 
+                                                                    config: { ...(prev.config || {}), cluster_enabled: e.currentTarget.checked } as any
+                                                                } : null)}
+                                                            />
+                                                        </Group>
                                                     </Group>
-                                                }
-                                                placeholder="24"
-                                                min={0}
-                                                max={24}
-                                                step={0.5}
-                                                value={editingRule?.config?.max_zoom ?? 24}
-                                                onChange={(val) => setEditingRule(prev => prev ? { 
-                                                    ...prev, 
-                                                    config: { ...(prev.config || {}), max_zoom: typeof val === 'number' ? val : 24 } as any
-                                                } : null)}
-                                                size="xs"
-                                            />
-                                        </Grid.Col>
-                                    </Grid>
 
-                                    <Paper withBorder p="xs" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                                        <Stack gap="sm">
-                                            <Text size="xs" fw={700} c="dimmed">Geospatial Clustering</Text>
-                                            <Divider variant="dashed" />
-                                            <Group justify="space-between">
-                                                <Group gap="xs">
+                                                    {editingRule?.config?.cluster_enabled && (
+                                                        <Group grow gap="xs">
+                                                            <NumberInput
+                                                                label="Radius"
+                                                                size="xs"
+                                                                value={editingRule?.config?.cluster_radius || 50}
+                                                                onChange={(val) => setEditingRule(prev => prev ? { 
+                                                                    ...prev, 
+                                                                    config: { ...(prev.config || {}), cluster_radius: typeof val === 'number' ? val : 50 } as any
+                                                                } : null)}
+                                                            />
+                                                            <NumberInput
+                                                                label="Max Zoom"
+                                                                size="xs"
+                                                                value={editingRule?.config?.cluster_max_zoom || 14}
+                                                                onChange={(val) => setEditingRule(prev => prev ? { 
+                                                                    ...prev, 
+                                                                    config: { ...(prev.config || {}), cluster_max_zoom: typeof val === 'number' ? val : 14 } as any
+                                                                } : null)}
+                                                            />
+                                                            <NumberInput
+                                                                label="Min Pts"
+                                                                size="xs"
+                                                                value={editingRule?.config?.cluster_min_points || 2}
+                                                                onChange={(val) => setEditingRule(prev => prev ? { 
+                                                                    ...prev, 
+                                                                    config: { ...(prev.config || {}), cluster_min_points: typeof val === 'number' ? val : 2 } as any
+                                                                } : null)}
+                                                            />
+                                                        </Group>
+                                                    )}
+                                                </Stack>
+
+                                                <Group gap="md">
                                                     <Switch 
-                                                        label="Enable Clustering" 
+                                                        label={<Text size="xs" fw={500}>Rotate to Edge</Text>} 
                                                         size="xs"
-                                                        checked={editingRule?.config?.cluster_enabled || false}
+                                                        checked={editingRule?.config?.rotate_to_edge || false}
                                                         onChange={(e) => setEditingRule(prev => prev ? { 
                                                             ...prev, 
-                                                            config: { ...(prev.config || {}), cluster_enabled: e.currentTarget.checked } as any
-                                                        } : null)}
-                                                    />
-                                                    <Tooltip label="Groups nearby assets of this type into single markers at lower zoom levels." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
-                                                        <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
-                                                    </Tooltip>
-                                                </Group>
-                                            </Group>
-
-                                            {editingRule?.config?.cluster_enabled && (
-                                                <Group grow>
-                                                    <NumberInput
-                                                        label="Radius"
-                                                        size="xs"
-                                                        value={editingRule?.config?.cluster_radius || 50}
-                                                        onChange={(val) => setEditingRule(prev => prev ? { 
-                                                            ...prev, 
-                                                            config: { ...(prev.config || {}), cluster_radius: typeof val === 'number' ? val : 50 } as any
-                                                        } : null)}
-                                                    />
-                                                    <NumberInput
-                                                        label="Max Zoom"
-                                                        size="xs"
-                                                        value={editingRule?.config?.cluster_max_zoom || 14}
-                                                        onChange={(val) => setEditingRule(prev => prev ? { 
-                                                            ...prev, 
-                                                            config: { ...(prev.config || {}), cluster_max_zoom: typeof val === 'number' ? val : 14 } as any
-                                                        } : null)}
-                                                    />
-                                                    <NumberInput
-                                                        label="Min Points"
-                                                        size="xs"
-                                                        value={editingRule?.config?.cluster_min_points || 2}
-                                                        onChange={(val) => setEditingRule(prev => prev ? { 
-                                                            ...prev, 
-                                                            config: { ...(prev.config || {}), cluster_min_points: typeof val === 'number' ? val : 2 } as any
+                                                            config: { ...(prev.config || {}), rotate_to_edge: e.currentTarget.checked } as any
                                                         } : null)}
                                                     />
                                                 </Group>
-                                            )}
-                                        </Stack>
-                                    </Paper>
-
-                                    <Paper withBorder p="xs" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                                        <Group justify="space-between">
-                                            <Group gap="xs">
-                                                <Text size="xs" fw={500}>Rule Enabled</Text>
-                                                <Tooltip label="If disabled, this rule will be ignored when rendering the map." position="top-start" withArrow withinPortal zIndex={zIndex + 1000}>
-                                                    <Info size={12} style={{ opacity: 0.6, cursor: 'help' }} />
-                                                </Tooltip>
-                                            </Group>
-                                            <Switch 
-                                                checked={editingRule?.enabled ?? true}
-                                                onChange={(e) => setEditingRule(prev => prev ? { ...prev, enabled: e.currentTarget.checked } : null)}
-                                                size="xs"
-                                            />
-                                        </Group>
-                                    </Paper>
+                                            </Stack>
+                                        </Grid.Col>
+                                        
+                                        <Grid.Col span={3}>
+                                            <Stack align="center" justify="center" h="100%">
+                                                <Text size="xs" fw={500} c="dimmed">Preview</Text>
+                                                {editingRule?.config?.icon && (editingRule.config.icon.trim().startsWith('<svg') || editingRule.config.icon.includes('<svg')) ? (
+                                                    <Box style={{ 
+                                                        width: 80, 
+                                                        height: 80, 
+                                                        display: 'flex', 
+                                                        alignItems: 'center', 
+                                                        justifyContent: 'center',
+                                                        background: 'rgba(255,255,255,0.05)',
+                                                        border: '1px solid rgba(255,255,255,0.1)',
+                                                        borderRadius: 8,
+                                                        overflow: 'hidden',
+                                                        padding: 8
+                                                    }}>
+                                                        <div 
+                                                            style={{ 
+                                                                width: '100%', 
+                                                                height: '100%', 
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center'
+                                                            }}
+                                                            className="svg-preview-container"
+                                                            dangerouslySetInnerHTML={{ __html: editingRule.config.icon.replace(/<svg/, '<svg style="width: 100%; height: 100%; display: block;"') }} 
+                                                        />
+                                                    </Box>
+                                                ) : (
+                                                    <Box style={{ 
+                                                        width: 80, 
+                                                        height: 80, 
+                                                        border: '1px dashed rgba(255,255,255,0.2)', 
+                                                        borderRadius: 8,
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center'
+                                                    }}>
+                                                        <Eye size={24} style={{ opacity: 0.2 }} />
+                                                    </Box>
+                                                )}
+                                            </Stack>
+                                        </Grid.Col>
+                                    </Grid>
                                 </Stack>
-                            </Fieldset>
+                            </Paper>
 
                             <Divider label="SVG CSS Overrides" labelPosition="center" />
                             
@@ -917,29 +958,95 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                         </Stack>
                     ) : (
                         <Stack gap="xs">
-                            <Group justify="space-between">
+                            <Group justify="space-between" wrap="wrap" gap="xs">
                                 <Text fw={700} size="xs" c="dimmed">PROCESSING ORDER (HIGH TO LOW)</Text>
-                                <Button size="compact-xs" leftSection={<Plus size={14} />} onClick={handleAddRule}>
-                                    Add Rule
-                                </Button>
+                                <Group gap="xs">
+                                    <Menu shadow="md" width={200} position="bottom-end">
+                                        <Menu.Target>
+                                            <Button variant="subtle" size="xs" leftSection={<Filter size={14} />}>
+                                                Display Options
+                                            </Button>
+                                        </Menu.Target>
+                                        <Menu.Dropdown>
+                                            <Menu.Label>Group By</Menu.Label>
+                                            <Box px="xs" pb="xs">
+                                                <SegmentedControl
+                                                    fullWidth
+                                                    size="xs"
+                                                    value={groupBy}
+                                                    onChange={(val) => setGroupBy(val as any)}
+                                                    data={[
+                                                        { label: 'None', value: 'none' },
+                                                        { label: 'CIM Class', value: 'cim_class' }
+                                                    ]}
+                                                />
+                                            </Box>
+                                            <Menu.Divider />
+                                            <Menu.Label>Sort By</Menu.Label>
+                                            <Menu.Item 
+                                                leftSection={sortBy === 'priority' ? <ListOrdered size={14} /> : <div style={{width: 14}} />} 
+                                                onClick={() => setSortBy('priority')}
+                                            >
+                                                Priority
+                                            </Menu.Item>
+                                            <Menu.Item 
+                                                leftSection={sortBy === 'name' ? <ArrowDownAZ size={14} /> : <div style={{width: 14}} />} 
+                                                onClick={() => setSortBy('name')}
+                                            >
+                                                Name
+                                            </Menu.Item>
+                                            <Menu.Divider />
+                                            <Menu.Label>Order</Menu.Label>
+                                            <Box px="xs" pb="xs">
+                                                <SegmentedControl
+                                                    fullWidth
+                                                    size="xs"
+                                                    value={sortOrder}
+                                                    onChange={(val) => setSortOrder(val as any)}
+                                                    data={[
+                                                        { label: 'Asc', value: 'asc' },
+                                                        { label: 'Desc', value: 'desc' }
+                                                    ]}
+                                                />
+                                            </Box>
+                                        </Menu.Dropdown>
+                                    </Menu>
+                                    <Button size="compact-xs" leftSection={<Plus size={14} />} onClick={handleAddRule}>
+                                        Add Rule
+                                    </Button>
+                                </Group>
                             </Group>
 
                             {isMobile ? (
                                 <Stack gap="xs">
-                                    {rules.map(rule => (
-                                        <Paper 
-                                            key={rule.id} 
-                                            withBorder 
-                                            p="xs" 
-                                            style={{ 
-                                                background: 'rgba(255,255,255,0.02)', 
-                                                transition: 'background 0.2s ease'
-                                            }}
-                                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-                                            onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
-                                        >
-                                            <Stack gap={5}>
-                                                <Group justify="space-between" wrap="nowrap">
+                                    {processedRules.map(group => (
+                                        <Fragment key={group.groupName || 'flat'}>
+                                            {group.groupName && (
+                                                <Divider 
+                                                    label={
+                                                        <Group gap={4}>
+                                                            <Package size={12} />
+                                                            <Text size="xs" fw={700}>{group.groupName}</Text>
+                                                        </Group>
+                                                    } 
+                                                    labelPosition="left" 
+                                                    mt="xs"
+                                                />
+                                            )}
+                                            {group.rules.map(rule => (
+                                                <Paper 
+                                                    key={rule.id} 
+                                                    withBorder 
+                                                    p="xs" 
+                                                    style={{ 
+                                                        background: 'rgba(255,255,255,0.02)', 
+                                                        transition: 'background 0.2s ease'
+                                                    }}
+                                                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                                                    onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
+                                                >
+                                                    <Stack gap={5}>
+                                                        <Group justify="space-between" wrap="nowrap">
                                                     <Text 
                                                         fw={700} 
                                                         size="sm" 
@@ -1029,12 +1136,14 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                             </Stack>
                                         </Paper>
                                     ))}
-                                    {rules.length === 0 && (
-                                        <Paper withBorder p="xl" style={{ borderStyle: 'dashed', background: 'transparent' }}>
-                                            <Text size="xs" c="dimmed" ta="center">No rules defined for this profile.</Text>
-                                        </Paper>
-                                    )}
-                                </Stack>
+                                </Fragment>
+                            ))}
+                            {rules.length === 0 && (
+                                <Paper withBorder p="xl" style={{ borderStyle: 'dashed', background: 'transparent' }}>
+                                    <Text size="xs" c="dimmed" ta="center">No rules defined for this profile.</Text>
+                                </Paper>
+                            )}
+                        </Stack>
                             ) : (
                                 <Table striped highlightOnHover verticalSpacing="xs">
                                     <Table.Thead>
@@ -1047,90 +1156,105 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                         </Table.Tr>
                                     </Table.Thead>
                                     <Table.Tbody>
-                                        {rules.map(rule => (
-                                            <Table.Tr key={rule.id}>
-                                                <Table.Td 
-                                                    onClick={() => setEditingRule(rule)}
-                                                    style={{ cursor: 'pointer', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                                                >
-                                                    {rule.name}
-                                                </Table.Td>
-                                                <Table.Td onClick={() => setEditingRule(rule)} style={{ cursor: 'pointer' }}>
-                                                    <Group gap={4}>
-                                                        {rule.config?.color_hex && <ColorSwatch color={rule.config.color_hex} size={10} />}
-                                                        <Badge color="blue" variant="light" size="xs" style={{ textTransform: 'none' }}>
-                                                            {rule.config?.visual_type}
-                                                            {rule.config?.size && ` (${rule.config.size})`}
-                                                        </Badge>
-                                                        {rule.config?.label && <Badge color="gray" variant="outline" size="xs">{rule.config.label}</Badge>}
-                                                    </Group>
-                                                </Table.Td>
-                                                <Table.Td onClick={() => setEditingRule(rule)} style={{ cursor: 'pointer' }}>
-                                                    <Text size="xs" c="dimmed" truncate="end" style={{ maxWidth: 150 }}>
-                                                        {(() => {
-                                                            try {
-                                                                const conds = typeof rule.match_conditions === 'string' 
-                                                                    ? JSON.parse(rule.match_conditions) 
-                                                                    : rule.match_conditions;
-                                                                 if (conds && conds.target_class) {
-                                                                     const count = (conds.conditions || []).length;
-                                                                     return `${conds.target_class}${count > 0 ? ` (+${count})` : ''}`;
-                                                                 }
-                                                                 if (conds && conds.conditions && conds.conditions.length > 0) {
-                                                                     return `All Classes (${conds.conditions.length})`;
-                                                                 }
-                                                                 return 'All Classes';
-                                                            } catch {
-                                                                return 'Invalid JSON';
-                                                            }
-                                                        })()}
-                                                    </Text>
-                                                </Table.Td>
-                                                <Table.Td onClick={() => setEditingRule(rule)} style={{ cursor: 'pointer' }}>
-                                                    {rule.priority}
-                                                </Table.Td>
-                                                <Table.Td>
-                                                    <Group gap={4} wrap="nowrap" justify="flex-end">
-                                                        <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
-                                                            <Switch 
-                                                                size="xs" 
-                                                                checked={rule.enabled}
-                                                                onChange={async (e) => {
-                                                                    const updatedRule = { ...rule, enabled: e.currentTarget.checked };
-                                                                    await saveDisplayRule(updatedRule);
-                                                                    if (selectedConfigId) loadRules(selectedConfigId);
-                                                                    onRulesChanged?.();
-                                                                }}
-                                                                title="Toggle Enabled"
-                                                            />
-                                                        </div>
-                                                        <ActionIcon 
-                                                            size="md" 
-                                                            variant="subtle" 
-                                                            color="blue" 
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleDuplicateRule(rule.id);
-                                                            }}
-                                                            title="Duplicate rule"
+                                        {processedRules.map(group => (
+                                            <Fragment key={group.groupName || 'flat'}>
+                                                {group.groupName && (
+                                                    <Table.Tr style={{ background: 'rgba(255,255,255,0.05)' }}>
+                                                        <Table.Td colSpan={5}>
+                                                            <Group gap="xs">
+                                                                <Package size={14} opacity={0.6} />
+                                                                <Text size="xs" fw={700} c="blue.4">{group.groupName}</Text>
+                                                                <Badge size="xs" variant="outline" color="gray">{group.rules.length} Rules</Badge>
+                                                            </Group>
+                                                        </Table.Td>
+                                                    </Table.Tr>
+                                                )}
+                                                {group.rules.map(rule => (
+                                                    <Table.Tr key={rule.id}>
+                                                        <Table.Td 
+                                                            onClick={() => setEditingRule(rule)}
+                                                            style={{ cursor: 'pointer', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                                                         >
-                                                            <Copy size={18} />
-                                                        </ActionIcon>
-                                                        <ActionIcon 
-                                                            size="md" 
-                                                            variant="subtle" 
-                                                            color="red" 
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleDeleteRule(rule.id);
-                                                            }}
-                                                            title="Delete rule"
-                                                        >
-                                                            <Trash2 size={18} />
-                                                        </ActionIcon>
-                                                    </Group>
-                                                </Table.Td>
-                                            </Table.Tr>
+                                                            {rule.name}
+                                                        </Table.Td>
+                                                        <Table.Td onClick={() => setEditingRule(rule)} style={{ cursor: 'pointer' }}>
+                                                            <Group gap={4}>
+                                                                {rule.config?.color_hex && <ColorSwatch color={rule.config.color_hex} size={10} />}
+                                                                <Badge color="blue" variant="light" size="xs" style={{ textTransform: 'none' }}>
+                                                                    {rule.config?.visual_type}
+                                                                    {rule.config?.size && ` (${rule.config.size})`}
+                                                                </Badge>
+                                                                {rule.config?.label && <Badge color="gray" variant="outline" size="xs">{rule.config.label}</Badge>}
+                                                            </Group>
+                                                        </Table.Td>
+                                                        <Table.Td onClick={() => setEditingRule(rule)} style={{ cursor: 'pointer' }}>
+                                                            <Text size="xs" c="dimmed" truncate="end" style={{ maxWidth: 150 }}>
+                                                                {(() => {
+                                                                    try {
+                                                                        const conds = typeof rule.match_conditions === 'string' 
+                                                                            ? JSON.parse(rule.match_conditions) 
+                                                                            : rule.match_conditions;
+                                                                         if (conds && conds.target_class) {
+                                                                             const count = (conds.conditions || []).length;
+                                                                             return `${conds.target_class}${count > 0 ? ` (+${count})` : ''}`;
+                                                                         }
+                                                                         if (conds && conds.conditions && conds.conditions.length > 0) {
+                                                                             return `All Classes (${conds.conditions.length})`;
+                                                                         }
+                                                                         return 'All Classes';
+                                                                    } catch {
+                                                                        return 'Invalid JSON';
+                                                                    }
+                                                                })()}
+                                                            </Text>
+                                                        </Table.Td>
+                                                        <Table.Td onClick={() => setEditingRule(rule)} style={{ cursor: 'pointer' }}>
+                                                            {rule.priority}
+                                                        </Table.Td>
+                                                        <Table.Td>
+                                                            <Group gap={4} wrap="nowrap" justify="flex-end">
+                                                                <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+                                                                    <Switch 
+                                                                        size="xs" 
+                                                                        checked={rule.enabled}
+                                                                        onChange={async (e) => {
+                                                                            const updatedRule = { ...rule, enabled: e.currentTarget.checked };
+                                                                            await saveDisplayRule(updatedRule);
+                                                                            if (selectedConfigId) loadRules(selectedConfigId);
+                                                                            onRulesChanged?.();
+                                                                        }}
+                                                                        title="Toggle Enabled"
+                                                                    />
+                                                                </div>
+                                                                <ActionIcon 
+                                                                    size="md" 
+                                                                    variant="subtle" 
+                                                                    color="blue" 
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleDuplicateRule(rule.id);
+                                                                    }}
+                                                                    title="Duplicate rule"
+                                                                >
+                                                                    <Copy size={18} />
+                                                                </ActionIcon>
+                                                                <ActionIcon 
+                                                                    size="md" 
+                                                                    variant="subtle" 
+                                                                    color="red" 
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleDeleteRule(rule.id);
+                                                                    }}
+                                                                    title="Delete rule"
+                                                                >
+                                                                    <Trash2 size={18} />
+                                                                </ActionIcon>
+                                                            </Group>
+                                                        </Table.Td>
+                                                    </Table.Tr>
+                                                ))}
+                                            </Fragment>
                                         ))}
                                         {rules.length === 0 && (
                                             <Table.Tr>

@@ -106,6 +106,7 @@ export interface RuleConfig {
         conditions: any;
         css: string;
     }>;
+    rotate_to_edge?: boolean;
 }
 
 export interface DisplayRule {

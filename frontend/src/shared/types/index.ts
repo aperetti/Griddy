@@ -42,6 +42,7 @@ export interface Node {
     cluster_min_points?: number;
     display_min_zoom?: number;
     display_max_zoom?: number;
+    display_rotate_to_edge?: boolean;
 }
 
 
@@ -69,5 +70,6 @@ export interface Edge {
     display_css?: string;
     display_min_zoom?: number;
     display_max_zoom?: number;
+    display_rotate_to_edge?: boolean;
 }
 

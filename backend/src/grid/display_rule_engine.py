@@ -97,6 +97,7 @@ class DisplayRuleEngine:
                     "cluster_min_points": config.get('cluster_min_points', 2),
                     "min_zoom": config.get('min_zoom', 0.0),
                     "max_zoom": config.get('max_zoom', 24.0),
+                    "rotate_to_edge": bool(config.get('rotate_to_edge', False)),
                     "display_css": "\n".join(active_css) if active_css else ""
                 }
         
@@ -134,6 +135,7 @@ class DisplayRuleEngine:
                     "cluster_min_points": config.get('cluster_min_points', 2),
                     "min_zoom": config.get('min_zoom', 0.0),
                     "max_zoom": config.get('max_zoom', 24.0),
+                    "rotate_to_edge": bool(config.get('rotate_to_edge', False)),
                     "display_css": "\n".join(active_css) if active_css else ""
                 }
         
@@ -206,10 +208,23 @@ class DisplayRuleEngine:
         if not conditions_json:
             return True
 
+        # Handle case where conditions are passed as a JSON string
+        if isinstance(conditions_json, str):
+            try:
+                conditions_json = json.loads(conditions_json)
+            except (json.JSONDecodeError, TypeError):
+                logger.error(f"Failed to parse conditions JSON string: {conditions_json}")
+                return True
+
+        # Ensure we have a dictionary at this point
+        if not isinstance(conditions_json, dict):
+            logger.warning(f"Expected conditions to be a dict, got {type(conditions_json)}")
+            return True
+
         logical_op = conditions_json.get('logical_op', 'AND').upper()
         rule_conditions = conditions_json.get('conditions', [])
         
-        if not rule_conditions:
+        if not isinstance(rule_conditions, list) or not rule_conditions:
             return True
 
         # Results for each condition or sub-group

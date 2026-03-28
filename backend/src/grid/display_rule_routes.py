@@ -26,6 +26,7 @@ class RuleConfig(BaseModel):
     cluster_min_points: int = 2
     min_zoom: float = 0.0
     max_zoom: float = 24.0
+    rotate_to_edge: bool = False
 
 class RuleUpdate(BaseModel):
     name: str

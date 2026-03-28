@@ -31,6 +31,26 @@ interface GridMapProps {
     goToLocation?: { longitude: number; latitude: number } | null;
     spriteVersion?: number;
 }
+
+/**
+ * Calculates the initial bearing between two geographic coordinates.
+ * Returns angle in degrees clockwise from North (0-360).
+ */
+const getBearing = (start: [number, number], end: [number, number]): number => {
+    const startLat = (start[1] * Math.PI) / 180;
+    const startLng = (start[0] * Math.PI) / 180;
+    const endLat = (end[1] * Math.PI) / 180;
+    const endLng = (end[0] * Math.PI) / 180;
+
+    const y = Math.sin(endLng - startLng) * Math.cos(endLat);
+    const x = Math.cos(startLat) * Math.sin(endLat) -
+        Math.sin(startLat) * Math.cos(endLat) * Math.cos(endLng - startLng);
+    
+    // Bearing in degrees
+    const bearing = (Math.atan2(y, x) * 180) / Math.PI;
+    return (bearing + 360) % 360;
+};
+
 const stringToColor = (str: string): [number, number, number] => {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
@@ -150,6 +170,40 @@ export const GridMap = React.memo<GridMapProps>(({
     spriteVersion = 0,
 }) => {
     const selectedNodeIdsSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
+
+    // Map to store bearings of edges for icon rotation
+    const edgeBearings = useMemo(() => {
+        const bearings: Record<string, number> = {};
+        edges.forEach(edge => {
+            if (edge.display_rotate_to_edge) {
+                const id = edge.id || `${edge.source}-${edge.target}`;
+                bearings[id] = getBearing(edge.sourcePosition, edge.targetPosition);
+            }
+        });
+        return bearings;
+    }, [edges]);
+
+    // Map to store bearings for nodes based on connected edges
+    const nodeBearings = useMemo(() => {
+        const bearings: Record<string, number> = {};
+        nodes.forEach(node => {
+            if (node.display_rotate_to_edge) {
+                // Find first edge where this node is source or target
+                const connectedEdge = edges.find(e => e.source === node.id || e.target === node.id);
+                if (connectedEdge) {
+                    if (connectedEdge.source === node.id) {
+                        bearings[node.id] = getBearing(connectedEdge.sourcePosition, connectedEdge.targetPosition);
+                    } else {
+                        // If target, we want the bearing TOWARDS the node, or flip it?
+                        // Usually orientation follows the line "flow", so we use the edge's bearing.
+                        bearings[node.id] = getBearing(connectedEdge.sourcePosition, connectedEdge.targetPosition);
+                    }
+                }
+            }
+        });
+        return bearings;
+    }, [nodes, edges]);
+
     const [mounted, setMounted] = useState(false);
     const lastModelIdsRef = useRef<Set<string>>(new Set());
     const lastHandledTrigger = useRef(0);
@@ -615,7 +669,9 @@ export const GridMap = React.memo<GridMapProps>(({
                 getSize: [hoveredNodeId, highlightedNodes, nodes],
                 getIcon: [nodes, spriteMap],
                 getColor: [highlightedNodes, selectedNodeIdsSet, nodes],
-            }
+                getAngle: [nodeBearings]
+            },
+            getAngle: (d: Node) => nodeBearings[d.id] || 0
         }),
         spriteMap && new IconLayer({
             id: 'grid-custom-edge-icons',
@@ -651,7 +707,9 @@ export const GridMap = React.memo<GridMapProps>(({
                 getSize: [hoveredEdgeId, highlightedEdges, edges],
                 getIcon: [edges, spriteMap],
                 getColor: [highlightedEdges, hoveredEdgeId, edges],
-            }
+                getAngle: [edgeBearings]
+            },
+            getAngle: (d: Edge) => edgeBearings[d.id || `${d.source}-${d.target}`] || 0
         }),
         new ScatterplotLayer({
             id: 'clusters',
