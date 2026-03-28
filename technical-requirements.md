@@ -5,9 +5,8 @@
 * **Responsiveness**: All overlays and analytical windows must support mobile viewports (minimum 320px width) without horizontal scrolling. Draggable/resizable windows must be clamped to the viewport bounds.
 * **File Structure**: Must propose a file structure following Vertical Slice Architecture before writing any code.
 
-## 2. Infrastructure & Data Storage
 * **Database**: DuckDB must be used as the database, overriding global rule #4. Time-series and cold data should use Parquet format.
-* **Grid Model Graph**: Python with NetworkX (or similar).
+* **Grid Model Graph**: Neo4j (Graph Database) for persistent storage and traversal; Python with NetworkX for in-memory analysis.
 
 ## 3. Interactive Visual Grid
 *   **Visualization (Frontend)**:
