@@ -292,11 +292,11 @@ async def test_display_rule(request: RuleTestRequest, username: str = Depends(ge
         
         match_count = 0
         try:
-            # We need to execute this on the CIM database (Neo4j)
-            # registry.cim_manager is usually a Neo4jManager
-            results = registry.cim_manager.execute_cypher(count_query, params)
-            if results and len(results) > 0:
-                match_count = results[0].get("count", 0)
+            # Execute across all active model managers
+            for _mid, mgr in registry.get_managers():
+                results = mgr.execute_cypher(count_query, params)
+                if results and len(results) > 0:
+                    match_count += results[0].get("count", 0)
         except Exception as e:
             warnings.append(f"Query execution error: {str(e)}")
             

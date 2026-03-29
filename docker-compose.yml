@@ -102,17 +102,20 @@ services:
     restart: unless-stopped
 
   neo4j:
-    image: neo4j:5.26.0
+    build: ./neo4j
     container_name: grid-neo4j
     ports:
       - "7474:7474" # HTTP
       - "7687:7687" # Bolt
     environment:
       - NEO4J_AUTH=${NEO4J_AUTH:-neo4j/password123}
-      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_security_procedures_unrestricted=n10s.*,apoc.*
+      - NEO4J_dbms_security_procedures_allowlist=n10s.*,apoc.*
+      - NEO4J_server_unmanaged__extension__classes=n10s.endpoint=/rdf
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
+      - ./backend/cim:/var/lib/neo4j/import/cim
     restart: unless-stopped
 
   ingestor:

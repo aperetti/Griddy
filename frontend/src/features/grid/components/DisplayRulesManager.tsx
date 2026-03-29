@@ -33,7 +33,7 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
         editingRule, setEditingRule, saveError,
         isAuthenticated, setIsAuthenticated,
         handleSaveRule, handleDeleteRule, handleDuplicateRule,
-        createConfig, deleteConfig
+        createConfig, deleteConfig, handleTestRule
     } = useDisplayRules(opened, onRulesChanged);
 
     // Filter/Sort/Group local UI state

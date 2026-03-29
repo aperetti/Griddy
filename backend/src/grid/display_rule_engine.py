@@ -101,7 +101,7 @@ class DisplayRuleEngine:
                 if not target_class:
                     continue
 
-                query, params = builder.build_rule_query(conditions, target_class)
+                query, params, _warnings = builder.build_rule_query(conditions, target_class)
                 logger.debug("Executing bulk classification query for rule %s: %s", rule.get('id'), query)
                 
                 results = cim_manager.execute_cypher(query, params)
