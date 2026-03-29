@@ -10,6 +10,14 @@ export interface GNode {
     data?: { cimType: string; isRoot?: boolean };
 }
 
+// Detect UUID-format or long hex strings — show truncated, not the full MRID
+function cleanName(name: string, id: string): string {
+    const s = name || id;
+    if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-/.test(s)) return s.slice(0, 8); // UUID → first 8
+    if (/^[0-9a-fA-F]{16,}$/.test(s)) return s.slice(0, 10);              // long hex
+    return s.length > 14 ? `${s.slice(0, 12)}…` : s;
+}
+
 export interface GEdge {
     id: string;
     source: string;
@@ -24,8 +32,8 @@ function nodeColor(cimType: string, isRoot = false): string {
 function makeNode(id: string, name: string, cimType: string, isRoot = false): GNode {
     return {
         id,
-        label: name || id.slice(0, 12),
-        subLabel: cimType || undefined,
+        label: cimType || 'Object',        // class shown closest to node circle
+        subLabel: cleanName(name, id),     // human-readable name shown below
         fill: nodeColor(cimType, isRoot),
         size: isRoot ? 8 : 5,
         data: { cimType, isRoot },

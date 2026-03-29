@@ -174,7 +174,7 @@ export function GraphExplorer({ rootId, onSelectAttribute, schema, isMobile }: G
                         actives={actives}
                         layoutType="forceDirected2d"
                         theme={appTheme}
-                        labelType="all"
+                        labelType="nodes"
                         draggable
                         onNodeClick={onNodeClick}
                         onCanvasClick={onCanvasClick}
