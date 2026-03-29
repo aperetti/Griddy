@@ -94,7 +94,7 @@ export default function App() {
         try {
           const models = await fetchModels();
           if (models.length > 0) {
-            topology.setActiveModelIds([models[0].model_id]);
+            topology.setActiveModelIds([models[0].feeder_id]);
             return;
           }
         } catch (err) {

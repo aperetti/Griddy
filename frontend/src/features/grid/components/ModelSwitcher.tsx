@@ -11,7 +11,7 @@ interface ModelSwitcherProps {
 }
 
 export function ModelSwitcher({ activeModelIds, onModelsChange, onZoomToModel, loading }: ModelSwitcherProps) {
-  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [feeders, setFeeders] = useState<ModelInfo[]>([]);
   const [opened, setOpened] = useState(false);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -23,34 +23,36 @@ export function ModelSwitcher({ activeModelIds, onModelsChange, onZoomToModel, l
     return () => clearTimeout(timer);
   }, [search]);
 
-  const refreshModels = async () => {
+  const refreshFeeders = async () => {
     try {
       const data = await fetchModels();
-      setModels(data);
+      setFeeders(data);
     } catch (err) {
-      console.error('[ModelSwitcher] Failed to fetch models:', err);
+      console.error('[ModelSwitcher] Failed to fetch feeders:', err);
     }
   };
 
   useEffect(() => {
-    refreshModels();
+    refreshFeeders();
   }, []);
 
-  const handleToggle = (modelId: string) => {
-    const newActive = activeModelIds.includes(modelId)
-      ? activeModelIds.filter(id => id !== modelId)
-      : [...activeModelIds, modelId];
-    
-    // Don't allow clearing all models
+  const handleToggle = (feederId: string) => {
+    const newActive = activeModelIds.includes(feederId)
+      ? activeModelIds.filter(id => id !== feederId)
+      : [...activeModelIds, feederId];
+
     if (newActive.length === 0) {
-      console.warn('[ModelSwitcher] At least one model must be active');
+      console.warn('[ModelSwitcher] At least one feeder must be active');
       return;
     }
-    
+
     onModelsChange(newActive);
   };
 
   const activeCount = activeModelIds.length;
+  const filtered = feeders.filter(f =>
+    (f.feeder_id || '').toLowerCase().includes((debouncedSearch || '').toLowerCase())
+  );
 
   return (
     <Popover
@@ -62,7 +64,7 @@ export function ModelSwitcher({ activeModelIds, onModelsChange, onZoomToModel, l
       withArrow
     >
       <Popover.Target>
-        <Tooltip label="CIM Models" position="bottom" withArrow>
+        <Tooltip label="Feeders" position="bottom" withArrow>
           <ActionIcon
             variant="filled"
             color={opened ? 'blue' : 'gray'}
@@ -110,11 +112,11 @@ export function ModelSwitcher({ activeModelIds, onModelsChange, onZoomToModel, l
       >
         <Stack gap="xs">
           <Text size="sm" fw={600} c="dimmed" tt="uppercase" px={4}>
-            CIM Models
+            Feeders
           </Text>
 
           <TextInput
-            placeholder="Search models..."
+            placeholder="Search feeders..."
             size="xs"
             leftSection={<Search size={14} />}
             value={search}
@@ -122,22 +124,20 @@ export function ModelSwitcher({ activeModelIds, onModelsChange, onZoomToModel, l
             mb="xs"
           />
 
-          {models.length === 0 && (
+          {feeders.length === 0 && (
             <Group justify="center" py="md">
               <Loader size="sm" />
-              <Text size="sm" c="dimmed">Loading models…</Text>
+              <Text size="sm" c="dimmed">Loading feeders…</Text>
             </Group>
           )}
 
-          {models
-            .filter(m => (m.model_id || '').toLowerCase().includes((debouncedSearch || '').toLowerCase()))
-            .map(model => {
-            const isActive = activeModelIds.includes(model.model_id);
+          {filtered.map(feeder => {
+            const isActive = activeModelIds.includes(feeder.feeder_id);
             const isLastActive = isActive && activeCount <= 1;
 
             return (
               <Box
-                key={model.model_id}
+                key={feeder.feeder_id}
                 px="sm"
                 py="xs"
                 style={{
@@ -151,17 +151,11 @@ export function ModelSwitcher({ activeModelIds, onModelsChange, onZoomToModel, l
                 <Group justify="space-between" wrap="nowrap">
                   <Box style={{ flex: 1, minWidth: 0 }}>
                     <Text size="sm" fw={500} truncate>
-                      {model.model_id}
+                      {feeder.feeder_id}
                     </Text>
-                    <Group gap={6} mt={2}>
-                      <Text size="xs" c="dimmed">
-                        {typeof model.size_mb === 'number' ? model.size_mb.toFixed(1) : '0.0'} MB
-                      </Text>
-                      <Text size="xs" c="dimmed">•</Text>
-                      <Text size="xs" c="dimmed">
-                        {(model.node_count || 0).toLocaleString()} nodes
-                      </Text>
-                    </Group>
+                    <Text size="xs" c="dimmed" mt={2}>
+                      {(feeder.node_count || 0).toLocaleString()} nodes
+                    </Text>
                   </Box>
 
                   <Group gap="xs" wrap="nowrap">
@@ -171,7 +165,7 @@ export function ModelSwitcher({ activeModelIds, onModelsChange, onZoomToModel, l
                           variant="subtle"
                           color="gray"
                           size="sm"
-                          onClick={() => onZoomToModel(model.model_id)}
+                          onClick={() => onZoomToModel(feeder.feeder_id)}
                         >
                           <Maximize size={14} />
                         </ActionIcon>
@@ -179,12 +173,12 @@ export function ModelSwitcher({ activeModelIds, onModelsChange, onZoomToModel, l
                     )}
 
                     <Tooltip
-                      label={isLastActive ? 'At least one model must be visible' : ''}
+                      label={isLastActive ? 'At least one feeder must be visible' : ''}
                       disabled={!isLastActive}
                     >
                       <Switch
                         checked={isActive}
-                        onChange={() => handleToggle(model.model_id)}
+                        onChange={() => handleToggle(feeder.feeder_id)}
                         disabled={isLastActive}
                         size="sm"
                         color="teal"
@@ -196,15 +190,15 @@ export function ModelSwitcher({ activeModelIds, onModelsChange, onZoomToModel, l
             );
           })}
 
-          {models.length > 0 && models.filter(m => (m.model_id || '').toLowerCase().includes((debouncedSearch || '').toLowerCase())).length === 0 && (
+          {feeders.length > 0 && filtered.length === 0 && (
             <Text size="xs" c="dimmed" ta="center" py="sm">
-              No models match "{search}"
+              No feeders match "{search}"
             </Text>
           )}
 
           {activeCount > 1 && (
             <Text size="xs" c="teal" ta="center" mt={4}>
-              Combined view — {activeCount} models active
+              Combined view — {activeCount} feeders active
             </Text>
           )}
         </Stack>

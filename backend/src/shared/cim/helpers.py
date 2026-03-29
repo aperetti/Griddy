@@ -6,6 +6,13 @@ from typing import Optional
 def _mrid_str(obj) -> Optional[str]:
     if obj is None:
         return None
+    # Plain string UUID — stored by cimgraph when expand_graph=False (get_all_attributes)
+    if isinstance(obj, str):
+        s = obj
+        for prefix in ("urn:uuid:", "_"):
+            if s.startswith(prefix):
+                s = s[len(prefix):]
+        return s.upper() if s else None
     m = getattr(obj, "mRID", None)
     if m is None:
         return None

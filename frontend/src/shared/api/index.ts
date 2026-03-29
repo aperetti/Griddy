@@ -6,10 +6,8 @@ export interface TopologyResponse {
 }
 
 export interface ModelInfo {
-    model_id: string;
-    filename: string;
-    path: string;
-    size_mb: number;
+    feeder_id: string;
+    feeder_uri: string;
     loaded: boolean;
     node_count: number;
     edge_count: number;
@@ -365,28 +363,28 @@ export const nlQuery = async (query: string): Promise<any> => {
     return res.json();
 };
 
-// --- Model Management ---
+// --- Feeder Management ---
 
 export const fetchModels = async (): Promise<ModelInfo[]> => {
-    const res = await fetch(`${API_BASE}/models`);
+    const res = await fetch(`${API_BASE}/feeders`);
     if (!res.ok) {
-        throw new Error('Failed to fetch models');
+        throw new Error('Failed to fetch feeders');
     }
     return res.json();
 };
 
-export const loadModel = async (modelId: string): Promise<ModelInfo> => {
-    const res = await fetch(`${API_BASE}/models/${modelId}/load`, { method: 'POST' });
+export const loadModel = async (feederId: string): Promise<ModelInfo> => {
+    const res = await fetch(`${API_BASE}/feeders/${feederId}/load`, { method: 'POST' });
     if (!res.ok) {
-        throw new Error(`Failed to load model ${modelId}`);
+        throw new Error(`Failed to load feeder ${feederId}`);
     }
     return res.json();
 };
 
-export const unloadModel = async (modelId: string): Promise<{ status: string }> => {
-    const res = await fetch(`${API_BASE}/models/${modelId}/unload`, { method: 'POST' });
+export const unloadModel = async (feederId: string): Promise<{ status: string }> => {
+    const res = await fetch(`${API_BASE}/feeders/${feederId}/unload`, { method: 'POST' });
     if (!res.ok) {
-        throw new Error(`Failed to unload model ${modelId}`);
+        throw new Error(`Failed to unload feeder ${feederId}`);
     }
     return res.json();
 };

@@ -499,15 +499,13 @@ export const GridMap = React.memo((props: GridMapProps) => {
             getFillColor: [255, 255, 255, 80],
             getRadius: (d: Node) => {
                 const vt = getVisualType(d);
-                const baseRadius = vt === 'Meter' || vt === 'Bus' ? 4 : 8;
-                return baseRadius * 1.1;
+                return vt === 'Meter' || vt === 'Bus' ? 7 : 10;
             },
             radiusUnits: 'pixels',
-            radiusScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
-            radiusMinPixels: 2,
+            radiusScale: 1,
             pickable: false,
             updateTriggers: {
-                getRadius: [selectedNodeIdsSet, viewState.zoom],
+                getRadius: [selectedNodeIdsSet],
                 getFillColor: [selectedNodeIdsSet]
             }
         }),
@@ -582,22 +580,16 @@ export const GridMap = React.memo((props: GridMapProps) => {
             },
             getRadius: (d: Node) => {
                 const isHovered = hoveredNodeId === d.id;
-                const isHighlighted = highlightedNodes.has(d.id);
                 const isSelected = selectedNodeIdsSet.has(d.id);
-                const baseRadius = 1.75;
-                let radius = isHovered ? baseRadius * 2.0 : baseRadius;
-                if (isHighlighted) radius *= 1.5;
-                if (isSelected) radius *= 1.1;
-                return radius;
+                if (isHovered || isSelected) return 4;
+                return 2;
             },
             updateTriggers: {
-                getRadius: [hoveredNodeId, highlightedNodes, selectedNodeIdsSet],
+                getRadius: [hoveredNodeId, selectedNodeIdsSet],
                 getFillColor: [highlightedNodes, selectedNodeIdsSet, nodeAverages, voltageScale]
             },
             radiusUnits: 'pixels',
             radiusScale: 1,
-            radiusMinPixels: 3.5,
-            radiusMaxPixels: 10,
             pickable: true,
             onHover: (info) => setHoveredNodeId(info.object ? info.object.id : null),
             onClick: (info, event) => {

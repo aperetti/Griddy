@@ -298,7 +298,7 @@ async def test_display_rule(request: RuleTestRequest, username: str = Depends(ge
         else:
             username = os.getenv("CIMG_USERNAME", "neo4j")
             password = os.getenv("CIMG_PASSWORD", "")
-            database = os.getenv("CIMG_NEO4J_DATABASE", "neo4j")
+            database = os.getenv("CIMG_DATABASE", "neo4j")
             try:
                 driver = GraphDatabase.driver(neo4j_url, auth=(username, password))
                 with driver.session(database=database) as session:

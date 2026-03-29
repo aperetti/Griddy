@@ -9,10 +9,8 @@ Each model gets its own CimModelManager instance so phase indexes,
 equipment lookups, and topology are fully independent.
 """
 
-import glob
 import logging
 import os
-from pathlib import Path
 from typing import Optional
 
 from src.shared.cim_model import CimModelManager
@@ -21,52 +19,38 @@ from src.shared.cim.profile import CimProfileService
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Path helpers
-# ---------------------------------------------------------------------------
-_SHARED_DIR = Path(__file__).resolve().parent
-_BACKEND_DIR = _SHARED_DIR.parents[1]
-_WORKSPACE_ROOT = _BACKEND_DIR.parent
 
-_CIM_DATA_DIR = _BACKEND_DIR / "cim" / "models"
+def _discover_feeders_from_neo4j() -> list[dict]:
+    """Query Neo4j for all Feeder nodes and return them as loadable layers."""
+    from neo4j import GraphDatabase
 
+    url = os.getenv("CIMG_URL")
+    username = os.getenv("CIMG_USERNAME", "neo4j")
+    password = os.getenv("CIMG_PASSWORD", "")
+    database = os.getenv("CIMG_DATABASE", "neo4j")
 
-def _discover_xml_files() -> list[dict]:
-    """Find all CIM XML files in the cim models directory."""
-    results: list[dict] = []
-    search_dir = os.getenv("CIM_MODELS_DIR", str(_CIM_DATA_DIR))
-
-    for xml_path in sorted(glob.glob(os.path.join(search_dir, "*.xml"))):
-        p = Path(xml_path)
-        model_id = p.stem  # e.g. "IEEE8500_3subs"
-        results.append(
-            {
-                "model_id": model_id,
-                "filename": p.name,
-                "path": str(p),
-                "size_mb": round(p.stat().st_size / 1_048_576, 1),
-            }
-        )
-
-    return results
-
-
-def _discover_neo4j_models() -> list[dict]:
-    """Discover CIM models from the CIM_MODEL_NAMES env var when no XML files are present.
-
-    Set CIM_MODEL_NAMES=IEEE8500,OtherModel (comma-separated) to declare models
-    that live in Neo4j without corresponding XML files on disk.
-    """
-    names_env = os.getenv("CIM_MODEL_NAMES", "").strip()
-    if not names_env:
-        # Default: single anonymous model — all data in the configured Neo4j DB
-        return [{"model_id": "cim_model", "filename": None, "path": None, "size_mb": 0}]
+    driver = GraphDatabase.driver(url, auth=(username, password))
+    try:
+        with driver.session(database=database) as session:
+            rows = list(session.run(
+                "MATCH (f:Feeder) RETURN f.uri AS uri, f.`IdentifiedObject.name` AS name ORDER BY name"
+            ))
+    finally:
+        driver.close()
 
     results = []
-    for name in names_env.split(","):
-        name = name.strip()
-        if name:
-            results.append({"model_id": name, "filename": None, "path": None, "size_mb": 0})
+    for row in rows:
+        uri: str = row["uri"] or ""
+        feeder_mrid = uri.replace("urn:uuid:", "")
+        name = row["name"] or feeder_mrid
+        results.append({
+            "feeder_id": name,
+            "feeder_uri": feeder_mrid,
+        })
+
+    if not results:
+        raise ValueError("No Feeder nodes found in Neo4j. Ensure the CIM model has been ingested.")
+
     return results
 
 
@@ -81,9 +65,9 @@ class CimModelRegistry:
     _instance: Optional["CimModelRegistry"] = None
 
     def __init__(self):
-        self._managers: dict[str, CimModelManager] = {}  # model_id → manager
-        self._available: list[dict] = []  # discovered XML metadata
-        self._active_models: set[str] = set()  # currently loaded model_ids
+        self._managers: dict[str, CimModelManager] = {}  # feeder_id → manager
+        self._available: list[dict] = []  # discovered feeder metadata from Neo4j
+        self._active_models: set[str] = set()  # currently loaded feeder_ids
         self._coordinate_offsets: dict[
             str, tuple[float, float]
         ] = {}  # model_id → (lat_offset, lon_offset)
@@ -106,42 +90,36 @@ class CimModelRegistry:
     # ── Discovery ─────────────────────────────────────────────────
 
     def discover(self):
-        """Discover available CIM models — from XML files or Neo4j."""
-        self._available = _discover_xml_files()
+        """Discover available feeders from Neo4j (CIMG_URL required)."""
+        if not os.getenv("CIMG_URL"):
+            raise EnvironmentError(
+                "CIMG_URL is not set. A Neo4j connection is required to discover feeders."
+            )
 
-        if self._available:
-            logger.info(
-                "Discovered %d CIM XML files: %s",
-                len(self._available),
-                [m["model_id"] for m in self._available],
-            )
-        elif os.getenv("CIMG_URL"):
-            # No XML files on disk but Neo4j is configured — discover from env var
-            self._available = _discover_neo4j_models()
-            logger.info(
-                "No XML files found; using Neo4j models: %s",
-                [m["model_id"] for m in self._available],
-            )
-        else:
-            logger.warning("No CIM XML files found and CIMG_URL is not set.")
+        self._available = _discover_feeders_from_neo4j()
+        logger.info(
+            "Discovered %d feeder(s) in Neo4j: %s",
+            len(self._available),
+            [f["feeder_id"] for f in self._available],
+        )
 
     # ── Load / Unload ─────────────────────────────────────────────
 
-    def load_model(self, model_id: str) -> CimModelManager:
-        """Load a specific model by ID. No-op if already loaded."""
-        if model_id in self._managers and self._managers[model_id].is_loaded:
-            logger.info("Model '%s' already loaded", model_id)
-            return self._managers[model_id]
+    def load_model(self, feeder_id: str) -> CimModelManager:
+        """Load a specific feeder by ID. No-op if already loaded."""
+        if feeder_id in self._managers and self._managers[feeder_id].is_loaded:
+            logger.info("Feeder '%s' already loaded", feeder_id)
+            return self._managers[feeder_id]
 
-        meta = self._get_meta(model_id)
+        meta = self._get_meta(feeder_id)
         if meta is None:
-            raise FileNotFoundError(f"No discovered model with id '{model_id}'")
+            raise ValueError(f"No discovered feeder with id '{feeder_id}'")
 
         manager = CimModelManager()
-        manager.model_id = model_id  # set before load() so Neo4j path has the right name
-        manager.load(xml_path=meta["path"])
-        self._managers[model_id] = manager
-        self._active_models.add(model_id)
+        manager.model_id = feeder_id
+        manager.load(feeder_uri=meta["feeder_uri"])
+        self._managers[feeder_id] = manager
+        self._active_models.add(feeder_id)
 
         # Assign coordinate offsets so combined models don't overlap
         self._recalculate_offsets()
@@ -183,42 +161,35 @@ class CimModelRegistry:
             logger.info("Model '%s' unloaded", model_id)
 
     def load_all(self):
-        """Load all discovered CIM models (from XML or Neo4j) into memory."""
+        """Discover all feeders from Neo4j and load them into memory."""
         self.discover()
-        if not self._available:
-            logger.warning("No CIM models discovered — check XML files or CIMG_URL + CIM_MODEL_NAMES.")
-            return
-
         for meta in self._available:
             try:
-                self.load_model(meta["model_id"])
+                self.load_model(meta["feeder_id"])
             except Exception as e:
-                logger.error("Failed to load model '%s': %s", meta["model_id"], e)
+                logger.error("Failed to load feeder '%s': %s", meta["feeder_id"], e)
 
     # ── Query ─────────────────────────────────────────────────────
 
     def list_models(self) -> list[dict]:
-        """Return metadata for all discovered models with loaded status."""
+        """Return metadata for all discovered feeders with loaded status."""
         result = []
         for meta in self._available:
-            mid = meta["model_id"]
-            mgr = self._managers.get(mid)
+            fid = meta["feeder_id"]
+            mgr = self._managers.get(fid)
             result.append(
                 {
-                    **meta,
-                    "loaded": mid in self._active_models,
-                    "node_count": len(mgr.get_topology_nodes())
-                    if mgr and mgr.is_loaded
-                    else 0,
-                    "edge_count": len(mgr.get_topology_edges())
-                    if mgr and mgr.is_loaded
-                    else 0,
+                    "feeder_id": fid,
+                    "feeder_uri": meta["feeder_uri"],
+                    "loaded": fid in self._active_models,
+                    "node_count": len(mgr.get_topology_nodes()) if mgr and mgr.is_loaded else 0,
+                    "edge_count": len(mgr.get_topology_edges()) if mgr and mgr.is_loaded else 0,
                 }
             )
         return result
 
     def get_active_model_ids(self) -> list[str]:
-        """IDs of all currently loaded models."""
+        """IDs of all currently loaded feeders."""
         return sorted(self._active_models)
 
     def get_manager(self, model_id: str) -> Optional[CimModelManager]:
@@ -415,9 +386,9 @@ class CimModelRegistry:
 
     # ── Private helpers ───────────────────────────────────────────
 
-    def _get_meta(self, model_id: str) -> Optional[dict]:
+    def _get_meta(self, feeder_id: str) -> Optional[dict]:
         for m in self._available:
-            if m["model_id"] == model_id:
+            if m["feeder_id"] == feeder_id:
                 return m
         return None
 

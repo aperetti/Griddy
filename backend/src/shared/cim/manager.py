@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any, Optional
 
 from src.shared.cim.helpers import _mrid_str, _get_name, _safe_float, _parse_phase_code
-from src.shared.cim.loader import _resolve_xml_path
 from src.shared.cim.indexes import IndexBuilder
 from src.shared.cim.topology import TopologyBuilder
 
@@ -62,74 +61,69 @@ class CimModelManager:
     # Loading
     # ══════════════════════════════════════════════════════════════
 
-    def load(self, xml_path: str | None = None):
-        """Load CIM model — Neo4j-first, XML as fallback.
+    def load(self, feeder_uri: str | None = None):
+        """Load a CIM feeder from Neo4j by its mRID (feeder_uri).
 
-        When CIMG_URL is set, the XML file is not required. Neo4j is tried
-        first; the XML path is only used if Neo4j is unavailable or empty.
+        CIMG_URL must be set. Raises immediately on connection failure or missing data.
         Safe to call multiple times — subsequent calls are no-ops.
         """
         if self._loaded:
-            logger.info("CIM model already loaded – skipping")
+            logger.info("Feeder '%s' already loaded – skipping", self.model_id)
             return
 
         import cimgraph.data_profile.cimhub_2023 as cim
-        from cimgraph.databases import XMLFile, Neo4jConnection
+        from cimgraph.databases import Neo4jConnection
         from cimgraph.models import FeederModel
 
         self.cim = cim
         profile = os.getenv("CIMG_CIM_PROFILE", "cimhub_2023")
         os.environ["CIMG_CIM_PROFILE"] = profile
-        neo4j_url = os.getenv("CIMG_URL")
 
-        # ── Try Neo4j first (no XML file required) ────────────────────
-        loaded_from_neo4j = False
-        path = None  # will be set only if we fall back to XML
+        if not os.getenv("CIMG_URL"):
+            raise EnvironmentError(
+                "CIMG_URL is not set. A Neo4j connection is required to load a feeder."
+            )
+        if not feeder_uri:
+            raise ValueError(
+                f"feeder_uri is required to load feeder '{self.model_id}' from Neo4j."
+            )
 
-        if neo4j_url:
-            db_name = os.getenv("CIMG_NEO4J_DATABASE", "neo4j")
-            logger.info("Loading model '%s' from Neo4j (DB: %s)...", self.model_id, db_name)
-            try:
-                connection = Neo4jConnection(database=db_name)
-                self.network = FeederModel(container=cim.Feeder(), connection=connection)
-                test_objs = self.network.get_all_attributes(cim.ConnectivityNode)
-                if not test_objs:
-                    raise ValueError(f"No ConnectivityNode data in Neo4j DB '{db_name}'")
-                logger.info("Neo4j connection confirmed for model '%s'.", self.model_id)
-                loaded_from_neo4j = True
-            except Exception as e:
-                logger.warning(
-                    "Neo4j load failed for '%s' (%s) — falling back to XML.", self.model_id, e
-                )
+        db_name = os.getenv("CIMG_DATABASE", "neo4j")
+        logger.info("Loading feeder '%s' (uri=%s, db=%s)...", self.model_id, feeder_uri, db_name)
 
-        # ── Fall back to XML if Neo4j was not available or failed ─────
-        if not loaded_from_neo4j:
-            path = _resolve_xml_path(xml_path)
-            if path is None or not path.is_file():
-                raise FileNotFoundError(
-                    f"No Neo4j data available and no XML file found for model '{self.model_id}'. "
-                    f"Set CIMG_URL or provide a valid xml_path."
-                )
-            logger.info("Loading model '%s' from XML: %s", self.model_id, path)
-            connection = XMLFile(filename=str(path))
-            self.network = FeederModel(container=cim.Feeder(), connection=connection)
+        # Pass the raw URI string as identifier so cimgraph preserves original casing
+        # (Neo4j stores URIs uppercase; FeederModel uses uri() to build the WHERE clause)
+        container = cim.Feeder(identifier=feeder_uri)
+        connection = Neo4jConnection()
+        self.network = FeederModel(container=container, connection=connection)
+
+        if not self.network.graph.get(cim.ConnectivityNode):
+            raise ValueError(
+                f"Feeder '{self.model_id}' (uri={feeder_uri}) loaded no ConnectivityNodes. "
+                f"Check that the feeder URI is correct and data is ingested."
+            )
 
         # Load all classes needed for topology and equipment catalog.
         # With Neo4j, get_all_attributes() is the only way to populate network.graph;
         # XML loading materializes everything automatically so these calls are no-ops there.
+        # NOTE: Terminal is intentionally excluded here. create_new_graph() sets
+        # Terminal.ConnectivityNode and Terminal.ConductingEquipment as proper objects.
+        # Calling get_all_attributes(Terminal) would overwrite those with raw UUID strings
+        # (cimgraph uses expand_graph=False), breaking the terminal index.
+        #
+        # Location MUST come before PositionPoint — equipment get_all_attributes calls
+        # add Location objects to the graph; only then can get_all_attributes(PositionPoint)
+        # find any UUIDs to fetch coordinates for.
         logger.info("Loading CIM classes (topology + equipment catalog)...")
         for cls_type in [
-            # Core topology — must be present for nodes/edges to be built
+            # Core topology attributes (not Terminal — see note above)
             getattr(cim, "ConnectivityNode", None),
-            getattr(cim, "Terminal", None),
             getattr(cim, "ACLineSegment", None),
             getattr(cim, "Breaker", None),
             getattr(cim, "LoadBreakSwitch", None),
             getattr(cim, "Disconnector", None),
             getattr(cim, "EnergyConsumer", None),
             getattr(cim, "EnergySource", None),
-            getattr(cim, "PositionPoint", None),
-            getattr(cim, "Location", None),
             getattr(cim, "Substation", None),
             getattr(cim, "VoltageLevel", None),
             # Phase detail
@@ -137,6 +131,8 @@ class CimModelManager:
             getattr(cim, "EnergyConsumerPhase", None),
             getattr(cim, "SwitchPhase", None),
             getattr(cim, "ShuntCompensatorPhase", None),
+            # Location and PositionPoint are queried directly via Neo4j in IndexBuilder
+            # (cimgraph expand_graph=False prevents them from being added to graph here)
             # Equipment catalog
             getattr(cim, "TransformerTankInfo", None),
             getattr(cim, "TransformerEndInfo", None),
@@ -168,8 +164,7 @@ class CimModelManager:
             if objs:
                 logger.info("  %-30s %6d", cls.__name__, len(objs))
 
-        # Build indexes (includes manual XML scan for transformer ratings)
-        self._idx = IndexBuilder(cim, self.network.graph, xml_path=path)
+        self._idx = IndexBuilder(cim, self.network.graph, feeder_uri=feeder_uri)
         self._idx.build()
 
         # Build topology
@@ -213,7 +208,7 @@ class CimModelManager:
 
         username = os.getenv("CIMG_USERNAME", "neo4j")
         password = os.getenv("CIMG_PASSWORD", "")
-        database = os.getenv("CIMG_NEO4J_DATABASE", "neo4j")
+        database = os.getenv("CIMG_DATABASE", "neo4j")
 
         from neo4j import GraphDatabase
         try:
