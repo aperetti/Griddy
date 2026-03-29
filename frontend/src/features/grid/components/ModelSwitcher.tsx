@@ -55,52 +55,31 @@ export function ModelSwitcher({ activeModelIds, onModelsChange, onZoomToModel, l
   );
 
   return (
-    <Popover
-      opened={opened}
-      onChange={setOpened}
-      position="bottom-end"
-      offset={10}
-      shadow="md"
-      withArrow
-    >
-      <Popover.Target>
-        <Tooltip label="Feeders" position="bottom" withArrow>
-          <ActionIcon
-            variant="filled"
-            color={opened ? 'blue' : 'gray'}
-            size="xl"
-            radius="md"
-            onClick={() => setOpened(o => !o)}
-            style={{
-              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              position: 'relative',
-              overflow: 'visible',
-            }}
-          >
-            {loading ? <Loader size={18} color="white" /> : <Layers size={20} />}
-            {activeCount > 1 && !loading && (
-              <Badge
-                size="xs"
-                circle
-                color="teal"
-                variant="filled"
-                style={{
-                  position: 'absolute',
-                  top: -7,
-                  right: -7,
-                  padding: 0,
-                  width: 16,
-                  height: 16,
-                  fontSize: 9,
-                }}
-              >
-                {activeCount}
-              </Badge>
-            )}
-          </ActionIcon>
-        </Tooltip>
-      </Popover.Target>
+    <Tooltip label="Feeders" position="bottom" withArrow>
+      <Box style={{ position: 'relative', display: 'inline-block' }}>
+        <Popover
+          opened={opened}
+          onChange={setOpened}
+          position="bottom-end"
+          offset={10}
+          shadow="md"
+          withArrow
+        >
+          <Popover.Target>
+            <ActionIcon
+              variant="filled"
+              color={opened ? 'blue' : 'gray'}
+              size="xl"
+              radius="md"
+              onClick={() => setOpened(o => !o)}
+              style={{
+                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                border: '1px solid rgba(255,255,255,0.1)',
+              }}
+            >
+              {loading ? <Loader size={18} color="white" /> : <Layers size={20} />}
+            </ActionIcon>
+          </Popover.Target>
 
       <Popover.Dropdown
         bg="rgba(26, 27, 30, 0.95)"
@@ -204,5 +183,27 @@ export function ModelSwitcher({ activeModelIds, onModelsChange, onZoomToModel, l
         </Stack>
       </Popover.Dropdown>
     </Popover>
+        {activeCount > 1 && !loading && (
+          <Badge
+            size="xs"
+            circle
+            color="teal"
+            variant="filled"
+            style={{
+              position: 'absolute',
+              top: -7,
+              right: -7,
+              padding: 0,
+              width: 16,
+              height: 16,
+              fontSize: 9,
+              pointerEvents: 'none',
+            }}
+          >
+            {activeCount}
+          </Badge>
+        )}
+      </Box>
+    </Tooltip>
   );
 }

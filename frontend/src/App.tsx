@@ -281,23 +281,18 @@ export default function App() {
                 const name = nodeIds.length === 1 ? (topology.nodes.find(n => n.id === nodeIds[0])?.name || 'Selected Asset') : `${nodeIds.length} Assets`;
                 execution.handleRunVoltageMap(nodeIds, name);
               }}
-              onViewDiagnostic={() => {
-                const firstId = Array.from(topology.highlightedNodes)[0];
-                if (firstId) {
-                  const node = topology.nodes.find(n => n.id === firstId);
-                  const name = node?.name || 'Diagnostic';
-                  analytics.setAnalysisWindows(prev => [...prev, {
-                    id: `diag-${Date.now()}`,
-                    type: 'diagnostic',
-                    nodeIds: [firstId],
-                    nodeName: name,
-                    isOpen: true,
-                    isMinimized: false,
-                    loading: false,
-                    data: [],
-                    zIndex: 1000
-                  }]);
-                }
+              onViewDiagnostic={(node) => {
+                analytics.setAnalysisWindows(prev => [...prev, {
+                  id: `diag-${Date.now()}`,
+                  type: 'diagnostic',
+                  nodeIds: [node.id],
+                  nodeName: node.name || 'Diagnostic',
+                  isOpen: true,
+                  isMinimized: false,
+                  loading: false,
+                  data: [],
+                  zIndex: 1000
+                }]);
               }}
               visible={topology.highlightedNodes.size > 0 || topology.highlightedEdges.size > 0}
               dateRange={dateRange}

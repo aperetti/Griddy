@@ -8,7 +8,7 @@ interface AnalysisToolbarProps {
     onClearSelection: () => void;
     onViewConsumption: () => void;
     onViewVoltage: () => void;
-    onViewDiagnostic: () => void;
+    onViewDiagnostic: (node: Node) => void;
     visible: boolean;
     dateRange: { start: string, end: string };
     configLabel: string;
@@ -42,10 +42,11 @@ export function AnalysisToolbar({
                         backdropFilter: 'blur(12px)',
                         border: '1px solid rgba(255, 255, 255, 0.1)',
                         pointerEvents: 'auto',
-                        maxWidth: '100%'
+                        maxWidth: '100%',
+                        overflow: 'hidden',
                     }}
                 >
-                    <Group gap="xs" wrap="nowrap" style={{ maxWidth: '100%' }}>
+                    <Group gap="xs" wrap="nowrap" style={{ maxWidth: '100%', overflow: 'hidden' }}>
                         <Group gap="4px" onClick={(e) => {
                             e.stopPropagation();
                             onClearSelection();
@@ -114,8 +115,8 @@ export function AnalysisToolbar({
                                 variant="light"
                                 color={(selectedNodes.length === 0 && selectedEdgeCount === 0) ? "gray" : "teal"}
                                 size="md"
-                                onClick={onViewDiagnostic}
-                                disabled={selectedNodes.length === 0 && selectedEdgeCount === 0}
+                                onClick={() => selectedNodes[0] && onViewDiagnostic(selectedNodes[0])}
+                                disabled={selectedNodes.length === 0}
                                 radius="sm"
                                 data-testid="btn-diagnostic"
                             >
