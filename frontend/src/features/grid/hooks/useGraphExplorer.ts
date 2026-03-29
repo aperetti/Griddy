@@ -4,6 +4,7 @@ import { fetchCimNeighbors, fetchCimEquipment, fetchCimNode } from '../../../sha
 export interface GNode {
     id: string;
     label: string;
+    subLabel?: string;
     fill: string;
     size: number;
     data?: { cimType: string; isRoot?: boolean };
@@ -24,6 +25,7 @@ function makeNode(id: string, name: string, cimType: string, isRoot = false): GN
     return {
         id,
         label: name || id.slice(0, 12),
+        subLabel: cimType || undefined,
         fill: nodeColor(cimType, isRoot),
         size: isRoot ? 8 : 5,
         data: { cimType, isRoot },
@@ -80,7 +82,7 @@ export function useGraphExplorer() {
                 if (!nb.id || seen.has(nb.id)) continue;
                 seen.add(nb.id);
                 newNodes.push(makeNode(nb.id, nb.name || nb.id, nb.cim_class || nb.type || 'Equipment'));
-                newEdges.push({ id: `${id}-${nb.id}`, source: id, target: nb.id });
+                newEdges.push({ id: `${id}-${nb.id}`, source: id, target: nb.id, label: nb.relation });
             }
 
             setNodes(newNodes);
@@ -121,7 +123,7 @@ export function useGraphExplorer() {
                     const fwd = `${id}-${nb.id}`;
                     const rev = `${nb.id}-${id}`;
                     if (!existingIds.has(fwd) && !existingIds.has(rev)) {
-                        toAdd.push({ id: fwd, source: id, target: nb.id });
+                        toAdd.push({ id: fwd, source: id, target: nb.id, label: nb.relation });
                     }
                 }
                 return toAdd.length > 0 ? [...prev, ...toAdd] : prev;

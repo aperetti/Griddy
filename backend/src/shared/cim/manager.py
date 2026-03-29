@@ -482,51 +482,90 @@ class CimModelManager:
         return detail
 
     def get_neighbors(self, target_id: str) -> dict | None:
-        """Returns immediate graph neighbors for a connectivity node or equipment."""
+        """Returns all immediate CIM graph neighbors for a connectivity node or equipment.
+
+        For equipment this includes:
+        - ConnectivityNodes reached via Terminals (topology connections)
+        - All other CIM objects directly referenced by this equipment's fields
+          (e.g. Location, EquipmentContainer, TransformerTank, BaseVoltage, etc.)
+        """
         if self._idx is None:
             return None
-        
+
         # 1. Is it a connectivity node?
         node_detail = self.get_node_cim_details(target_id)
         if node_detail:
-            # Neighbors are connected equipment
             neighbors = []
             for eq in node_detail["connected_equipment"]:
                 neighbors.append({
                     "id": eq["mrid"],
                     "type": "Equipment",
                     "cim_class": eq["cim_class"],
-                    "name": eq["name"]
+                    "name": eq["name"],
+                    "relation": "ConnectivityNode.Equipment",
                 })
             return {
                 "id": target_id,
                 "type": "ConnectivityNode",
+                "cim_class": "ConnectivityNode",
                 "name": node_detail["name"],
-                "neighbors": neighbors
+                "neighbors": neighbors,
             }
-            
+
         # 2. Is it equipment?
         eq_detail = self.get_equipment_detail(target_id)
         if eq_detail:
-            # Neighbors are connectivity nodes via terminals
-            neighbors = []
+            neighbors: list[dict] = []
+            seen_ids: set[str] = set()
+
+            # a) Terminal → ConnectivityNode topology connections
             for t in eq_detail["terminals"]:
                 cn_id = t["connectivity_node"]
-                # We can't use registry here, so we hope it's in the same manager
+                if not cn_id or cn_id in seen_ids:
+                    continue
+                seen_ids.add(cn_id)
                 cn_detail = self.get_node_cim_details(cn_id)
                 neighbors.append({
                     "id": cn_id,
                     "type": "ConnectivityNode",
-                    "name": cn_detail["name"] if cn_detail else cn_id
+                    "cim_class": "ConnectivityNode",
+                    "name": cn_detail["name"] if cn_detail else cn_id,
+                    "relation": "Terminal.ConnectivityNode",
                 })
+
+            # b) All other CIM object references on this equipment
+            entry = self._idx.equipment_index.get(target_id)
+            if entry:
+                cls_name, obj = entry
+                if hasattr(obj, "__dataclass_fields__"):
+                    for attr_name in obj.__dataclass_fields__:
+                        val = getattr(obj, attr_name, None)
+                        if val is None:
+                            continue
+                        items: list = val if isinstance(val, list) else [val]
+                        for item in items:
+                            if item is None or isinstance(item, (str, int, float, bool)):
+                                continue
+                            item_mrid = _mrid_str(item)
+                            if not item_mrid or item_mrid in seen_ids:
+                                continue
+                            seen_ids.add(item_mrid)
+                            neighbors.append({
+                                "id": item_mrid,
+                                "type": type(item).__name__,
+                                "cim_class": type(item).__name__,
+                                "name": _get_name(item) or item_mrid[:12],
+                                "relation": f"{cls_name}.{attr_name}",
+                            })
+
             return {
                 "id": target_id,
                 "type": "Equipment",
                 "cim_class": eq_detail["cim_class"],
                 "name": eq_detail["name"],
-                "neighbors": neighbors
+                "neighbors": neighbors,
             }
-            
+
         return None
 
     def _extract_primitives(self, obj) -> dict:
