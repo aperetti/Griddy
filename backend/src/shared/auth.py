@@ -27,25 +27,26 @@ def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
     except Exception as e:
         print(f"Error reading users database: {e}")
 
-    if not correct_username or not stored_hash or not stored_salt:
-         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Basic realm=\"Rules Engine\""},
+    # To mitigate timing attacks, we must do the expensive hashing even if the user is not found.
+    # We use a dummy salt and compute the hash anyway.
+    dummy_salt = b'\x00' * 16
+
+    if correct_username and stored_hash and stored_salt:
+        salt_bytes = bytes.fromhex(stored_salt)
+        inbound_hash = hashlib.pbkdf2_hmac('sha256', credentials.password.encode('utf8'), salt_bytes, 100000).hex()
+        is_correct_username = secrets.compare_digest(
+            credentials.username.encode("utf8"), correct_username.encode("utf8")
         )
+        is_correct_password = secrets.compare_digest(
+            inbound_hash.encode("utf8"), stored_hash.encode("utf8")
+        )
+        is_authenticated = is_correct_username and is_correct_password
+    else:
+        # User not found or DB error: compute hash against dummy data to consume time
+        hashlib.pbkdf2_hmac('sha256', credentials.password.encode('utf8'), dummy_salt, 100000)
+        is_authenticated = False
 
-    # Re-hash the provided password with the stored salt
-    salt_bytes = bytes.fromhex(stored_salt)
-    inbound_hash = hashlib.pbkdf2_hmac('sha256', credentials.password.encode('utf8'), salt_bytes, 100000).hex()
-
-    is_correct_username = secrets.compare_digest(
-        credentials.username.encode("utf8"), correct_username.encode("utf8")
-    )
-    is_correct_password = secrets.compare_digest(
-        inbound_hash.encode("utf8"), stored_hash.encode("utf8")
-    )
-    
-    if not (is_correct_username and is_correct_password):
+    if not is_authenticated:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",

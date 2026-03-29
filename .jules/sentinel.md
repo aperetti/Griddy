@@ -21,3 +21,8 @@
 **Vulnerability:** HIGH: The FastAPI backend had an overly permissive CORS configuration (`allow_origins=["*"]`), which allowed any domain to make cross-origin requests, potentially exposing sensitive grid data and APIs.
 **Learning:** Development defaults often leak into production environments if not explicitly restricted.
 **Prevention:** Always restrict CORS `allow_origins` using environment variables (e.g., `ALLOWED_ORIGINS`) and default to a strict list of internal and trusted local ports (e.g., 3000, 3001, 8000, 8080).
+
+## 2024-05-15 - [Authentication Timing Attack / Username Enumeration]
+**Vulnerability:** HIGH: The authentication endpoint (`backend/src/shared/auth.py`) immediately rejected requests with a 401 Unauthorized if the username was not found in the database, but performed a slow `pbkdf2_hmac` hash computation if the user existed. This allowed attackers to enumerate valid usernames by measuring response times.
+**Learning:** Returning early on invalid usernames is a common optimization that introduces timing attack vulnerabilities in authentication flows because cryptographic hash functions intentionally consume significant CPU time.
+**Prevention:** Always perform a dummy hash computation using the same algorithm, iterations, and a dummy salt when a user is not found to ensure the response time remains relatively constant regardless of username validity.
