@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Group, Text } from '@mantine/core';
-import { fetchCimEquipment } from '../../../../../shared/api';
+import { fetchCimEquipment, fetchCimNode } from '../../../../../shared/api';
 
 interface RelationProps {
     mrid: string;
@@ -15,13 +15,22 @@ export const Relation: React.FC<RelationProps> = ({ mrid, onDive }) => {
         const timer = setTimeout(async () => {
             setLoading(true);
             try {
-                const details = await fetchCimEquipment(mrid);
-                setInfo({ 
-                    name: details.name || 'Unnamed', 
-                    class: details.cim_type || details.class || 'Object' 
-                });
+                let details: any = null;
+                try { details = await fetchCimEquipment(mrid); } catch { /* try node next */ }
+                if (!details) {
+                    try { details = await fetchCimNode(mrid); } catch { /* not found */ }
+                }
+                if (details) {
+                    setInfo({
+                        name: details.name || mrid.slice(0, 8),
+                        class: details.cim_type || details.class || details.type || 'Object'
+                    });
+                } else {
+                    // Ref exists in data but is not independently fetchable — show mrid as-is
+                    setInfo({ name: mrid.slice(0, 12), class: 'ref' });
+                }
             } catch {
-                setInfo({ name: 'Unknown', class: '??' });
+                setInfo({ name: mrid.slice(0, 12), class: 'ref' });
             } finally {
                 setLoading(false);
             }

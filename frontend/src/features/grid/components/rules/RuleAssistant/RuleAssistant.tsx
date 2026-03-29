@@ -12,11 +12,9 @@ interface RuleAssistantProps {
     zIndex?: number;
 }
 
-// Match standard 36-char UUIDs (with dashes) OR short hex-only MRIDs (8+ chars, no dashes/spaces)
-const isMrid = (val: any) => typeof val === 'string' && (
-    /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(val) ||
-    /^[0-9a-fA-F]{8,}$/.test(val)
-);
+// Match standard 36-char UUIDs with dashes
+const isMrid = (val: any) => typeof val === 'string' &&
+    /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(val);
 
 export const RuleAssistant: React.FC<RuleAssistantProps> = ({ onSelectAttribute, targetClass, zIndex = 1000 }) => {
     const isMobile = useMediaQuery('(max-width: 768px)') || false;
