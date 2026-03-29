@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Optional
 
 from src.shared.cim_model import CimModelManager
+from src.shared.cim.profile import CimProfileService
+
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +70,9 @@ class CimModelRegistry:
         ] = {}  # model_id → (lat_offset, lon_offset)
         self._mrid_to_model: dict[str, str] = {}  # mrid → model_id
         self._node_to_model: dict[str, str] = {}  # node_id → model_id
+        self._profile = CimProfileService.get_instance()
+        self._profile.initialize()
+
 
     @classmethod
     def get_instance(cls) -> "CimModelRegistry":
@@ -305,24 +310,40 @@ class CimModelRegistry:
         return results
 
     def get_cim_schema(self) -> dict:
-        """Aggregate CIM schema from all active models."""
-        combined_schema = {}
+        """Aggregate CIM schema from all active models, falling back to profile baseline."""
+        # 1. Start with the baseline schema from the CIM profile
+        combined_schema = self._profile.get_baseline_schema().copy()
+        
+        # 2. Layer on actual instance data from loaded models
         for _mid, mgr in self.get_managers():
             if hasattr(mgr, "get_cim_schema"):
-                # Merge schemas (attributes for same class are combined)
                 mgr_schema = mgr.get_cim_schema()
                 for cls_name, cls_info in mgr_schema.items():
-                    if cls_name not in combined_schema:
+                    if cls_name not in combined_schema or combined_schema[cls_name]["count"] == 0:
                         combined_schema[cls_name] = cls_info
                     else:
-                        # Merge attributes
+                        # Existing class - merge attributes and add to count
                         existing_attrs = {
                             a["name"] for a in combined_schema[cls_name]["attributes"]
                         }
                         for attr in cls_info["attributes"]:
                             if attr["name"] not in existing_attrs:
                                 combined_schema[cls_name]["attributes"].append(attr)
+                        combined_schema[cls_name]["count"] += cls_info.get("count", 0)
         return combined_schema
+
+    def get_class_connections(self, class_name: str) -> list[str]:
+        """Discovery of classes attached to a given class (static + dynamic)."""
+        # Static baseline from profile
+        connections = set(self._profile.get_static_connections(class_name))
+        
+        # Dynamic discovery from active models
+        for _mid, mgr in self.get_managers():
+            if hasattr(mgr, "get_class_connections"):
+                connections.update(mgr.get_class_connections(class_name))
+                
+        return sorted(list(connections))
+
 
     def get_combined_topology(
         self, model_ids: list[str] | None = None

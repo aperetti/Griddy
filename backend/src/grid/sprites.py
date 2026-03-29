@@ -8,6 +8,8 @@ from PIL import Image
 from svglib.svglib import svg2rlg
 from reportlab.graphics import renderPM
 import xml.etree.ElementTree as ET
+import hashlib
+import itertools
 
 from src.shared.dependencies import ADMIN_SQLITE_PATH
 
@@ -37,8 +39,8 @@ class SpriteGenerator:
     def __init__(self, item_size: int = 128):
         self.item_size = item_size
 
-    def _process_svg(self, svg_str: str, color: str = None, css: str = None) -> str:
-        """Inject color and CSS into SVG string."""
+    def _process_svg(self, svg_str: str, color: str = None, overrides: List[Dict[str, Any]] = None) -> str:
+        """Inject color and apply SVG/CSS overrides into SVG string."""
         if not svg_str:
             return ""
 
@@ -46,13 +48,26 @@ class SpriteGenerator:
         if not svg_str.startswith("<svg"):
             svg_str = f'<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">{svg_str}</svg>'
 
-        # Inject CSS
-        if css and css.strip() and css.strip() not in ('[]', '{}'):
-            style_block = f'<style>{css}</style>'
-            if "</svg>" in svg_str:
-                svg_str = svg_str.replace("</svg>", f"{style_block}</svg>")
-            else:
-                svg_str = f"{svg_str}{style_block}"
+        # Apply Overrides
+        if overrides:
+            for o in overrides:
+                mode = o.get('mode', 'add')
+                content = o.get('svg', '')
+                if not content:
+                    continue
+                
+                if mode == 'replace':
+                    # Entire icon replacement
+                    if content.startswith("<svg"):
+                        svg_str = content
+                    else:
+                        # Wrap content in a standard SVG container if it wasn't already
+                        svg_str = f'<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">{content}</svg>'
+                else: # 'add'
+                    if "</svg>" in svg_str:
+                        svg_str = svg_str.replace("</svg>", f"{content}</svg>")
+                    else:
+                        svg_str = f"{svg_str}{content}"
 
         if color:
             # Replace currentColor
@@ -138,6 +153,17 @@ class SpriteGenerator:
             # Return a red square on error
             return Image.new("RGBA", (self.item_size, self.item_size), (255, 0, 0, 100))
 
+    def _calculate_override_hash(self, overrides: List[Dict[str, Any]]) -> str:
+        """Calculates a unique 8-char hash for a specific combination of overrides.
+        Matches the logic in DisplayRuleEngine.
+        """
+        if not overrides:
+            return ""
+        # Sort by SVG content to ensure deterministic hashing regardless of order
+        sorted_overrides = sorted(overrides, key=lambda x: x.get('svg', ''))
+        override_str = json.dumps(sorted_overrides, sort_keys=True)
+        return hashlib.md5(override_str.encode()).hexdigest()[:8]
+
     def generate(self) -> Tuple[bytes, Dict[str, Any]]:
         """Generate sprite sheet and metadata."""
         items = []
@@ -165,17 +191,62 @@ class SpriteGenerator:
                     icon_svg = config.get('icon')
                     if not icon_svg:
                         continue
+                    
+                    color_hex = config.get('color_hex')
                         
-                    css_str = ""
-                    overrides = config.get('css_overrides')
-                    if overrides and isinstance(overrides, list):
-                        css_str = "\n".join(o.get('css', '') for o in overrides if isinstance(o, dict))
+                    # 1. Collect all candidate overrides
+                    candidates = []
+                    
+                    # SVG Overrides
+                    for o in (config.get('svg_overrides') or []):
+                        if isinstance(o, dict) and o.get('svg'):
+                            candidates.append({
+                                "svg": o.get('svg'),
+                                "mode": o.get('mode', 'add'),
+                                "conditions": o.get('conditions', {})
+                            })
+                            
+                    # Legacy CSS Overrides (wrap in <style> block)
+                    for o in (config.get('css_overrides') or []):
+                        if isinstance(o, dict) and o.get('css'):
+                            candidates.append({
+                                "svg": f"<style>{o.get('css')}</style>",
+                                "mode": 'add',
+                                "conditions": o.get('conditions', {})
+                            })
 
+                    # 2. Separate into Unconditional and Conditional
+                    unconditional = [c for c in candidates if not c.get('conditions')]
+                    conditional = [c for c in candidates if c.get('conditions')]
+                    
+                    # 3. Generate base icon (id = rule_{id})
+                    # This contains only unconditional overrides
                     items.append({
                         "id": f"rule_{d['id']}",
-                        "svg": self._process_svg(icon_svg, color=config.get('color_hex'), css=css_str),
+                        "svg": self._process_svg(icon_svg, color=color_hex, overrides=unconditional),
                         "name": d['name']
                     })
+                    
+                    # 4. Generate all combinations of conditional overrides
+                    # Limit to avoid atlas explosion (max 16 combinations = 4 conditional rules)
+                    k = min(len(conditional), 4)
+                    for i in range(1, k + 1):
+                        for combo in itertools.combinations(conditional[:k], i):
+                            active_overrides = unconditional + list(combo)
+                            
+                            # For hashing and rendering, we only care about svg and mode, not conditions
+                            render_ready_overrides = [
+                                {"svg": o.get('svg'), "mode": o.get('mode', 'add')} 
+                                for o in active_overrides
+                            ]
+                            
+                            ov_hash = self._calculate_override_hash(render_ready_overrides)
+                            
+                            items.append({
+                                "id": f"rule_{d['id']}_{ov_hash}",
+                                "svg": self._process_svg(icon_svg, color=color_hex, overrides=render_ready_overrides),
+                                "name": f"{d['name']} (Override {ov_hash})"
+                            })
         except Exception as e:
             print(f"Error fetching rules for sprite generation: {e}")
 

@@ -12,6 +12,11 @@ from fastapi import Depends
 router = APIRouter(prefix="/api/display-rules", tags=["display-rules"])
 
 # ── Models ────────────────────────────────────────────────────────
+class SVGOverride(BaseModel):
+    conditions: Any = {}
+    svg: str = ""
+    mode: str = "add"
+
 class RuleConfig(BaseModel):
     visual_type: str = "Custom"
     icon: Optional[str] = None
@@ -19,6 +24,7 @@ class RuleConfig(BaseModel):
     size: float = 1.0
     label: str = ""
     css_overrides: List[Any] = []
+    svg_overrides: List[SVGOverride] = []
     radial_offset: float = 0.0
     cluster_enabled: bool = False
     cluster_radius: float = 40.0
@@ -39,6 +45,10 @@ class DisplayConfigUpdate(BaseModel):
     name: str
     description: Optional[str] = None
     is_default: bool = False
+
+class RuleTestRequest(BaseModel):
+    match_conditions: Dict[str, Any]
+    target_class: str
 
 # ── Helpers ───────────────────────────────────────────────────────
 def _get_admin_conn():
@@ -262,3 +272,39 @@ async def get_sprite_map_json():
         media_type="application/json",
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
     )
+
+@router.post("/test")
+async def test_display_rule(request: RuleTestRequest, username: str = Depends(get_current_username)):
+    """
+    Diagnostic endpoint to test a rule's matching logic without saving.
+    Returns the generated Cypher query and match count.
+    """
+    from src.grid.cypher_builder import CypherRuleBuilder
+    from src.shared.dependencies import registry
+    
+    def _test():
+        builder = CypherRuleBuilder()
+        # The query builder expects the 'match_conditions' part (logical_op + conditions)
+        query, params, warnings = builder.build_rule_query(request.match_conditions, request.target_class)
+        
+        # Build count query
+        count_query = query.replace("RETURN n.mRID as mrid", "RETURN count(n) as count")
+        
+        match_count = 0
+        try:
+            # We need to execute this on the CIM database (Neo4j)
+            # registry.cim_manager is usually a Neo4jManager
+            results = registry.cim_manager.execute_cypher(count_query, params)
+            if results and len(results) > 0:
+                match_count = results[0].get("count", 0)
+        except Exception as e:
+            warnings.append(f"Query execution error: {str(e)}")
+            
+        return {
+            "query": query,
+            "params": params,
+            "match_count": match_count,
+            "warnings": warnings
+        }
+        
+    return await run_in_threadpool(_test)

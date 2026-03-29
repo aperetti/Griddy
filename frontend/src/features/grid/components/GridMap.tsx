@@ -151,24 +151,25 @@ const edgeMidpoint = (d: Edge): [number, number] => [
     (d.sourcePosition[1] + d.targetPosition[1]) / 2,
 ];
 
-export const GridMap = React.memo<GridMapProps>(({
-    nodes,
-    edges,
-    onNodeClick,
-    onEdgeClick,
-    highlightedNodes = new Set(),
-    highlightedEdges = new Set(),
-    selectedNodeIds = [],
-    nodeAverages = null,
-    nodeCurrents = null,
-    onMapClick,
-    voltageScale,
-    fitHighlightedNodesTrigger = 0,
-    skipGlobalFit = false,
-    onViewStateChange,
-    goToLocation,
-    spriteVersion = 0,
-}) => {
+export const GridMap = React.memo((props: GridMapProps) => {
+    const {
+        nodes,
+        edges,
+        onNodeClick,
+        onEdgeClick,
+        highlightedNodes = new Set(),
+        highlightedEdges = new Set(),
+        selectedNodeIds = [],
+        nodeAverages = null,
+        nodeCurrents = null,
+        onMapClick,
+        voltageScale,
+        fitHighlightedNodesTrigger = 0,
+        skipGlobalFit = false,
+        onViewStateChange,
+        goToLocation,
+        spriteVersion = 0,
+    } = props;
     const selectedNodeIdsSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
 
     // Map to store bearings of edges for icon rotation
@@ -537,15 +538,10 @@ export const GridMap = React.memo<GridMapProps>(({
                 if (nodeAverages && nodeAverages[d.target] !== undefined && voltageScale) {
                     const voltage = nodeAverages[d.target];
                     const pu = voltage / (voltageScale.baseVoltage || 120);
-                    // Soft coral for critical high
                     if (pu > voltageScale.criticalHigh) return [255, 107, 107, 200];
-                    // Muted orange for high warning
                     if (pu >= voltageScale.highWarning) return [250, 150, 80, 200];
-                    // Emerald green for low warning (since it's inverted from normal logic, this is 'in band' here)
                     if (pu >= voltageScale.lowWarning) return [46, 204, 113, 200];
-                    // Soft gold for critical low (since it's warning)
                     if (pu >= voltageScale.criticalLow) return [241, 196, 15, 200];
-                    // Periwinkle/Indigo for extreme low
                     return [142, 68, 173, 200];
                 }
                 if (highlightedEdges.has(d.id || '') || highlightedEdges.has(`${d.source}-${d.target}`)) return [60, 160, 240, 200];
@@ -554,15 +550,11 @@ export const GridMap = React.memo<GridMapProps>(({
             getWidth: (d: Edge) => {
                 const isHovered = (d.id && hoveredEdgeId === d.id) || hoveredEdgeId === `${d.source}-${d.target}`;
                 if (isHovered) return 4;
-                
-                // Base width: scale from 1.0 to 2.5 based on primary phase count
                 const realPhases = d.phases ? d.phases.filter(p => !['N', 'Neutral'].includes(p)) : ['A', 'B', 'C'];
                 const phaseCount = Math.max(1, realPhases.length);
-                let width = 1 + (phaseCount - 1) * 0.75; // 1.0, 1.75, 2.5
-                
+                let width = 1 + (phaseCount - 1) * 0.75;
                 if (nodeAverages && nodeAverages[d.target] !== undefined) width += 1;
                 if (highlightedEdges.has(d.id || '') || highlightedEdges.has(`${d.source}-${d.target}`)) width += 1;
-                
                 return width;
             },
             widthUnits: 'pixels',
@@ -581,32 +573,19 @@ export const GridMap = React.memo<GridMapProps>(({
             }
         }),
         new ScatterplotLayer({
-            id: 'grid-nodes',
-            data: clusteredData.nodesToRender.filter(n => getVisualType(n) !== 'Bus' && !n.display_icon),
+            id: 'grid-buses',
+            data: clusteredData.nodesToRender.filter(n => (getVisualType(n) === 'Bus' || n.type === 'ConnectivityNode') && !n.display_icon),
             getPosition: (d: Node) => nodePositions[d.id],
             getFillColor: (d: Node) => {
                 if (selectedNodeIdsSet.has(d.id)) return [255, 200, 50, 255];
-
-                if (nodeAverages && nodeAverages[d.id] !== undefined && voltageScale) {
-                    const voltage = nodeAverages[d.id];
-                    const pu = voltage / (voltageScale.baseVoltage || 120);
-                    if (pu > voltageScale.criticalHigh) return [255, 107, 107, 200];
-                    if (pu >= voltageScale.highWarning) return [250, 150, 80, 200];
-                    if (pu >= voltageScale.lowWarning) return [46, 204, 113, 200];
-                    if (pu >= voltageScale.criticalLow) return [241, 196, 15, 200];
-                    return [142, 68, 173, 200];
-                }
-
-                const vt = getVisualType(d);
-                const color = getNodeColor(d, vt, highlightedNodes.has(d.id), false, d.circuit_id);
-                return [color[0], color[1], color[2], 255];
+                return [150, 150, 150, 150];
             },
             getRadius: (d: Node) => {
                 const isHovered = hoveredNodeId === d.id;
                 const isHighlighted = highlightedNodes.has(d.id);
                 const isSelected = selectedNodeIdsSet.has(d.id);
-                const baseRadius = 2;
-                let radius = isHovered ? baseRadius * 2.5 : baseRadius;
+                const baseRadius = 1.75;
+                let radius = isHovered ? baseRadius * 2.0 : baseRadius;
                 if (isHighlighted) radius *= 1.5;
                 if (isSelected) radius *= 1.1;
                 return radius;
@@ -616,101 +595,95 @@ export const GridMap = React.memo<GridMapProps>(({
                 getFillColor: [highlightedNodes, selectedNodeIdsSet, nodeAverages, voltageScale]
             },
             radiusUnits: 'pixels',
-            radiusScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
-            radiusMinPixels: 1,
+            radiusScale: 1,
+            radiusMinPixels: 3.5,
+            radiusMaxPixels: 10,
             pickable: true,
-            autoHighlight: true,
-            highlightColor: [255, 255, 255, 50],
-            onHover: (info) => {
-                setHoveredNodeId(info.object ? info.object.id : null);
-            },
+            onHover: (info) => setHoveredNodeId(info.object ? info.object.id : null),
             onClick: (info, event) => {
-                if (isDraggingRef.current) return;
                 const srcEvent = (event as any).srcEvent as MouseEvent;
-                console.log('[GridMap] Interaction:', info.object?.id, 'Shift:', srcEvent?.shiftKey);
-                if (info.object && srcEvent) {
-                    onNodeClick(info.object, srcEvent.shiftKey || srcEvent.ctrlKey);
+                if (info.object && srcEvent && onNodeClick) {
+                    onNodeClick(info.object as Node, srcEvent.shiftKey || srcEvent.ctrlKey);
                 }
             }
         }),
-        new IconLayer({
-        }),
-        spriteMap && new IconLayer<Node>({
-            id: 'grid-nodes-custom',
-            data: clusteredData.nodesToRender.filter(n => !!n.display_icon && !!spriteMap.mapping[n.display_icon!]),
-            getPosition: (d: Node) => d.position,
-            // Sprite atlas mode — one shared texture, no per-datum image loading
-            iconAtlas: spriteMap.atlasUrl,
-            iconMapping: spriteMap.mapping,
-            getIcon: (d: Node) => d.display_icon!,
-            getColor: (d: Node) => getNodeColor(d, getVisualType(d), highlightedNodes.has(d.id), selectedNodeIdsSet.has(d.id), d.circuit_id),
-            getSize: (d: Node) => {
-                const isHovered = hoveredNodeId === d.id;
-                const isHighlighted = highlightedNodes.has(d.id);
-                const sizeAttr = d.display_size ?? 1.0;
-                let size = isHovered ? sizeAttr * 1.5 : sizeAttr;
-                if (isHighlighted) size *= 1.2;
-                return size;
-            },
-            sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
-            sizeMinPixels: 1,
-            pickable: true,
-            onHover: (info) => {
-                setHoveredNodeId(info.object ? info.object.id : null);
-            },
-            onClick: (info, event) => {
-                if (isDraggingRef.current) return;
-                const srcEvent = (event as any).srcEvent as MouseEvent;
-                if (info.object && srcEvent) {
-                    onNodeClick(info.object, srcEvent.shiftKey || srcEvent.ctrlKey);
-                }
-            },
-            updateTriggers: {
-                getSize: [hoveredNodeId, highlightedNodes, nodes],
-                getIcon: [nodes, spriteMap],
-                getColor: [highlightedNodes, selectedNodeIdsSet, nodes],
-                getAngle: [nodeBearings]
-            },
-            getAngle: (d: Node) => nodeBearings[d.id] || 0
-        }),
-        spriteMap && new IconLayer({
-            id: 'grid-custom-edge-icons',
-            data: edges.filter(e => e.display_icon && !!spriteMap.mapping[e.display_icon!]),
-            getPosition: (d: Edge) => edgeMidpoint(d),
-            // Sprite atlas mode — one shared texture, no per-datum image loading
-            iconAtlas: spriteMap.atlasUrl,
-            iconMapping: spriteMap.mapping,
-            getIcon: (d: Edge) => d.display_icon!,
-            getColor: (d: Edge) => getEdgeColor(d, highlightedEdges.has(d.id || ''), hoveredEdgeId === d.id, d.circuit_id),
-            getSize: (d: Edge) => {
-                const isHovered = hoveredEdgeId === d.id;
-                const isHighlighted = highlightedEdges.has(d.id || '');
-                const sizeAttr = d.display_size ?? 1.0;
-                let size = isHovered ? sizeAttr * 1.5 : sizeAttr;
-                if (isHighlighted) size *= 1.2;
-                return size;
-            },
-            sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
-            sizeMinPixels: 1,
-            pickable: true,
-            onHover: (info) => {
-                setHoveredEdgeId(info.object ? (info.object.id ?? null) : null);
-            },
-            onClick: (info, event) => {
-                if (isDraggingRef.current) return;
-                const srcEvent = (event as any).srcEvent as MouseEvent;
-                if (info.object && srcEvent && onEdgeClick) {
-                    onEdgeClick(info.object as Edge, srcEvent.shiftKey || srcEvent.ctrlKey);
-                }
-            },
-            updateTriggers: {
-                getSize: [hoveredEdgeId, highlightedEdges, edges],
-                getIcon: [edges, spriteMap],
-                getColor: [highlightedEdges, hoveredEdgeId, edges],
-                getAngle: [edgeBearings]
-            },
-            getAngle: (d: Edge) => edgeBearings[d.id || `${d.source}-${d.target}`] || 0
-        }),
+        ...(spriteMap ? [
+            new IconLayer<Node>({
+                id: 'grid-nodes-custom',
+                data: clusteredData.nodesToRender.filter(n => !!n.display_icon && !!spriteMap.mapping[n.display_icon!]),
+                getPosition: (d: Node) => d.position,
+                iconAtlas: spriteMap.atlasUrl,
+                iconMapping: spriteMap.mapping,
+                getIcon: (d: Node) => d.display_icon!,
+                getColor: (d: Node) => getNodeColor(d, getVisualType(d), highlightedNodes.has(d.id), selectedNodeIdsSet.has(d.id), d.circuit_id),
+                getSize: (d: Node) => {
+                    const isHovered = hoveredNodeId === d.id;
+                    const isHighlighted = highlightedNodes.has(d.id);
+                    const BASE_ICON_SIZE = 32;
+                    const sizeAttr = (d.display_size ?? 1.0) * BASE_ICON_SIZE;
+                    let size = isHovered ? sizeAttr * 1.5 : sizeAttr;
+                    if (isHighlighted) size *= 1.2;
+                    return size;
+                },
+                sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
+                sizeMinPixels: 1,
+                pickable: true,
+                onHover: (info) => {
+                    setHoveredNodeId(info.object ? info.object.id : null);
+                },
+                onClick: (info, event) => {
+                    if (isDraggingRef.current) return;
+                    const srcEvent = (event as any).srcEvent as MouseEvent;
+                    if (info.object && srcEvent) {
+                        onNodeClick(info.object, srcEvent.shiftKey || srcEvent.ctrlKey);
+                    }
+                },
+                updateTriggers: {
+                    getSize: [hoveredNodeId, highlightedNodes, nodes],
+                    getIcon: [nodes, spriteMap],
+                    getColor: [highlightedNodes, selectedNodeIdsSet, nodes],
+                    getAngle: [nodeBearings]
+                },
+                getAngle: (d: Node) => nodeBearings[d.id] || 0
+            }),
+            new IconLayer<Edge>({
+                id: 'grid-custom-edge-icons',
+                data: edges.filter(e => e.display_icon && !!spriteMap.mapping[e.display_icon!]),
+                getPosition: (d: Edge) => edgeMidpoint(d),
+                iconAtlas: spriteMap.atlasUrl,
+                iconMapping: spriteMap.mapping,
+                getIcon: (d: Edge) => d.display_icon!,
+                getColor: (d: Edge) => getEdgeColor(d, highlightedEdges.has(d.id || ''), hoveredEdgeId === d.id, d.circuit_id),
+                getSize: (d: Edge) => {
+                    const isHovered = hoveredEdgeId === d.id;
+                    const isHighlighted = highlightedEdges.has(d.id || '');
+                    const sizeAttr = d.display_size ?? 1.0;
+                    let size = isHovered ? sizeAttr * 1.5 : sizeAttr;
+                    if (isHighlighted) size *= 1.2;
+                    return size;
+                },
+                sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
+                sizeMinPixels: 1,
+                pickable: true,
+                onHover: (info) => {
+                    setHoveredEdgeId(info.object ? (info.object.id ?? null) : null);
+                },
+                onClick: (info, event) => {
+                    if (isDraggingRef.current) return;
+                    const srcEvent = (event as any).srcEvent as MouseEvent;
+                    if (info.object && srcEvent && onEdgeClick) {
+                        onEdgeClick(info.object as Edge, srcEvent.shiftKey || srcEvent.ctrlKey);
+                    }
+                },
+                updateTriggers: {
+                    getSize: [hoveredEdgeId, highlightedEdges, edges],
+                    getIcon: [edges, spriteMap],
+                    getColor: [highlightedEdges, hoveredEdgeId, edges],
+                    getAngle: [edgeBearings]
+                },
+                getAngle: (d: Edge) => edgeBearings[d.id || `${d.source}-${d.target}`] || 0
+            })
+        ] : []),
         new ScatterplotLayer({
             id: 'clusters',
             data: clusteredData.clusters,
@@ -753,7 +726,7 @@ export const GridMap = React.memo<GridMapProps>(({
                 getPosition: [clusteredData.clusters]
             }
         })
-    ], [clusteredData, visualEdgePaths, hoveredNodeId, hoveredEdgeId, highlightedNodes, highlightedEdges, selectedNodeIdsSet, nodeAverages, voltageScale, onNodeClick, onEdgeClick, viewState.zoom, nodePositions]);
+    ], [clusteredData, visualEdgePaths, hoveredNodeId, hoveredEdgeId, highlightedNodes, highlightedEdges, selectedNodeIdsSet, nodeAverages, voltageScale, onNodeClick, onEdgeClick, viewState.zoom, nodePositions, nodes, edges, spriteMap, nodeBearings, edgeBearings]);
 
     const getTooltipContent = (object: any) => {
         if (!object) return null;

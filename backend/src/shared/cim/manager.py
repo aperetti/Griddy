@@ -183,16 +183,50 @@ class CimModelManager:
         """All pre-computed topology edges."""
         return self._topology_edges
 
+    def execute_cypher(self, query: str, params: dict = None) -> list[dict]:
+        """
+        Execute a raw Cypher query against the Neo4j database.
+        
+        Args:
+            query: Cypher query string with $param placeholders.
+            params: Dictionary of parameters for the query.
+            
+        Returns:
+            List of result records (dicts).
+        """
+        if not self._loaded:
+            return []
+            
+        from cimgraph.databases import Neo4jConnection
+        if not isinstance(self.network.connection, Neo4jConnection):
+            logger.warning("execute_cypher called but model is not loaded from Neo4j.")
+            return []
+            
+        conn = self.network.connection
+        conn.connect()
+        
+        import asyncio
+        import nest_asyncio
+        nest_asyncio.apply()
+        
+        async def _run():
+            async with conn.driver.session(database=conn.database) as session:
+                result = await session.run(query, **(params or {}))
+                return await result.data()
+                
+        return asyncio.run(_run())
+
     def get_cim_schema(self) -> dict:
         """Return a structured schema of common CIM classes and their attributes for the rule builder."""
         schema = {}
         # Core classes we want to highlight in the rule builder
-        target_classes = [
+        from src.shared.cim.mapping import CIM_PROPERTY_MAP
+        target_classes = list(set([
             "PowerTransformer", "TransformerTank", "TransformerTankInfo", "TransformerEndInfo",
             "Fuse", "Recloser", "Breaker", "LoadBreakSwitch", "Disconnector",
             "EnergyConsumer", "EnergySource", "LinearShuntCompensator", "ACLineSegment",
             "Asset", "AssetInfo"
-        ]
+        ] + list(CIM_PROPERTY_MAP.keys())))
         
         cim = self.cim
         graph = self.network.graph
@@ -227,7 +261,61 @@ class CimModelManager:
                 "count": len(graph[cls_obj])
             }
             
+        # Add mapped properties that might not be direct attributes
+        from src.shared.cim.mapping import CIM_PROPERTY_MAP
+        for class_name, mapped_props in CIM_PROPERTY_MAP.items():
+            if class_name in schema:
+                existing_names = {a["name"] for a in schema[class_name]["attributes"]}
+                for prop_name in mapped_props:
+                    if prop_name not in existing_names:
+                        schema[class_name]["attributes"].append({
+                            "name": prop_name,
+                            "type": "number", 
+                            "is_complex": False
+                        })
+            
         return schema
+
+    def get_class_connections(self, class_name: str) -> list[str]:
+        """Discovery of classes attached to a given class in this specific model.
+        
+        Logic:
+        1. Find all instances of class_name.
+        2. Find all ConnectivityNodes sharing a Terminal with those instances.
+        3. Find all other equipment sharing those ConnectivityNodes.
+        """
+        if not self._loaded or not self._idx:
+            return []
+            
+        cim = self.cim
+        graph = self.network.graph
+        
+        cls_obj = getattr(cim, class_name, None)
+        if not cls_obj or cls_obj not in graph:
+            return []
+            
+        connected_classes = set()
+        
+        # We use the indexes for speed
+        for mrid in graph[cls_obj].keys():
+            # Get terminals for this equipment
+            terminals = self._idx.eq_terminals.get(mrid, [])
+            for _term, cn_mrid in terminals:
+                # Add the ConnectivityNode itself
+                connected_classes.add("ConnectivityNode")
+                
+                # Find all equipment attached to this node
+                peer_mrids = self._idx.cn_equipment.get(cn_mrid, [])
+                for peer_mrid in peer_mrids:
+                    if peer_mrid == mrid:
+                        continue
+                        
+                    # Lookup peer class
+                    peer_entry = self._idx.equipment_index.get(peer_mrid)
+                    if peer_entry:
+                        connected_classes.add(peer_entry[0])
+                        
+        return sorted(list(connected_classes))
 
     def get_cim_classes(self) -> dict[str, int]:
         """Summary of every CIM class in the model with object counts."""
@@ -273,6 +361,10 @@ class CimModelManager:
             val = getattr(obj, attr, None)
             if val:
                 detail[attr] = str(val)
+
+        # Apply virtual property mappings (high-value properties like ratedS, r, x)
+        from src.shared.cim.mapping import apply_mappings
+        detail.update(apply_mappings(obj))
 
         if mrid in self._idx.eq_coords:
             detail["latitude"], detail["longitude"] = self._idx.eq_coords[mrid]

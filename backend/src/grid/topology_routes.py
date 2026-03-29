@@ -52,12 +52,26 @@ async def get_topology(
         for n in nodes if n['longitude'] and n['latitude']
     }
 
+    # 1. Perform bulk classification for all active models
+    # This delegates matching to the Neo4j engine
+    all_classifications = {}
+    for mid, mgr in registry.get_managers(model_ids):
+        model_classifications = display_engine.classify_all(mgr)
+        all_classifications.update(model_classifications)
+
     mapped_nodes = []
     for n in nodes:
         has_coords = n['longitude'] is not None and n['latitude'] is not None
         pos = [n['longitude'], n['latitude']] if has_coords else [0,0]
         
-        classification = display_engine.classify_node(n)
+        # Determine classification for the node
+        # A node inherits classification from its most important attached equipment
+        classification = None
+        for eq in n.get('attached_equipment', []):
+            mrid = eq.get('mrid')
+            if mrid in all_classifications:
+                classification = all_classifications[mrid]
+                break
         
         mapped_nodes.append({
             "id": n['node_id'],
@@ -70,21 +84,22 @@ async def get_topology(
             "base_voltage_kv": n.get('base_voltage_kv'),
             "attached_equipment": n.get('attached_equipment', []),
             "display_type": classification.get('visual_type') if classification else None,
-            "display_icon": f"rule_{classification.get('rule_id')}" if classification and classification.get('rule_id') else (
-                "default_transformer" if n.get('node_type') == 'PowerTransformer' else 
-                "default_capacitor" if n.get('node_type') == 'Capacitor' else None
+            "display_icon": (
+                f"rule_{classification.get('rule_id')}_{classification.get('override_hash')}" if classification and classification.get('rule_id') and classification.get('override_hash')
+                else f"rule_{classification.get('rule_id')}" if classification and classification.get('rule_id')
+                else None
             ),
             "display_color": classification.get('color_hex') if classification else None,
-            "display_size": classification.get('size', 1.0) if classification else 1.0,
+            "display_size": float(classification.get('size', 1.0)) if classification else 1.0,
             "display_label": classification.get('label') if classification else None,
             "display_css": classification.get('display_css', '') if classification else '',
-            "cluster_enabled": classification.get('cluster_enabled', False) if classification else False,
-            "cluster_radius": classification.get('cluster_radius', 40.0) if classification else 40.0,
-            "cluster_max_zoom": classification.get('cluster_max_zoom', 20.0) if classification else 20.0,
-            "cluster_min_points": classification.get('cluster_min_points', 2) if classification else 2,
-            "display_min_zoom": classification.get('min_zoom', 0.0) if classification else 0.0,
-            "display_max_zoom": classification.get('max_zoom', 24.0) if classification else 24.0,
-            "display_rotate_to_edge": classification.get('rotate_to_edge', False) if classification else False,
+            "cluster_enabled": bool(classification.get('cluster_enabled', False)) if classification else False,
+            "cluster_radius": float(classification.get('cluster_radius', 40.0)) if classification else 40.0,
+            "cluster_max_zoom": float(classification.get('cluster_max_zoom', 20.0)) if classification else 20.0,
+            "cluster_min_points": int(classification.get('cluster_min_points', 2)) if classification else 2,
+            "display_min_zoom": float(classification.get('min_zoom', 0.0)) if classification else 0.0,
+            "display_max_zoom": float(classification.get('max_zoom', 24.0)) if classification else 24.0,
+            "display_rotate_to_edge": bool(classification.get('rotate_to_edge', False)) if classification else False,
             "model_id": n.get('model_id', 'unknown'),
         })
 
@@ -95,7 +110,8 @@ async def get_topology(
         src_pos = node_coords.get(src)
         tgt_pos = node_coords.get(tgt)
         
-        classification = display_engine.classify_edge(e)
+        # Determine classification for the edge
+        classification = all_classifications.get(e.get('edge_id'))
         
         mapped_edges.append({
             "id": e.get('edge_id', f"{src}-{tgt}"),
@@ -111,17 +127,18 @@ async def get_topology(
             "is_open": e.get('is_open', False),
             "transformer_kva": e.get('transformer_kva'),
             "display_type": classification.get('visual_type') if classification else None,
-            "display_icon": f"rule_{classification.get('rule_id')}" if classification and classification.get('rule_id') else (
-                "default_open_switch" if e.get('is_open') else "default_closed_switch" if e.get('edge_type') in ('Fuse', 'Switch', 'Breaker', 'Disconnector', 'LoadBreakSwitch') else 
-                "default_transformer" if e.get('edge_type') == 'PowerTransformer' else None
+            "display_icon": (
+                f"rule_{classification.get('rule_id')}_{classification.get('override_hash')}" if classification and classification.get('rule_id') and classification.get('override_hash')
+                else f"rule_{classification.get('rule_id')}" if classification and classification.get('rule_id')
+                else None
             ),
             "display_color": classification.get('color_hex') if classification else None,
-            "display_size": classification.get('size', 1.0) if classification else 1.0,
+            "display_size": float(classification.get('size', 1.0)) if classification else 1.0,
             "display_label": classification.get('label') if classification else None,
             "display_css": classification.get('display_css', '') if classification else '',
-            "display_min_zoom": classification.get('min_zoom', 0.0) if classification else 0.0,
-            "display_max_zoom": classification.get('max_zoom', 24.0) if classification else 24.0,
-            "display_rotate_to_edge": classification.get('rotate_to_edge', False) if classification else False,
+            "display_min_zoom": float(classification.get('min_zoom', 0.0)) if classification else 0.0,
+            "display_max_zoom": float(classification.get('max_zoom', 24.0)) if classification else 24.0,
+            "display_rotate_to_edge": bool(classification.get('rotate_to_edge', False)) if classification else False,
             "model_id": e.get('model_id', 'unknown'),
         })
 

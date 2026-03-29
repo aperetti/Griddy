@@ -123,6 +123,15 @@ async def get_cim_schema():
     return registry.get_cim_schema()
 
 
+@router.get("/connections/{class_name}")
+async def get_class_connections(class_name: str):
+    """List all CIM classes that can be directly attached to the given class."""
+    return {
+        "class": class_name,
+        "connected_classes": registry.get_class_connections(class_name)
+    }
+
+
 # ── Config Overrides (Migrated from Node.js) ───────────────────────
 class ConfigUpdate(BaseModel):
     key: str

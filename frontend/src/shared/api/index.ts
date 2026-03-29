@@ -102,9 +102,10 @@ export interface RuleConfig {
     cluster_min_points?: number;
     min_zoom?: number;
     max_zoom?: number;
-    css_overrides?: Array<{
+    svg_overrides?: Array<{
         conditions: any;
-        css: string;
+        svg: string;
+        mode: 'replace' | 'add';
     }>;
     rotate_to_edge?: boolean;
 }
@@ -227,6 +228,37 @@ export const duplicateDisplayRule = async (ruleId: number): Promise<{id: number,
         headers: { ...getAuthHeaders() }
     });
     if (res.status === 401) throw new Error('Unauthorized');
+    return res.json();
+};
+
+export interface RuleTestResponse {
+    query: string;
+    params: Record<string, any>;
+    match_count: number;
+    warnings: string[];
+}
+
+export const testDisplayRule = async (match_conditions: any, target_class: string): Promise<RuleTestResponse> => {
+    let conditions = match_conditions;
+    if (typeof conditions === 'string') {
+        try {
+            conditions = JSON.parse(conditions);
+        } catch (e) {
+            return { query: '', params: {}, match_count: 0, warnings: ['Invalid JSON in match conditions'] };
+        }
+    }
+
+    const res = await fetch(`${ADMIN_API_BASE}/display-rules/test`, {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json',
+            ...getAuthHeaders()
+        },
+        body: JSON.stringify({ match_conditions: conditions, target_class })
+    });
+    
+    if (res.status === 401) throw new Error('Unauthorized');
+    if (!res.ok) throw new Error(await res.text());
     return res.json();
 };
 
