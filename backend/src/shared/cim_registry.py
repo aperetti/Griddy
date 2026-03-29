@@ -32,7 +32,7 @@ _CIM_DATA_DIR = _BACKEND_DIR / "cim" / "models"
 
 
 def _discover_xml_files() -> list[dict]:
-    """Find all CIM XML files in the cim directory."""
+    """Find all CIM XML files in the cim models directory."""
     results: list[dict] = []
     search_dir = os.getenv("CIM_MODELS_DIR", str(_CIM_DATA_DIR))
 
@@ -48,6 +48,25 @@ def _discover_xml_files() -> list[dict]:
             }
         )
 
+    return results
+
+
+def _discover_neo4j_models() -> list[dict]:
+    """Discover CIM models from the CIM_MODEL_NAMES env var when no XML files are present.
+
+    Set CIM_MODEL_NAMES=IEEE8500,OtherModel (comma-separated) to declare models
+    that live in Neo4j without corresponding XML files on disk.
+    """
+    names_env = os.getenv("CIM_MODEL_NAMES", "").strip()
+    if not names_env:
+        # Default: single anonymous model — all data in the configured Neo4j DB
+        return [{"model_id": "cim_model", "filename": None, "path": None, "size_mb": 0}]
+
+    results = []
+    for name in names_env.split(","):
+        name = name.strip()
+        if name:
+            results.append({"model_id": name, "filename": None, "path": None, "size_mb": 0})
     return results
 
 
@@ -87,13 +106,24 @@ class CimModelRegistry:
     # ── Discovery ─────────────────────────────────────────────────
 
     def discover(self):
-        """Scan for available XML files and populate the available list."""
+        """Discover available CIM models — from XML files or Neo4j."""
         self._available = _discover_xml_files()
-        logger.info(
-            "Discovered %d CIM XML files: %s",
-            len(self._available),
-            [m["model_id"] for m in self._available],
-        )
+
+        if self._available:
+            logger.info(
+                "Discovered %d CIM XML files: %s",
+                len(self._available),
+                [m["model_id"] for m in self._available],
+            )
+        elif os.getenv("CIMG_URL"):
+            # No XML files on disk but Neo4j is configured — discover from env var
+            self._available = _discover_neo4j_models()
+            logger.info(
+                "No XML files found; using Neo4j models: %s",
+                [m["model_id"] for m in self._available],
+            )
+        else:
+            logger.warning("No CIM XML files found and CIMG_URL is not set.")
 
     # ── Load / Unload ─────────────────────────────────────────────
 
@@ -108,6 +138,7 @@ class CimModelRegistry:
             raise FileNotFoundError(f"No discovered model with id '{model_id}'")
 
         manager = CimModelManager()
+        manager.model_id = model_id  # set before load() so Neo4j path has the right name
         manager.load(xml_path=meta["path"])
         self._managers[model_id] = manager
         self._active_models.add(model_id)
@@ -152,10 +183,10 @@ class CimModelRegistry:
             logger.info("Model '%s' unloaded", model_id)
 
     def load_all(self):
-        """Load all discovered CIM XML files into memory."""
+        """Load all discovered CIM models (from XML or Neo4j) into memory."""
         self.discover()
         if not self._available:
-            logger.warning("No CIM XML files discovered in %s", _CIM_DATA_DIR)
+            logger.warning("No CIM models discovered — check XML files or CIMG_URL + CIM_MODEL_NAMES.")
             return
 
         for meta in self._available:

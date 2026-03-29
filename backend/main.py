@@ -4,6 +4,16 @@ from contextlib import asynccontextmanager
 import logging
 import os
 import sys
+from pathlib import Path
+
+# Load .env from project root for local development.
+# override=False means real env vars (e.g. injected by Docker Compose) always win.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
+except ImportError:
+    print("dotenv not installed")
+    pass
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles

@@ -16,20 +16,28 @@ class CypherRuleBuilder:
         self.warnings = []
 
     def _format_property(self, prop: str, alias: str = "n") -> str:
-        """Formats a property name for Cypher (adds backticks if namespaced)."""
-        if not prop: return ""
-        # If the property already includes the alias (e.g. 'e.ratedS'), return as is
-        if '.' in prop and prop.split('.')[0] in ['n', 'e', 'edge', 'r']:
-            # But we still need to backtick the attribute part if it has multiple dots
-            parts = prop.split('.')
-            base = parts[0]
-            attr = ".".join(parts[1:])
-            if '.' in attr:
-                return f"{base}.`{attr}`"
-            return prop
-            
+        """Formats a property name for Cypher.
+
+        Neo4j (via n10s/cimloader) stores CIM properties using the full local URI
+        name after the namespace #, e.g. 'IdentifiedObject.mRID', 'EnergyConsumer.p'.
+        These contain dots and require backtick-escaping in Cypher.
+
+        Handles three cases:
+        1. Already alias-prefixed (e.g. 'e.ratedS') — returned as-is.
+        2. CIM namespaced form (e.g. 'IdentifiedObject.mRID') — wrapped in backticks:
+           n.`IdentifiedObject.mRID`
+        3. Plain attribute name (e.g. 'normalOpen') — prefixed with alias: n.normalOpen
+        """
+        if not prop:
+            return ""
         if '.' in prop:
+            first = prop.split('.')[0]
+            # Case 1: already has a Cypher alias prefix
+            if first in ('n', 'e', 'edge', 'r'):
+                return prop
+            # Case 2: CIM-namespaced property — backtick-escape the whole name
             return f"{alias}.`{prop}`"
+        # Case 3: plain name
         return f"{alias}.{prop}"
 
     def _get_param_name(self, value: Any) -> str:
@@ -64,8 +72,8 @@ class CypherRuleBuilder:
             
         where_clause = self._build_where_clause(rule_config, cim_class)
         
-        # Get the mRID property name from mapping
-        mrid_prop = DEFAULT_MAPPINGS.get("mrid", {}).get("attribute", "mRID")
+        # mRID is stored as 'IdentifiedObject.mRID' in Neo4j (n10s preserves the full local URI name)
+        mrid_prop = DEFAULT_MAPPINGS.get("mrid", {}).get("attribute", "IdentifiedObject.mRID")
         mrid_expr = self._format_property(mrid_prop, "n")
 
         # Build the MATCH part with label expansion if needed

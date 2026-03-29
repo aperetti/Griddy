@@ -283,24 +283,33 @@ async def test_display_rule(request: RuleTestRequest, username: str = Depends(ge
     from src.shared.dependencies import registry
     
     def _test():
+        import re, os
+        from neo4j import GraphDatabase
+
         builder = CypherRuleBuilder()
-        # The query builder expects the 'match_conditions' part (logical_op + conditions)
         query, params, warnings = builder.build_rule_query(request.match_conditions, request.target_class)
-        
-        # Build count query by replacing the matching return clause
-        import re
+
         count_query = re.sub(r'RETURN\s+.*\s+as\s+mrid$', 'RETURN count(n) as count', query, flags=re.IGNORECASE)
-        
+
         match_count = 0
-        try:
-            # Execute across all active model managers
-            for _mid, mgr in registry.get_managers():
-                results = mgr.execute_cypher(count_query, params)
-                if results and len(results) > 0:
-                    match_count += results[0].get("count", 0)
-        except Exception as e:
-            warnings.append(f"Query execution error: {str(e)}")
-            
+        neo4j_url = os.getenv("CIMG_URL")
+        if not neo4j_url:
+            warnings.append("CIMG_URL is not set — cannot execute query against Neo4j.")
+        else:
+            username = os.getenv("CIMG_USERNAME", "neo4j")
+            password = os.getenv("CIMG_PASSWORD", "")
+            database = os.getenv("CIMG_NEO4J_DATABASE", "neo4j")
+            try:
+                driver = GraphDatabase.driver(neo4j_url, auth=(username, password))
+                with driver.session(database=database) as session:
+                    result = session.run(count_query, **params)
+                    row = result.single()
+                    if row:
+                        match_count = row["count"]
+                driver.close()
+            except Exception as e:
+                warnings.append(f"Neo4j query error ({neo4j_url}, db={database}): {e}")
+
         return {
             "query": query,
             "params": params,

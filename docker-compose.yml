@@ -18,10 +18,12 @@ services:
       - CIM_MODEL_PATH=/app/cim/IEEE8500.xml
       - WEATHER_DATA_PATH=/app/cim/weather.epw
       - CIMG_URL=bolt://neo4j:7687
-      - CIMG_USERNAME=neo4j
-      - CIMG_PASSWORD=password123
-      - CIMG_CIM_PROFILE=cimhub_2023
-      - CIMG_IEC61970_301=8
+      - CIMG_USERNAME=${CIMG_USERNAME:-neo4j}
+      - CIMG_PASSWORD=${CIMG_PASSWORD:-password123}
+      - CIMG_NEO4J_DATABASE=${CIMG_NEO4J_DATABASE:-neo4j}
+      - CIMG_CIM_PROFILE=${CIMG_CIM_PROFILE:-cimhub_2023}
+      - CIMG_IEC61970_301=${CIMG_IEC61970_301:-8}
+      - CIM_MODEL_NAMES=${CIM_MODEL_NAMES:-IEEE8500}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     restart: unless-stopped
@@ -67,8 +69,8 @@ services:
       - CIM_MODEL_PATH=/app/cim/IEEE8500.xml
       - WEATHER_DATA_PATH=/app/cim/weather.epw
       - CIMG_URL=bolt://neo4j:7687
-      - CIMG_USERNAME=neo4j
-      - CIMG_PASSWORD=password123
+      - CIMG_USERNAME=${CIMG_USERNAME:-neo4j}
+      - CIMG_PASSWORD=${CIMG_PASSWORD:-password123}
       - REFRESH_DB=${REFRESH_DB:-false}
     profiles: [ "tools" ]
     deploy:
@@ -105,7 +107,7 @@ services:
     build: ./neo4j
     container_name: grid-neo4j
     ports:
-      - "7474:7474" # HTTP
+      - "7474:7474" # Neo4j Browser (HTTP)
       - "7687:7687" # Bolt
     environment:
       - NEO4J_AUTH=${NEO4J_AUTH:-neo4j/password123}
@@ -138,9 +140,9 @@ services:
       - MODELS_DIR=/app/cim/models
       - INGEST_SCRIPT=/app/scripts/ingest_cim_to_neo4j.py
       - CIMG_URL=bolt://neo4j:7687
-      - CIMG_USERNAME=neo4j
-      - CIMG_PASSWORD=password123
-      - CIMG_CIM_PROFILE=cimhub_2023
+      - CIMG_USERNAME=${CIMG_USERNAME:-neo4j}
+      - CIMG_PASSWORD=${CIMG_PASSWORD:-password123}
+      - CIMG_CIM_PROFILE=${CIMG_CIM_PROFILE:-cimhub_2023}
     depends_on:
       - neo4j
     restart: unless-stopped

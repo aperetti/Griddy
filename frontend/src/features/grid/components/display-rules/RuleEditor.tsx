@@ -5,10 +5,10 @@ import {
     TextInput, NumberInput, Switch, Grid, Badge, 
     Code, Collapse, Tooltip, ActionIcon, Loader
 } from '@mantine/core';
-import { 
+import {
     Info, ListOrdered,
     Type, ZoomIn, LayoutGrid, Play,
-    ChevronDown, ChevronUp, AlertCircle
+    ChevronDown, ChevronUp, AlertCircle, Copy, Check
 } from 'lucide-react';
 import { CimRuleBuilder } from '../rules/CimRuleBuilder/CimRuleBuilder';
 import { ConditionalSymbolList } from './ConditionalSymbolList';
@@ -38,6 +38,7 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
     const [testResults, setTestResults] = useState<RuleTestResponse | null>(null);
     const [isTesting, setIsTesting] = useState(false);
     const [showQuery, setShowQuery] = useState(false);
+    const [copied, setCopied] = useState(false);
     
     // Auto-clear test results when conditions change
     const [lastConditions, setLastConditions] = useState('');
@@ -251,7 +252,45 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
 
                     <Collapse in={showQuery}>
                         <Stack gap="xs" mt="xs">
-                            <Text size="xs" c="dimmed" fw={500}>Generated Cypher Query:</Text>
+                            <Group justify="space-between" align="center">
+                                <Text size="xs" c="dimmed" fw={500}>Generated Cypher Query:</Text>
+                                <Tooltip label={copied ? 'Copied!' : 'Copy query with params'} withArrow>
+                                    <ActionIcon
+                                        size="xs"
+                                        variant="subtle"
+                                        color={copied ? 'teal' : 'gray'}
+                                        onClick={() => {
+                                            if (!testResults?.query) return;
+                                            const params = testResults.params ?? {};
+                                            let full = testResults.query;
+                                            Object.entries(params).forEach(([key, val]) => {
+                                                full = full.replaceAll(`$${key}`, JSON.stringify(val));
+                                            });
+                                            // navigator.clipboard requires HTTPS + focus — not reliable on mobile.
+                                            // Fall back to textarea execCommand for broad compatibility.
+                                            const fallback = () => {
+                                                const ta = document.createElement('textarea');
+                                                ta.value = full;
+                                                ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+                                                document.body.appendChild(ta);
+                                                ta.focus();
+                                                ta.select();
+                                                document.execCommand('copy');
+                                                document.body.removeChild(ta);
+                                            };
+                                            if (navigator.clipboard) {
+                                                navigator.clipboard.writeText(full).catch(fallback);
+                                            } else {
+                                                fallback();
+                                            }
+                                            setCopied(true);
+                                            setTimeout(() => setCopied(false), 2000);
+                                        }}
+                                    >
+                                        {copied ? <Check size={12} /> : <Copy size={12} />}
+                                    </ActionIcon>
+                                </Tooltip>
+                            </Group>
                             <Code block style={{ fontSize: rem(11), maxHeight: rem(150), overflowY: 'auto' }}>
                                 {testResults?.query || 'No query generated'}
                             </Code>

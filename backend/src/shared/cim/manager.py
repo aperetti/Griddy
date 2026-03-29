@@ -63,67 +63,81 @@ class CimModelManager:
     # ══════════════════════════════════════════════════════════════
 
     def load(self, xml_path: str | None = None):
-        """Parse the CIM XML with CIM-Graph and build all indexes.
+        """Load CIM model — Neo4j-first, XML as fallback.
 
+        When CIMG_URL is set, the XML file is not required. Neo4j is tried
+        first; the XML path is only used if Neo4j is unavailable or empty.
         Safe to call multiple times — subsequent calls are no-ops.
         """
         if self._loaded:
             logger.info("CIM model already loaded – skipping")
             return
 
-        path = _resolve_xml_path(xml_path)
-        logger.info("Loading CIM model from: %s", path)
-
-        if not path.is_file():
-            raise FileNotFoundError(f"CIM XML not found: {path}")
-
-        self.model_id = path.stem if path else "unknown"
-
         import cimgraph.data_profile.cimhub_2023 as cim
         from cimgraph.databases import XMLFile, Neo4jConnection
         from cimgraph.models import FeederModel
 
         self.cim = cim
-
-        # Determine connection type and profile
-        neo4j_url = os.getenv("CIMG_URL")
         profile = os.getenv("CIMG_CIM_PROFILE", "cimhub_2023")
         os.environ["CIMG_CIM_PROFILE"] = profile
-        
-        # Try Neo4j first if URL is set
+        neo4j_url = os.getenv("CIMG_URL")
+
+        # ── Try Neo4j first (no XML file required) ────────────────────
+        loaded_from_neo4j = False
+        path = None  # will be set only if we fall back to XML
+
         if neo4j_url:
+            db_name = os.getenv("CIMG_NEO4J_DATABASE", "neo4j")
+            logger.info("Loading model '%s' from Neo4j (DB: %s)...", self.model_id, db_name)
             try:
-                # Use model_id as the database name
-                db_name = self.model_id
-                logger.info("Attempting Neo4j connection for model '%s' (DB: %s)...", self.model_id, db_name)
-                
                 connection = Neo4jConnection(database=db_name)
                 self.network = FeederModel(container=cim.Feeder(), connection=connection)
-                
-                # Try a quick test query to see if data exists
-                test_objs = self.network.get_all_attributes(cim.Feeder)
+                test_objs = self.network.get_all_attributes(cim.ConnectivityNode)
                 if not test_objs:
-                    logger.info("No data found in Neo4j database '%s', falling back to XML.", db_name)
-                    raise ValueError("No data")
-                    
-                logger.info("Successfully loaded model '%s' from Neo4j.", self.model_id)
-                path = None # Mark as Neo4j loaded
+                    raise ValueError(f"No ConnectivityNode data in Neo4j DB '{db_name}'")
+                logger.info("Neo4j connection confirmed for model '%s'.", self.model_id)
+                loaded_from_neo4j = True
             except Exception as e:
-                logger.warning("Neo4j load failed for '%s' (%s), falling back to XML: %s", self.model_id, str(e), xml_path)
-                path = _resolve_xml_path(xml_path)
-                connection = XMLFile(filename=str(path))
-                self.network = FeederModel(container=cim.Feeder(), connection=connection)
-        else:
+                logger.warning(
+                    "Neo4j load failed for '%s' (%s) — falling back to XML.", self.model_id, e
+                )
+
+        # ── Fall back to XML if Neo4j was not available or failed ─────
+        if not loaded_from_neo4j:
             path = _resolve_xml_path(xml_path)
-            logger.info("Loading CIM model from XML: %s", path)
-            if not path.is_file():
-                raise FileNotFoundError(f"CIM XML not found: {path}")
+            if path is None or not path.is_file():
+                raise FileNotFoundError(
+                    f"No Neo4j data available and no XML file found for model '{self.model_id}'. "
+                    f"Set CIMG_URL or provide a valid xml_path."
+                )
+            logger.info("Loading model '%s' from XML: %s", self.model_id, path)
             connection = XMLFile(filename=str(path))
             self.network = FeederModel(container=cim.Feeder(), connection=connection)
 
-        # Load equipment catalog classes (not in feeder container by default)
-        logger.info("Loading transformer and equipment catalog...")
+        # Load all classes needed for topology and equipment catalog.
+        # With Neo4j, get_all_attributes() is the only way to populate network.graph;
+        # XML loading materializes everything automatically so these calls are no-ops there.
+        logger.info("Loading CIM classes (topology + equipment catalog)...")
         for cls_type in [
+            # Core topology — must be present for nodes/edges to be built
+            getattr(cim, "ConnectivityNode", None),
+            getattr(cim, "Terminal", None),
+            getattr(cim, "ACLineSegment", None),
+            getattr(cim, "Breaker", None),
+            getattr(cim, "LoadBreakSwitch", None),
+            getattr(cim, "Disconnector", None),
+            getattr(cim, "EnergyConsumer", None),
+            getattr(cim, "EnergySource", None),
+            getattr(cim, "PositionPoint", None),
+            getattr(cim, "Location", None),
+            getattr(cim, "Substation", None),
+            getattr(cim, "VoltageLevel", None),
+            # Phase detail
+            getattr(cim, "ACLineSegmentPhase", None),
+            getattr(cim, "EnergyConsumerPhase", None),
+            getattr(cim, "SwitchPhase", None),
+            getattr(cim, "ShuntCompensatorPhase", None),
+            # Equipment catalog
             getattr(cim, "TransformerTankInfo", None),
             getattr(cim, "TransformerEndInfo", None),
             getattr(cim, "PowerTransformerInfo", None),
@@ -184,37 +198,34 @@ class CimModelManager:
         return self._topology_edges
 
     def execute_cypher(self, query: str, params: dict = None) -> list[dict]:
-        """
-        Execute a raw Cypher query against the Neo4j database.
-        
-        Args:
-            query: Cypher query string with $param placeholders.
-            params: Dictionary of parameters for the query.
-            
+        """Execute a raw Cypher query against the Neo4j database.
+
+        Uses the standard neo4j Python driver directly with env var credentials,
+        independent of cimgraph's internal connection management.
+
         Returns:
-            List of result records (dicts).
+            List of result records (dicts), or [] if Neo4j is not configured.
         """
-        if not self._loaded:
+        neo4j_url = os.getenv("CIMG_URL")
+        if not neo4j_url:
+            logger.warning("execute_cypher: CIMG_URL not set, skipping.")
             return []
-            
-        from cimgraph.databases import Neo4jConnection
-        if not isinstance(self.network.connection, Neo4jConnection):
-            logger.warning("execute_cypher called but model is not loaded from Neo4j.")
+
+        username = os.getenv("CIMG_USERNAME", "neo4j")
+        password = os.getenv("CIMG_PASSWORD", "")
+        database = os.getenv("CIMG_NEO4J_DATABASE", "neo4j")
+
+        from neo4j import GraphDatabase
+        try:
+            driver = GraphDatabase.driver(neo4j_url, auth=(username, password))
+            with driver.session(database=database) as session:
+                result = session.run(query, **(params or {}))
+                records = [dict(r) for r in result]
+            driver.close()
+            return records
+        except Exception as e:
+            logger.error("execute_cypher failed: %s", e)
             return []
-            
-        conn = self.network.connection
-        conn.connect()
-        
-        import asyncio
-        import nest_asyncio
-        nest_asyncio.apply()
-        
-        async def _run():
-            async with conn.driver.session(database=conn.database) as session:
-                result = await session.run(query, **(params or {}))
-                return await result.data()
-                
-        return asyncio.run(_run())
 
     def get_cim_schema(self) -> dict:
         """Return a structured schema of common CIM classes and their attributes for the rule builder."""

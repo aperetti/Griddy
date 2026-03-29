@@ -56,10 +56,9 @@ This command will:
 
 Once running, open your browser:
 
-| Service | URL |
-| :--- | :--- |
 | Web Dashboard | <http://localhost:8080> |
 | API (Swagger) | <http://localhost:8000/docs> |
+| Neo4j Browser | <http://localhost:7474/browser> |
 | Documentation | <http://localhost:3002> |
 
 ---
