@@ -3,6 +3,24 @@
  * Following Clean Architecture: Pure functions and domain interfaces.
  */
 
+export interface TooltipField {
+    id: string;
+    label: string;   // Display label shown in tooltip
+    field: string;   // Node/edge property path, e.g. "name", "base_voltage_kv"
+}
+
+export interface TooltipConfig {
+    mode: 'basic' | 'advanced';
+    fields: TooltipField[];
+    html_template: string;
+}
+
+export const DEFAULT_TOOLTIP_CONFIG: TooltipConfig = {
+    mode: 'basic',
+    fields: [],
+    html_template: '',
+};
+
 export interface Condition {
     id: string;
     path: string;

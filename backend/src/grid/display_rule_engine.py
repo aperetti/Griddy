@@ -133,8 +133,9 @@ class DisplayRuleEngine:
                             "min_zoom": get_float('min_zoom', 0.0),
                             "max_zoom": get_float('max_zoom', 24.0),
                             "rotate_to_edge": bool(config.get('rotate_to_edge', False)),
-                            "svg_overrides": [], 
+                            "svg_overrides": [],
                             "override_hash": "",
+                            "tooltip_config": config.get('tooltip_config'),
                         }
             except Exception as e:
                 logger.error("Error in bulk classification for rule %s: %s", rule.get('id'), e)

@@ -33,6 +33,7 @@ class RuleConfig(BaseModel):
     min_zoom: float = 0.0
     max_zoom: float = 24.0
     rotate_to_edge: bool = False
+    tooltip_config: Optional[Dict[str, Any]] = None
 
 class RuleUpdate(BaseModel):
     name: str

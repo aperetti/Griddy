@@ -720,9 +720,44 @@ export const GridMap = React.memo((props: GridMapProps) => {
         })
     ], [clusteredData, visualEdgePaths, hoveredNodeId, hoveredEdgeId, highlightedNodes, highlightedEdges, selectedNodeIdsSet, nodeAverages, voltageScale, onNodeClick, onEdgeClick, viewState.zoom, nodePositions, nodes, edges, spriteMap, nodeBearings, edgeBearings]);
 
+    const renderRuleTooltip = (obj: any): string | null => {
+        const cfg = obj.display_tooltip;
+        if (!cfg) return null;
+
+        const resolve = (field: string): string => {
+            const parts = field.split('.');
+            let val: any = obj;
+            for (const p of parts) val = val?.[p];
+            if (Array.isArray(val)) return val.join(', ');
+            if (val == null || val === '') return '';
+            if (typeof val === 'number') return val % 1 === 0 ? String(val) : val.toFixed(2);
+            return String(val);
+        };
+
+        if (cfg.mode === 'advanced') {
+            if (!cfg.html_template) return null;
+            return cfg.html_template.replace(/\{\{(\w+(?:\.\w+)*)\}\}/g, (_: string, f: string) => resolve(f));
+        }
+
+        // Basic mode
+        const fields: Array<{ id: string; label: string; field: string }> = cfg.fields || [];
+        if (!fields.length) return null;
+        const rows = fields
+            .filter((f: { field: string }) => f.field)
+            .map((f: { label: string; field: string }) => {
+                const val = resolve(f.field);
+                if (!val) return '';
+                return `<div style="font-size:12px;margin-bottom:2px;"><strong>${f.label || f.field}:</strong> ${val}</div>`;
+            })
+            .filter(Boolean)
+            .join('');
+        if (!rows) return null;
+        return `<div class="grid-map-tooltip" style="padding:10px;background:#1A1B1E;border:1px solid #373A40;border-radius:8px;color:#fff;box-shadow:0 4px 15px rgba(0,0,0,0.5);min-width:150px;pointer-events:auto;">${rows}</div>`;
+    };
+
     const getTooltipContent = (object: any) => {
         if (!object) return null;
-        
+
         // Cluster detected
         if (object.pointCount) {
             return {
@@ -742,6 +777,9 @@ export const GridMap = React.memo((props: GridMapProps) => {
         // Node detected (Nodes have 'position' and 'type', but not 'source')
         if ('position' in object && !('source' in object)) {
             const node = object as Node;
+            const ruleHtml = renderRuleTooltip(node);
+            if (ruleHtml) return { html: ruleHtml, style: { backgroundColor: 'transparent', fontSize: '12px' } };
+
             let attachedInfo = '';
             if (node.attached_equipment && node.attached_equipment.length > 0) {
                 attachedInfo = `<div style="margin-top: 8px; border-top: 1px solid #373A40; padding-top: 5px;">`;
@@ -775,6 +813,9 @@ export const GridMap = React.memo((props: GridMapProps) => {
         } 
         
         // Edge detected
+        const edgeRuleHtml = renderRuleTooltip(object);
+        if (edgeRuleHtml) return { html: edgeRuleHtml, style: { backgroundColor: 'transparent', fontSize: '12px' } };
+
         const edgeObj = object as Edge;
         const phaseData = Array.isArray(edgeObj.phases) ? edgeObj.phases.join('') : (edgeObj.phases || 'ABC');
         

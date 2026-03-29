@@ -43,6 +43,11 @@ export interface Node {
     display_min_zoom?: number;
     display_max_zoom?: number;
     display_rotate_to_edge?: boolean;
+    display_tooltip?: {
+        mode: 'basic' | 'advanced';
+        fields: Array<{ id: string; label: string; field: string }>;
+        html_template: string;
+    };
 }
 
 
@@ -71,5 +76,10 @@ export interface Edge {
     display_min_zoom?: number;
     display_max_zoom?: number;
     display_rotate_to_edge?: boolean;
+    display_tooltip?: {
+        mode: 'basic' | 'advanced';
+        fields: Array<{ id: string; label: string; field: string }>;
+        html_template: string;
+    };
 }
 

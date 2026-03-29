@@ -13,7 +13,9 @@ import {
 import { CimRuleBuilder } from '../rules/CimRuleBuilder/CimRuleBuilder';
 import { ConditionalSymbolList } from './ConditionalSymbolList';
 import { VisualConfigEditor } from './VisualConfigEditor';
+import { TooltipConfigEditor } from './TooltipConfigEditor';
 import { type RuleTestResponse } from '../../../../shared/api';
+import { DEFAULT_TOOLTIP_CONFIG } from '../../model/rules';
 
 interface RuleEditorProps {
     rule: any;
@@ -131,6 +133,13 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
                         onChange={updateConfig}
                         onOpenLiveEditor={onOpenLiveEditor}
                     />
+
+                    <Fieldset legend="Tooltip Appearance" variant="default">
+                        <TooltipConfigEditor
+                            value={rule.config?.tooltip_config || DEFAULT_TOOLTIP_CONFIG}
+                            onChange={(tc) => updateConfig({ tooltip_config: tc })}
+                        />
+                    </Fieldset>
 
                     <Fieldset legend="Level of Detail & Clustering" variant="default">
                        <Grid gutter="md">
