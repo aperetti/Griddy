@@ -1,75 +1,219 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
     Stack, Group, Text, SegmentedControl, Paper, Button, Textarea,
-    TextInput, Select, ActionIcon, Badge, Collapse, Fieldset, Tooltip,
+    TextInput, Select, ActionIcon, Badge, Collapse, Tooltip,
+    Loader, Anchor, Breadcrumbs,
 } from '@mantine/core';
-import { Plus, Trash2, ChevronDown, ChevronUp, MessageSquare, Code2, RotateCcw } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, ChevronUp, MessageSquare, Code2, RotateCcw, ChevronRight } from 'lucide-react';
 import { type TooltipConfig, type TooltipField, genId } from '../../model/rules';
+import { useSchema } from '../../context/SchemaContext';
+import { fetchCimConnections } from '../../../../shared/api';
 
 interface TooltipConfigEditorProps {
     value: TooltipConfig;
     onChange: (config: TooltipConfig) => void;
+    targetClass?: string;
 }
 
-export const NODE_FIELDS = [
-    { value: 'name',           label: 'Name' },
-    { value: 'id',             label: 'ID / mRID' },
-    { value: 'type',           label: 'CIM Type' },
-    { value: 'phases',         label: 'Phases' },
-    { value: 'base_voltage_kv', label: 'Base Voltage (kV)' },
-    { value: 'circuit_id',    label: 'Circuit' },
-    { value: 'display_label', label: 'Display Label' },
-    { value: 'edge_type',     label: 'Edge Type' },
-    { value: 'transformer_kva', label: 'Transformer Rating (kVA)' },
-    { value: 'length_m',      label: 'Line Length (m)' },
-    { value: 'is_open',       label: 'Switch State' },
-];
-
-const SAMPLE_DATA: Record<string, string> = {
-    name:            'BUS_4207',
-    id:              'A1B2C3D4-E5F6-...',
-    type:            'ConnectivityNode',
-    phases:          'A, B, C',
-    base_voltage_kv: '12.47',
-    circuit_id:      'circuit_1',
-    display_label:   'Main Bus',
-    edge_type:       'ACLineSegment',
-    transformer_kva: '167.0',
-    length_m:        '245.3',
-    is_open:         'false',
+// Maps a CIM class name (as returned by /connections) to the property key
+// used in the equipment detail response from get_equipment_detail().
+const CLASS_TO_DETAIL_KEY: Record<string, string> = {
+    Terminal:          'terminals.0',
+    ConnectivityNode:  'terminals.0.connectivity_node',
+    Asset:             'container',
+    Feeder:            'container',
+    VoltageLevel:      'container',
+    Substation:        'container',
 };
+
+function getPathPrefix(browsePath: string[]): string {
+    // browsePath[0] = root class (no prefix), browsePath[1+] = navigated classes
+    if (browsePath.length <= 1) return '';
+    return browsePath
+        .slice(1)
+        .map(cls => CLASS_TO_DETAIL_KEY[cls] ?? cls.toLowerCase())
+        .join('.');
+}
+
+// ── Sample data for live preview ──────────────────────────────────
+const SAMPLE_DATA: Record<string, string> = {
+    name:            'XFMR_4207',
+    mrid:            'A1B2C3D4-...',
+    cim_class:       'PowerTransformer',
+    base_voltage_kv: '12.47',
+    'container.name': 'Main Feeder',
+    'terminals.0.connectivity_node': 'BUS_001',
+    'terminals.0.phases': 'A, B, C',
+    length_m:        '245.3',
+    r:               '0.31',
+    x:               '0.29',
+    ratedS:          '167000',
+    is_open:         'false',
+    p_mw:            '0.042',
+    q_mvar:          '0.012',
+};
+
+function sampleResolve(field: string): string {
+    return SAMPLE_DATA[field] ?? field.split('.').pop() ?? field;
+}
 
 export const DEFAULT_HTML_TEMPLATE =
 `<div style="padding:10px;background:#1A1B1E;border:1px solid #373A40;border-radius:8px;color:#fff;box-shadow:0 4px 15px rgba(0,0,0,0.5);min-width:160px;">
   <div style="font-size:14px;font-weight:700;color:#4dabf7;margin-bottom:2px;">{{name}}</div>
-  <div style="opacity:0.5;font-size:11px;margin-bottom:8px;">{{id}}</div>
-  <div style="font-size:12px;margin-bottom:2px;"><strong>Type:</strong> {{type}}</div>
-  <div style="font-size:12px;margin-bottom:2px;"><strong>Phases:</strong> {{phases}}</div>
-  <div style="font-size:12px;"><strong>Voltage:</strong> {{base_voltage_kv}} kV</div>
+  <div style="opacity:0.5;font-size:11px;margin-bottom:8px;">{{mrid}}</div>
+  <div style="font-size:12px;margin-bottom:2px;"><strong>Class:</strong> {{cim_class}}</div>
+  <div style="font-size:12px;margin-bottom:2px;"><strong>Voltage:</strong> {{base_voltage_kv}} kV</div>
+  <div style="font-size:12px;"><strong>Container:</strong> {{container.name}}</div>
 </div>`;
 
-function renderBasicPreview(fields: TooltipField[]): string {
-    if (!fields.length) return '';
-    const rows = fields
-        .filter(f => f.field)
-        .map(f => `<div style="font-size:12px;margin-bottom:2px;"><strong>${f.label || f.field}:</strong> ${SAMPLE_DATA[f.field] ?? '—'}</div>`)
-        .join('');
-    return `<div style="padding:10px;background:#1A1B1E;border:1px solid #373A40;border-radius:8px;color:#fff;min-width:160px;">${rows}</div>`;
+// ── CimTokenBrowser ───────────────────────────────────────────────
+
+interface CimTokenBrowserProps {
+    targetClass: string;
+    onInsert: (token: string) => void;
 }
 
-function renderAdvancedPreview(template: string): string {
-    return template.replace(/\{\{(\w+(?:\.\w+)*)\}\}/g, (_m, f) => SAMPLE_DATA[f] ?? `{{${f}}}`);
+function CimTokenBrowser({ targetClass, onInsert }: CimTokenBrowserProps) {
+    const { schema } = useSchema();
+    // browsePath tracks the class hierarchy the user has drilled into
+    const [browsePath, setBrowsePath] = useState<string[]>([targetClass]);
+    const [connections, setConnections] = useState<Record<string, string[]>>({});
+    const [loadingConnections, setLoadingConnections] = useState<Record<string, boolean>>({});
+
+    // Reset path when targetClass changes
+    useEffect(() => {
+        setBrowsePath([targetClass]);
+    }, [targetClass]);
+
+    const currentClass = browsePath[browsePath.length - 1];
+    const pathPrefix = getPathPrefix(browsePath);
+    const classInfo = schema[currentClass];
+    const attrs = (classInfo?.attributes ?? []).filter((a: any) => !a.is_complex);
+    const knownConnections = connections[currentClass];
+
+    // Lazy-load connections for the current class
+    useEffect(() => {
+        if (connections[currentClass] !== undefined || loadingConnections[currentClass]) return;
+        setLoadingConnections(prev => ({ ...prev, [currentClass]: true }));
+        fetchCimConnections(currentClass)
+            .then(list => setConnections(prev => ({ ...prev, [currentClass]: list })))
+            .catch(() => setConnections(prev => ({ ...prev, [currentClass]: [] })))
+            .finally(() => setLoadingConnections(prev => ({ ...prev, [currentClass]: false })));
+    }, [currentClass, connections, loadingConnections]);
+
+    const drillInto = (cls: string) => {
+        setBrowsePath(prev => [...prev, cls]);
+    };
+
+    const breadcrumbItems = browsePath.map((cls, idx) => (
+        <Anchor
+            key={cls + idx}
+            size="xs"
+            onClick={() => setBrowsePath(prev => prev.slice(0, idx + 1))}
+            style={{ cursor: idx < browsePath.length - 1 ? 'pointer' : 'default', fontWeight: idx === browsePath.length - 1 ? 600 : 400 }}
+        >
+            {cls}
+        </Anchor>
+    ));
+
+    const makeToken = (attrName: string) =>
+        pathPrefix ? `{{${pathPrefix}.${attrName}}}` : `{{${attrName}}}`;
+
+    return (
+        <Stack gap="xs">
+            {/* Breadcrumb navigation */}
+            {browsePath.length > 1 && (
+                <Breadcrumbs separator={<ChevronRight size={10} />} style={{ flexWrap: 'wrap' }}>
+                    {breadcrumbItems}
+                </Breadcrumbs>
+            )}
+
+            {/* Class attributes */}
+            {attrs.length > 0 ? (
+                <Stack gap={4}>
+                    <Text size="10px" c="dimmed" fw={600} tt="uppercase">
+                        {currentClass} attributes
+                    </Text>
+                    <Group gap={4} wrap="wrap">
+                        {attrs.map((attr: any) => (
+                            <Badge
+                                key={attr.name}
+                                variant="outline"
+                                color="blue"
+                                style={{ cursor: 'pointer', fontFamily: 'monospace', fontSize: 10 }}
+                                title={`Type: ${attr.type}`}
+                                onClick={() => onInsert(makeToken(attr.name))}
+                            >
+                                {makeToken(attr.name)}
+                            </Badge>
+                        ))}
+                    </Group>
+                </Stack>
+            ) : (
+                <Text size="xs" c="dimmed">No simple attributes found for {currentClass}</Text>
+            )}
+
+            {/* Navigable related classes */}
+            <Stack gap={4}>
+                <Text size="10px" c="dimmed" fw={600} tt="uppercase">
+                    Connected classes
+                    {loadingConnections[currentClass] && <Loader size={10} ml={4} />}
+                </Text>
+                {knownConnections?.length ? (
+                    <Group gap={4} wrap="wrap">
+                        {knownConnections.map(cls => (
+                            <Badge
+                                key={cls}
+                                variant="light"
+                                color="teal"
+                                rightSection={<ChevronRight size={10} />}
+                                style={{ cursor: 'pointer', fontSize: 10 }}
+                                onClick={() => drillInto(cls)}
+                            >
+                                {cls}
+                            </Badge>
+                        ))}
+                    </Group>
+                ) : (
+                    !loadingConnections[currentClass] && (
+                        <Text size="xs" c="dimmed">No connected classes</Text>
+                    )
+                )}
+            </Stack>
+        </Stack>
+    );
 }
+
+// ── Basic mode field row ──────────────────────────────────────────
 
 function FieldRow({
-    field,
-    onChange,
-    onRemove,
+    field, schema, targetClass, onChange, onRemove,
 }: {
     field: TooltipField;
+    schema: Record<string, any>;
+    targetClass?: string;
     onChange: (f: TooltipField) => void;
     onRemove: () => void;
 }) {
+    // Build attribute options from schema of the target class
+    const attrs = targetClass
+        ? (schema[targetClass]?.attributes ?? [])
+            .filter((a: any) => !a.is_complex)
+            .map((a: any) => ({ value: a.name, label: `${a.name} (${a.type})` }))
+        : [];
+
+    // Always include a few well-known detail-response keys too
+    const extra = [
+        { value: 'mrid', label: 'mrid (string)' },
+        { value: 'cim_class', label: 'cim_class (string)' },
+        { value: 'base_voltage_kv', label: 'base_voltage_kv (number)' },
+        { value: 'container.name', label: 'container.name (string)' },
+        { value: 'terminals.0.connectivity_node', label: 'terminals.0.connectivity_node (string)' },
+        { value: 'terminals.0.phases', label: 'terminals.0.phases (array)' },
+    ];
+    const knownNames = new Set(attrs.map((a: any) => a.value));
+    const combined = [...attrs, ...extra.filter(e => !knownNames.has(e.value))];
+
     return (
         <Group gap="xs" wrap="nowrap">
             <TextInput
@@ -82,12 +226,13 @@ function FieldRow({
             <Select
                 style={{ flex: 1 }}
                 size="xs"
-                placeholder="Node field"
+                placeholder="Field / path"
                 value={field.field || null}
                 onChange={(v) => onChange({ ...field, field: v || '' })}
-                data={NODE_FIELDS}
+                data={combined}
                 comboboxProps={{ zIndex: 2100, withinPortal: true }}
                 searchable
+                allowDeselect={false}
             />
             <ActionIcon variant="subtle" color="red" size="sm" onClick={onRemove}>
                 <Trash2 size={14} />
@@ -96,19 +241,40 @@ function FieldRow({
     );
 }
 
-export function TooltipConfigEditor({ value, onChange }: TooltipConfigEditorProps) {
-    const [showTokenRef, setShowTokenRef] = useState(false);
+// ── Preview helpers ───────────────────────────────────────────────
+
+function renderBasicPreview(fields: TooltipField[]): string {
+    if (!fields.length) return '';
+    const rows = fields
+        .filter(f => f.field)
+        .map(f => `<div style="font-size:12px;margin-bottom:2px;"><strong>${f.label || f.field}:</strong> ${sampleResolve(f.field)}</div>`)
+        .join('');
+    return `<div style="padding:10px;background:#1A1B1E;border:1px solid #373A40;border-radius:8px;color:#fff;min-width:160px;">${rows}</div>`;
+}
+
+function renderAdvancedPreview(template: string): string {
+    return template.replace(/\{\{(\w+(?:\.\w+)*)\}\}/g, (_m, f) => sampleResolve(f));
+}
+
+// ── Main component ────────────────────────────────────────────────
+
+export function TooltipConfigEditor({ value, onChange, targetClass }: TooltipConfigEditorProps) {
+    const { schema } = useSchema();
+    const [showTokenBrowser, setShowTokenBrowser] = useState(false);
 
     const update = (patch: Partial<TooltipConfig>) => onChange({ ...value, ...patch });
 
     const addField = () =>
-        update({ fields: [...value.fields, { id: genId(), label: '', field: 'name' }] });
+        update({ fields: [...value.fields, { id: genId(), label: '', field: '' }] });
 
     const updateField = (id: string, updated: TooltipField) =>
         update({ fields: value.fields.map(f => f.id === id ? updated : f) });
 
     const removeField = (id: string) =>
         update({ fields: value.fields.filter(f => f.id !== id) });
+
+    const insertToken = (token: string) =>
+        update({ html_template: value.html_template + token });
 
     const previewHtml =
         value.mode === 'basic'
@@ -138,16 +304,16 @@ export function TooltipConfigEditor({ value, onChange }: TooltipConfigEditorProp
                             <div style={{ width: 28 }} />
                         </Group>
                     )}
-
                     {value.fields.map(f => (
                         <FieldRow
                             key={f.id}
                             field={f}
+                            schema={schema}
+                            targetClass={targetClass}
                             onChange={(updated) => updateField(f.id, updated)}
                             onRemove={() => removeField(f.id)}
                         />
                     ))}
-
                     <Button variant="subtle" size="xs" leftSection={<Plus size={12} />} onClick={addField}>
                         Add Field
                     </Button>
@@ -155,7 +321,9 @@ export function TooltipConfigEditor({ value, onChange }: TooltipConfigEditorProp
             ) : (
                 <Stack gap="xs">
                     <Group justify="space-between" align="flex-end">
-                        <Text size="xs" c="dimmed">Use <code style={{ background: 'rgba(255,255,255,0.07)', padding: '1px 4px', borderRadius: 3 }}>{'{{field}}'}</code> tokens to inject node/edge data</Text>
+                        <Text size="xs" c="dimmed">
+                            Use <code style={{ background: 'rgba(255,255,255,0.07)', padding: '1px 4px', borderRadius: 3 }}>{'{{field}}'}</code> tokens — click attributes below to insert
+                        </Text>
                         <Tooltip label="Reset to default template" withArrow>
                             <ActionIcon
                                 variant="subtle"
@@ -180,28 +348,24 @@ export function TooltipConfigEditor({ value, onChange }: TooltipConfigEditorProp
                         variant="subtle"
                         size="xs"
                         color="gray"
-                        rightSection={showTokenRef ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                        onClick={() => setShowTokenRef(!showTokenRef)}
+                        rightSection={showTokenBrowser ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                        onClick={() => setShowTokenBrowser(!showTokenBrowser)}
                         justify="space-between"
                     >
-                        Available tokens
+                        {targetClass ? `Browse ${targetClass} tokens` : 'Browse tokens'}
                     </Button>
-                    <Collapse in={showTokenRef}>
+                    <Collapse in={showTokenBrowser}>
                         <Paper withBorder p="xs" bg="rgba(0,0,0,0.2)">
-                            <Group gap="xs" wrap="wrap">
-                                {NODE_FIELDS.map(f => (
-                                    <Badge
-                                        key={f.value}
-                                        variant="outline"
-                                        color="blue"
-                                        style={{ cursor: 'pointer', fontFamily: 'monospace', fontSize: 10 }}
-                                        title={f.label}
-                                        onClick={() => update({ html_template: value.html_template + `{{${f.value}}}` })}
-                                    >
-                                        {`{{${f.value}}}`}
-                                    </Badge>
-                                ))}
-                            </Group>
+                            {targetClass ? (
+                                <CimTokenBrowser
+                                    targetClass={targetClass}
+                                    onInsert={insertToken}
+                                />
+                            ) : (
+                                <Text size="xs" c="dimmed">
+                                    Set a target class in Match Conditions to see CIM-specific tokens
+                                </Text>
+                            )}
                         </Paper>
                     </Collapse>
                 </Stack>

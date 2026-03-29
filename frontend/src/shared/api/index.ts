@@ -431,6 +431,13 @@ export const fetchCimSchema = async (): Promise<Record<string, any>> => {
     return response.json();
 };
 
+export const fetchCimConnections = async (className: string): Promise<string[]> => {
+    const response = await fetch(`${API_BASE}/cim/connections/${encodeURIComponent(className)}`);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.connected_classes ?? [];
+};
+
 export const fetchConfigOverrides = async (): Promise<Array<{key: string, value: string}>> => {
     const response = await fetch(`${API_BASE}/cim/config`);
     if (!response.ok) throw new Error('Failed to fetch configuration overrides');

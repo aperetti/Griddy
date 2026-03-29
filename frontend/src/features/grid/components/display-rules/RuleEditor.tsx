@@ -138,6 +138,14 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
                         <TooltipConfigEditor
                             value={rule.config?.tooltip_config || DEFAULT_TOOLTIP_CONFIG}
                             onChange={(tc) => updateConfig({ tooltip_config: tc })}
+                            targetClass={(() => {
+                                const mc = rule.match_conditions;
+                                if (!mc) return undefined;
+                                const parsed = typeof mc === 'string'
+                                    ? (() => { try { return JSON.parse(mc); } catch { return {}; } })()
+                                    : mc;
+                                return parsed?.target_class;
+                            })()}
                         />
                     </Fieldset>
 
