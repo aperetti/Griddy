@@ -608,7 +608,6 @@ class CimModelManager:
             "mrid": detail["mrid"],
             "name": detail.get("name"),
             "class": "PowerTransformer",
-            **detail
         }
         
         def _add_to_node(node: dict, child: dict):
