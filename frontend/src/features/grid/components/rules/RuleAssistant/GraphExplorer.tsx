@@ -5,7 +5,7 @@ import {
 } from '@mantine/core';
 import { GraphCanvas, darkTheme, useSelection, type GraphCanvasRef } from 'reagraph';
 import { Expand, RotateCcw } from 'lucide-react';
-import { useGraphExplorer } from '../../../../hooks/useGraphExplorer';
+import { useGraphExplorer } from '../../../hooks/useGraphExplorer';
 import { AttributeRow } from './AttributeRow';
 
 interface GraphExplorerProps {
