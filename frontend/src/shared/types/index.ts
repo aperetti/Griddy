@@ -48,6 +48,10 @@ export interface Node {
         fields: Array<{ id: string; label: string; field: string }>;
         html_template: string;
     };
+    display_tooltip_overrides?: Array<{
+        conditions: any;
+        tooltip_config: { mode: 'basic' | 'advanced'; fields: Array<{ id: string; label: string; field: string }>; html_template: string };
+    }>;
 }
 
 
@@ -81,5 +85,9 @@ export interface Edge {
         fields: Array<{ id: string; label: string; field: string }>;
         html_template: string;
     };
+    display_tooltip_overrides?: Array<{
+        conditions: any;
+        tooltip_config: { mode: 'basic' | 'advanced'; fields: Array<{ id: string; label: string; field: string }>; html_template: string };
+    }>;
 }
 

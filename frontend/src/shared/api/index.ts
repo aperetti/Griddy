@@ -431,6 +431,12 @@ export const fetchCimSchema = async (): Promise<Record<string, any>> => {
     return response.json();
 };
 
+export const fetchCimEquipmentExpanded = async (mrid: string): Promise<any> => {
+    const res = await fetch(`${API_BASE}/cim/equipment/${encodeURIComponent(mrid)}/expanded`);
+    if (!res.ok) throw new Error(`Failed to fetch expanded CIM detail for ${mrid}`);
+    return res.json();
+};
+
 export const fetchCimConnections = async (className: string): Promise<string[]> => {
     const response = await fetch(`${API_BASE}/cim/connections/${encodeURIComponent(className)}`);
     if (!response.ok) return [];

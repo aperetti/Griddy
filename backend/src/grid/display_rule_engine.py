@@ -118,6 +118,17 @@ class DisplayRuleEngine:
                             try: return int(config.get(k, default))
                             except: return int(default)
 
+                        # Collect per-override tooltip configs for frontend evaluation
+                        overrides = config.get('svg_overrides') or []
+                        if isinstance(overrides, str):
+                            try: overrides = json.loads(overrides)
+                            except: overrides = []
+                        tooltip_overrides = [
+                            {"conditions": o.get("conditions", {}), "tooltip_config": o["tooltip_config"]}
+                            for o in overrides
+                            if o.get("tooltip_config")
+                        ] or None
+
                         classification_map[mrid] = {
                             "rule_id": rule.get('id'),
                             "visual_type": config.get('visual_type', 'Custom'),
@@ -136,6 +147,7 @@ class DisplayRuleEngine:
                             "svg_overrides": [],
                             "override_hash": "",
                             "tooltip_config": config.get('tooltip_config'),
+                            "tooltip_overrides": tooltip_overrides,
                         }
             except Exception as e:
                 logger.error("Error in bulk classification for rule %s: %s", rule.get('id'), e)

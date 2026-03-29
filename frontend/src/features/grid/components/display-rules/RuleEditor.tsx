@@ -209,10 +209,18 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
                     </Fieldset>
                 </Stack>
             ) : (
-                <ConditionalSymbolList 
+                <ConditionalSymbolList
                     symbols={rule.config?.svg_overrides || []}
                     onChange={(symbols) => updateConfig({ svg_overrides: symbols })}
                     onOpenLiveEditor={onOpenLiveEditor}
+                    targetClass={(() => {
+                        const mc = rule.match_conditions;
+                        if (!mc) return undefined;
+                        const parsed = typeof mc === 'string'
+                            ? (() => { try { return JSON.parse(mc); } catch { return {}; } })()
+                            : mc;
+                        return parsed?.target_class;
+                    })()}
                 />
             )}
 

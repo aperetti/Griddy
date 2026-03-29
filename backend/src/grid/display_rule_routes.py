@@ -16,6 +16,7 @@ class SVGOverride(BaseModel):
     conditions: Any = {}
     svg: str = ""
     mode: str = "add"
+    tooltip_config: Optional[Dict[str, Any]] = None
 
 class RuleConfig(BaseModel):
     visual_type: str = "Custom"

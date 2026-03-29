@@ -86,6 +86,27 @@ async def get_equipment_detail(mrid: str):
     return detail
 
 
+@router.get("/equipment/{mrid}/expanded")
+async def get_equipment_detail_expanded(mrid: str):
+    """Equipment detail with terminal connectivity nodes expanded to full objects for tooltip resolution."""
+    def _get():
+        model_id = registry._mrid_to_model.get(mrid)
+        if model_id:
+            mgr = registry.get_manager(model_id)
+            if mgr:
+                detail = mgr.get_equipment_detail_expanded(mrid)
+                if detail is not None:
+                    detail["model_id"] = model_id
+                    return detail
+        for mid, mgr in registry.get_managers():
+            detail = mgr.get_equipment_detail_expanded(mrid)
+            if detail is not None:
+                detail["model_id"] = mid
+                return detail
+        raise HTTPException(status_code=404, detail=f"Equipment not found: {mrid}")
+    return await run_in_threadpool(_get)
+
+
 @router.get("/node/{node_id}")
 async def get_node_cim_details(node_id: str):
     """Enriched CIM details for a connectivity node."""

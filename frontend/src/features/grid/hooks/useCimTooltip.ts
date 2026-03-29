@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import type { Node, Edge } from '../../../shared/types';
-import { fetchCimEquipment, fetchCimNode } from '../../../shared/api';
+import { fetchCimEquipmentExpanded, fetchCimNode } from '../../../shared/api';
 
 export interface HoverInfo {
     x: number;
@@ -26,7 +26,7 @@ export function useCimTooltip() {
         if (!cimCache[id] && !pendingFetches.current.has(id)) {
             pendingFetches.current.add(id);
             const isNode = 'position' in obj;
-            (isNode ? fetchCimNode(id) : fetchCimEquipment(id))
+            (isNode ? fetchCimNode(id) : fetchCimEquipmentExpanded(id))
                 .then(data => setCimCache(prev => ({ ...prev, [id]: data })))
                 .catch(() => {})
                 .finally(() => { pendingFetches.current.delete(id); });

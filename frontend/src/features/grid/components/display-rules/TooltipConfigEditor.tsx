@@ -15,11 +15,12 @@ interface TooltipConfigEditorProps {
     targetClass?: string;
 }
 
-// Maps a CIM class name (as returned by /connections) to the property key
-// used in the equipment detail response from get_equipment_detail().
-const CLASS_TO_DETAIL_KEY: Record<string, string> = {
+// Relative key for each CIM class when navigating from its parent.
+// E.g. Terminal is accessed via 'terminals.0' from any Equipment root,
+// ConnectivityNode is accessed via 'connectivity_node' from within a Terminal object.
+const CLASS_RELATIVE_KEY: Record<string, string> = {
     Terminal:          'terminals.0',
-    ConnectivityNode:  'terminals.0.connectivity_node',
+    ConnectivityNode:  'connectivity_node',
     Asset:             'container',
     Feeder:            'container',
     VoltageLevel:      'container',
@@ -27,12 +28,14 @@ const CLASS_TO_DETAIL_KEY: Record<string, string> = {
 };
 
 function getPathPrefix(browsePath: string[]): string {
-    // browsePath[0] = root class (no prefix), browsePath[1+] = navigated classes
+    // Accumulate relative keys left-to-right so nested navigation produces correct dot paths.
+    // e.g. ["PT", "Terminal", "ConnectivityNode"] → "terminals.0.connectivity_node"
     if (browsePath.length <= 1) return '';
-    return browsePath
-        .slice(1)
-        .map(cls => CLASS_TO_DETAIL_KEY[cls] ?? cls.toLowerCase())
-        .join('.');
+    const parts: string[] = [];
+    for (const cls of browsePath.slice(1)) {
+        parts.push(CLASS_RELATIVE_KEY[cls] ?? cls.toLowerCase());
+    }
+    return parts.join('.');
 }
 
 // ── Sample data for live preview ──────────────────────────────────

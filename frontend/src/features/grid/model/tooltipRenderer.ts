@@ -2,21 +2,56 @@ import type { Node, Edge } from '../../../shared/types';
 
 const SWITCH_EDGE_TYPES = new Set(['Breaker', 'LoadBreakSwitch', 'Fuse', 'Disconnector', 'Recloser']);
 
-const TOOLTIP_STYLE = { backgroundColor: 'transparent', fontSize: '12px' };
+// ── Condition evaluator (mirrors CimRuleEngine.evaluate_group) ────────────────
 
-export interface TooltipContext {
-    nodeAverages?: Record<string, number> | null;
-    nodeCurrents?: Record<string, { a: number; b: number; c: number }> | null;
+function getNestedValue(data: any, path: string): any {
+    let current = data;
+    for (const part of path.split('.')) {
+        if (current == null) return null;
+        if (Array.isArray(current)) {
+            const idx = parseInt(part, 10);
+            current = isNaN(idx) ? null : current[idx];
+        } else if (typeof current === 'object') {
+            current = current[part];
+        } else {
+            return null;
+        }
+    }
+    return current ?? null;
 }
 
-export type DeckTooltip = { html: string; style: object };
+function evalCondition(cond: any, data: any): boolean {
+    if ('logical_op' in cond) return evaluateConditions(cond, data);
+    const actual = getNestedValue(data, cond.path ?? '');
+    const target = cond.value;
+    const op: string = cond.op ?? '==';
+    if (op === 'exists') return actual != null;
+    if (op === 'not_exists') return actual == null;
+    if (actual == null) return false;
+    const a = typeof target === 'number' ? parseFloat(actual) : actual;
+    switch (op) {
+        case '==': return a == target;  // eslint-disable-line eqeqeq
+        case '!=': return a != target;  // eslint-disable-line eqeqeq
+        case '>':  return a > target;
+        case '<':  return a < target;
+        case '>=': return a >= target;
+        case '<=': return a <= target;
+        case 'contains': return String(actual).toLowerCase().includes(String(target).toLowerCase());
+        default:   return false;
+    }
+}
 
-export function renderRuleTooltip(obj: any, cimData?: any): string | null {
-    const cfg = obj.display_tooltip;
-    if (!cfg) return null;
+export function evaluateConditions(group: any, data: any): boolean {
+    if (!group) return false;
+    const conds: any[] = group.conditions ?? [];
+    if (!conds.length) return true;
+    const results = conds.map(c => evalCondition(c, data));
+    return (group.logical_op ?? 'AND') === 'OR' ? results.some(Boolean) : results.every(Boolean);
+}
 
-    const merged = cimData ? { ...obj, ...cimData } : obj;
+// ── Tooltip config renderer ───────────────────────────────────────────────────
 
+function renderTooltipConfig(cfg: any, merged: any): string | null {
     const resolve = (field: string): string => {
         const parts = field.split('.');
         let val: any = merged;
@@ -32,7 +67,6 @@ export function renderRuleTooltip(obj: any, cimData?: any): string | null {
         return cfg.html_template.replace(/\{\{(\w+(?:\.\w+)*)\}\}/g, (_: string, f: string) => resolve(f));
     }
 
-    // Basic mode
     const fields: Array<{ id: string; label: string; field: string }> = cfg.fields || [];
     if (!fields.length) return null;
     const rows = fields
@@ -46,6 +80,32 @@ export function renderRuleTooltip(obj: any, cimData?: any): string | null {
         .join('');
     if (!rows) return null;
     return `<div class="grid-map-tooltip" style="padding:10px;background:#1A1B1E;border:1px solid #373A40;border-radius:8px;color:#fff;box-shadow:0 4px 15px rgba(0,0,0,0.5);min-width:150px;pointer-events:auto;">${rows}</div>`;
+}
+
+const TOOLTIP_STYLE = { backgroundColor: 'transparent', fontSize: '12px' };
+
+export interface TooltipContext {
+    nodeAverages?: Record<string, number> | null;
+    nodeCurrents?: Record<string, { a: number; b: number; c: number }> | null;
+}
+
+export type DeckTooltip = { html: string; style: object };
+
+export function renderRuleTooltip(obj: any, cimData?: any): string | null {
+    const cfg = obj.display_tooltip;
+    if (!cfg) return null;
+
+    const merged = cimData ? { ...obj, ...cimData } : obj;
+
+    // Check per-override tooltip configs first — use the first whose conditions match
+    const overrides: Array<{ conditions: any; tooltip_config: any }> = obj.display_tooltip_overrides ?? [];
+    for (const ov of overrides) {
+        if (ov.tooltip_config && evaluateConditions(ov.conditions, merged)) {
+            return renderTooltipConfig(ov.tooltip_config, merged);
+        }
+    }
+
+    return renderTooltipConfig(cfg, merged);
 }
 
 export function getTooltipContent(object: any, ctx: TooltipContext): DeckTooltip | null {

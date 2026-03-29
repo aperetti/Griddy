@@ -462,6 +462,25 @@ class CimModelManager:
 
         return result
 
+    def get_equipment_detail_expanded(self, mrid: str) -> dict | None:
+        """Equipment detail with terminal connectivity nodes expanded to full objects."""
+        detail = self.get_equipment_detail(mrid)
+        if not detail:
+            return None
+        expanded_terminals = []
+        for terminal in detail.get('terminals', []):
+            cn_mrid = terminal.get('connectivity_node')
+            if cn_mrid and isinstance(cn_mrid, str):
+                cn_detail = self.get_node_cim_details(cn_mrid)
+                expanded_terminals.append({
+                    **terminal,
+                    'connectivity_node': cn_detail if cn_detail else cn_mrid,
+                })
+            else:
+                expanded_terminals.append(terminal)
+        detail['terminals'] = expanded_terminals
+        return detail
+
     def get_neighbors(self, target_id: str) -> dict | None:
         """Returns immediate graph neighbors for a connectivity node or equipment."""
         if self._idx is None:

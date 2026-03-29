@@ -101,6 +101,7 @@ async def get_topology(
             "display_max_zoom": float(classification.get('max_zoom', 24.0)) if classification else 24.0,
             "display_rotate_to_edge": bool(classification.get('rotate_to_edge', False)) if classification else False,
             "display_tooltip": classification.get('tooltip_config') if classification else None,
+            "display_tooltip_overrides": classification.get('tooltip_overrides') if classification else None,
             "model_id": n.get('model_id', 'unknown'),
         })
 
@@ -141,6 +142,7 @@ async def get_topology(
             "display_max_zoom": float(classification.get('max_zoom', 24.0)) if classification else 24.0,
             "display_rotate_to_edge": bool(classification.get('rotate_to_edge', False)) if classification else False,
             "display_tooltip": classification.get('tooltip_config') if classification else None,
+            "display_tooltip_overrides": classification.get('tooltip_overrides') if classification else None,
             "model_id": e.get('model_id', 'unknown'),
         })
 
