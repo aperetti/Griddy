@@ -287,8 +287,9 @@ async def test_display_rule(request: RuleTestRequest, username: str = Depends(ge
         # The query builder expects the 'match_conditions' part (logical_op + conditions)
         query, params, warnings = builder.build_rule_query(request.match_conditions, request.target_class)
         
-        # Build count query
-        count_query = query.replace("RETURN n.mRID as mrid", "RETURN count(n) as count")
+        # Build count query by replacing the matching return clause
+        import re
+        count_query = re.sub(r'RETURN\s+.*\s+as\s+mrid$', 'RETURN count(n) as count', query, flags=re.IGNORECASE)
         
         match_count = 0
         try:

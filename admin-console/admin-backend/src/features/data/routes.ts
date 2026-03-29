@@ -24,8 +24,10 @@ export async function dataRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/ingest', async (request, reply) => {
-    const scriptPath = path.join(process.cwd(), '..', '..', 'backend', 'scripts', 'ingest_cim_graph.py');
-    const result = await runCommand(`python ${scriptPath}`);
+    const pythonPath = path.join(process.cwd(), '..', '..', '.venv', 'Scripts', 'python.exe');
+    const scriptPath = path.join(process.cwd(), '..', '..', 'backend', 'scripts', 'ingest_cim_to_neo4j.py');
+    const modelsDir = path.join(process.cwd(), '..', '..', 'backend', 'cim', 'models');
+    const result = await runCommand(`${pythonPath} ${scriptPath} ${modelsDir}`);
     return { 
       success: result.stderr === '', 
       output: result.stdout, 

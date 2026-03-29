@@ -1,4 +1,5 @@
 import os
+import sys
 import logging
 import argparse
 from pathlib import Path
@@ -7,26 +8,18 @@ from cimloader.databases import ConnectionParameters
 from cimloader.databases.uploaders import Neo4jUploader
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+# Setup logging to stdout so admin backend doesn't think it's an error
+handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(logging.INFO)
+formatter = logging.Formatter('%(levelname)s:%(name)s:%(message)s')
+handler.setFormatter(formatter)
+logging.basicConfig(level=logging.INFO, handlers=[handler])
 logger = logging.getLogger(__name__)
 
-def ingest_cim(xml_path: str, url: str, username: str, password: str, database: str):
-    """
-    Ingests a CIM XML file into Neo4j using the cim-loader library.
-    Requires Neo4j to have the n10s (neosemantics) plugin installed.
-    """
-    path = Path(xml_path)
-    if not path.exists():
-        logger.error("XML file not found: %s", xml_path)
-        return
-
-    # In a Docker setup, Neo4j is typically accessed via its service name
-    # and files are mounted into /var/lib/neo4j/import/.
-    # This script assumes the local 'backend/cim' is mounted to '/var/lib/neo4j/import/cim'.
-    
+def _process_file(path: Path, uploader: Neo4jUploader):
+    """Internal helper to process a single CIM XML file."""
     # We need to tell n10s the path *inside* the container.
-    # If the user provides a path like 'backend/cim/models/IEEE37.xml',
-    # we convert it to '/var/lib/neo4j/import/cim/models/IEEE37.xml'.
+    # This script assumes the local 'backend/cim' is mounted to '/var/lib/neo4j/import/cim'.
     
     relative_path = ""
     try:
@@ -49,8 +42,19 @@ def ingest_cim(xml_path: str, url: str, username: str, password: str, database: 
         filename = relative_path
         full_folder = container_filepath
 
-    logger.info("Connecting to Neo4j at %s (DB: %s)...", url, database)
-    
+    logger.info("Uploading %s from %s...", filename, full_folder)
+    # format="RDF/XML" is standard for CIM XML
+    uploader.upload(filepath=full_folder, filename=filename, format="RDF/XML")
+
+def ingest_cim(xml_path: str, url: str, username: str, password: str, database: str):
+    """
+    Ingests a CIM XML file or directory of files into Neo4j using the cim-loader library.
+    """
+    path = Path(xml_path)
+    if not path.exists():
+        logger.error("Path not found: %s", xml_path)
+        return
+
     params = ConnectionParameters(
         url=url,
         username=username,
@@ -63,14 +67,27 @@ def ingest_cim(xml_path: str, url: str, username: str, password: str, database: 
     uploader = Neo4jUploader(params)
     
     try:
-        logger.info("Configuring n10s graph config...")
-        uploader.configure()
+        logger.info("Connecting to Neo4j at %s (DB: %s)...", url, database)
+        try:
+            logger.info("Configuring n10s graph config...")
+            uploader.configure()
+        except Exception as e:
+            if "already initialized" in str(e) or "non-empty" in str(e) or "exists" in str(e):
+                logger.info("Graph already configured or non-empty, skipping config.")
+            else:
+                logger.warning("Configuration warning: %s", str(e))
         
-        logger.info("Uploading %s from %s...", filename, full_folder)
-        # format="rdf_xml" is standard for CIM XML
-        uploader.upload(filepath=full_folder, filename=filename, format="RDF/XML")
+        if path.is_file():
+            logger.info("Ingesting single file: %s", path.name)
+            _process_file(path, uploader)
+        elif path.is_dir():
+            xml_files = sorted(list(path.glob("*.xml")))
+            logger.info("Ingesting %d files from directory: %s", len(xml_files), path.name)
+            for f in xml_files:
+                logger.info("--- Processing: %s ---", f.name)
+                _process_file(f, uploader)
         
-        logger.info("Ingestion complete for model: %s", path.name)
+        logger.info("Ingestion complete.")
     except Exception as e:
         logger.error("Ingestion failed: %s", str(e))
     finally:

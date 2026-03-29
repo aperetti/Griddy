@@ -14,10 +14,15 @@ class CimMapper:
 
     def map_node(self, node: Dict[str, Any]) -> Dict[str, Any]:
         """Maps a raw node from Neo4j/DuckDB to a standard rule-evaluable dictionary."""
-        mapped = node.copy()
-        cim_type = node.get('cim_type') or node.get('type')
+        from src.shared.cim.mapping import apply_mappings
         
-        # Performance: Pre-calculate virtuals if they are in the JSON data but not flat
+        # 1. Start with the raw node (preserving native mRID etc. if present)
+        mapped = node.copy()
+        
+        # 2. Extract and resolve namespaced properties using shared mapping logic
+        mapped.update(apply_mappings(node))
+        
+        # 3. Performance: Pre-calculate virtuals if they are in the JSON data but not flat
         # Some integrations store attributes in a 'data' or 'attributes' field
         data_field = node.get('data') or node.get('attributes')
         if isinstance(data_field, dict):

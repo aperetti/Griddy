@@ -8,9 +8,9 @@ from typing import Any, Dict, Optional
 
 # Default mappings shared across multiple CIM classes
 DEFAULT_MAPPINGS = {
-    "name": {"attribute": "n.name", "label": "Name"},
-    "mrid": {"attribute": "n.mRID", "label": "mRID"},
-    "description": {"attribute": "n.description", "label": "Description"},
+    "name": {"attribute": "IdentifiedObject.name", "label": "Name"},
+    "mrid": {"attribute": "IdentifiedObject.mRID", "label": "mRID"},
+    "description": {"attribute": "IdentifiedObject.description", "label": "Description"},
 }
 
 # Map of Display Property -> Cypher fragment/mapping
@@ -38,34 +38,34 @@ CIM_PROPERTY_MAP = {
     },
     "EnergyConsumer": {
         "p_mw": {
-            "attribute": "n.p",
+            "attribute": "EnergyConsumer.p",
             "scale": 1e6,
             "label": "Active Power (MW)",
         },
         "q_mvar": {
-            "attribute": "n.q",
+            "attribute": "EnergyConsumer.q",
             "scale": 1e6,
             "label": "Reactive Power (MVAr)",
         },
         "rating": {
-            "attribute": "n.p",
+            "attribute": "EnergyConsumer.p",
             "scale": 1000.0, # W to kVA (assuming pf=1 for display)
             "label": "Rating (kVA)",
         },
         "ratedS": { # Alias
-            "attribute": "n.p",
+            "attribute": "EnergyConsumer.p",
             "scale": 1000.0,
             "label": "Rated Power (kVA)",
         }
     },
     "ACLineSegment": {
-        "length_m": {"attribute": "n.length", "label": "Length (m)"},
-        "r": {"attribute": "n.r", "label": "Resistance (Ohm)"},
-        "x": {"attribute": "n.x", "label": "Reactance (Ohm)"},
+        "length_m": {"attribute": "ACLineSegment.length", "label": "Length (m)"},
+        "r": {"attribute": "ACLineSegment.r", "label": "Resistance (Ohm)"},
+        "x": {"attribute": "ACLineSegment.x", "label": "Reactance (Ohm)"},
     },
     "Switch": {
         "is_open": {
-            "attribute": "n.normalOpen",
+            "attribute": "Switch.normalOpen",
             "type": "boolean",
             "label": "Normally Open",
         }
@@ -129,14 +129,19 @@ def apply_mappings(obj: Any) -> Dict[str, Any]:
         attr = spec.get("attribute")
         if not attr: continue
         
-        # Clean attribute path (e.g., 'n.p' -> 'p')
-        raw_attr = attr.split('.')[-1]
-        
+        # Try to get the value from the object or dictionary
         val = None
-        if hasattr(obj, raw_attr):
+        if hasattr(obj, "__class__") and not isinstance(obj, dict):
+            # For native objects, we try the leaf attribute name first
+            raw_attr = attr.split('.')[-1]
             val = getattr(obj, raw_attr, None)
         elif isinstance(obj, dict):
-            val = obj.get(raw_attr)
+            # For dictionaries (e.g. from Neo4j driver), we try the full attribute name
+            # as it matches the database property key exactly.
+            val = obj.get(attr)
+            if val is None and '.' in attr:
+                # Fallback to leaf name if not found with prefix
+                val = obj.get(attr.split('.')[-1])
             
         if val is not None:
             try:

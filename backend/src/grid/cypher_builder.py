@@ -13,6 +13,24 @@ class CypherRuleBuilder:
     def __init__(self):
         self.params: Dict[str, Any] = {}
         self._param_idx = 0
+        self.warnings = []
+
+    def _format_property(self, prop: str, alias: str = "n") -> str:
+        """Formats a property name for Cypher (adds backticks if namespaced)."""
+        if not prop: return ""
+        # If the property already includes the alias (e.g. 'e.ratedS'), return as is
+        if '.' in prop and prop.split('.')[0] in ['n', 'e', 'edge', 'r']:
+            # But we still need to backtick the attribute part if it has multiple dots
+            parts = prop.split('.')
+            base = parts[0]
+            attr = ".".join(parts[1:])
+            if '.' in attr:
+                return f"{base}.`{attr}`"
+            return prop
+            
+        if '.' in prop:
+            return f"{alias}.`{prop}`"
+        return f"{alias}.{prop}"
 
     def _get_param_name(self, value: Any) -> str:
         """Register a parameter and return its $name."""
@@ -46,19 +64,23 @@ class CypherRuleBuilder:
             
         where_clause = self._build_where_clause(rule_config, cim_class)
         
+        # Get the mRID property name from mapping
+        mrid_prop = DEFAULT_MAPPINGS.get("mrid", {}).get("attribute", "mRID")
+        mrid_expr = self._format_property(mrid_prop, "n")
+
         # Build the MATCH part with label expansion if needed
         if len(target_classes) > 1:
             class_param = self._get_param_name(target_classes)
             match_clause = f"MATCH (n) WHERE any(lbl IN labels(n) WHERE lbl IN {class_param})"
             if where_clause:
-                query = f"{match_clause} AND {where_clause} RETURN n.mRID as mrid"
+                query = f"{match_clause} AND {where_clause} RETURN {mrid_expr} as mrid"
             else:
-                query = f"{match_clause} RETURN n.mRID as mrid"
+                query = f"{match_clause} RETURN {mrid_expr} as mrid"
         else:
             if where_clause:
-                query = f"MATCH (n:{cim_class}) WHERE {where_clause} RETURN n.mRID as mrid"
+                query = f"MATCH (n:{cim_class}) WHERE {where_clause} RETURN {mrid_expr} as mrid"
             else:
-                query = f"MATCH (n:{cim_class}) RETURN n.mRID as mrid"
+                query = f"MATCH (n:{cim_class}) RETURN {mrid_expr} as mrid"
             
         return query, self.params, self.warnings
 
@@ -137,8 +159,12 @@ class CypherRuleBuilder:
                 pass
 
         param_name = self._get_param_name(val)
+        
+        # Format the attribute for Cypher (handle namespacing)
+        # Note: if it has a rel_path, the attribute might start with 'e.' (handled in _format_property)
+        formatted_attr = self._format_property(attr, "n")
 
         if rel_path:
-            return f"EXISTS {{ (n){rel_path} WHERE {attr} {cypher_op} {param_name} }}"
+            return f"EXISTS {{ (n){rel_path} WHERE {formatted_attr} {cypher_op} {param_name} }}"
         else:
-            return f"{attr} {cypher_op} {param_name}"
+            return f"{formatted_attr} {cypher_op} {param_name}"
