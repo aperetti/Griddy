@@ -153,24 +153,26 @@ function buildComparison(
     switch (op) {
         case '==': case 'eq': {
             const numericCmp = Cypher.eq(prop, param);
-            // n10s sometimes stores numeric CIM values as strings — add OR with string form
+            // n10s stores all RDF literals as strings — add OR with string form for numeric values
             if (typeof value === 'number') {
-                const strParam = new Cypher.Param(Number.isInteger(value) ? String(value) : String(value));
+                const strParam = new Cypher.Param(String(value));
                 return Cypher.or(numericCmp, Cypher.eq(prop, strParam));
             }
             return numericCmp;
         }
-        case '!=': case 'neq':         return Cypher.neq(prop, param);
-        case '>':  case 'gt':          return Cypher.gt(prop, param);
-        case '<':  case 'lt':          return Cypher.lt(prop, param);
-        case '>=': case 'gte':         return Cypher.gte(prop, param);
-        case '<=': case 'lte':         return Cypher.lte(prop, param);
-        case 'contains':               return Cypher.contains(prop, param);
-        case 'starts_with':            return Cypher.startsWith(prop, param);
-        case 'ends_with':              return Cypher.endsWith(prop, param);
-        case 'exists':                 return Cypher.isNotNull(prop);
-        case 'not_exists':             return Cypher.isNull(prop);
-        default:                       return undefined;
+        case '!=': case 'neq':  return Cypher.neq(prop, param);
+        // n10s stores numeric CIM properties as strings, so wrap in toFloat() for
+        // ordered comparisons — toFloat("1500000") < 1500000 works correctly.
+        case '>':  case 'gt':   return Cypher.gt(Cypher.toFloat(prop), param);
+        case '<':  case 'lt':   return Cypher.lt(Cypher.toFloat(prop), param);
+        case '>=': case 'gte':  return Cypher.gte(Cypher.toFloat(prop), param);
+        case '<=': case 'lte':  return Cypher.lte(Cypher.toFloat(prop), param);
+        case 'contains':        return Cypher.contains(prop, param);
+        case 'starts_with':     return Cypher.startsWith(prop, param);
+        case 'ends_with':       return Cypher.endsWith(prop, param);
+        case 'exists':          return Cypher.isNotNull(prop);
+        case 'not_exists':      return Cypher.isNull(prop);
+        default:                return undefined;
     }
 }
 

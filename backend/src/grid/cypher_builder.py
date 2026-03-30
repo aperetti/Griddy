@@ -53,6 +53,11 @@ _OPS: Dict[str, str] = {
     "not_exists":  "IS NULL",
 }
 
+# Operators that require numeric comparison — n10s stores all RDF literals as
+# strings, so we wrap the property in toFloat() for these ops so that
+# toFloat("1500000") < 1500000 evaluates correctly.
+_NUMERIC_OPS: frozenset = frozenset({">", "<", ">=", "<="})
+
 # mRID property key used by n10s
 _MRID_KEY = "IdentifiedObject.mRID"
 
@@ -135,21 +140,25 @@ class CypherRuleBuilder:
         )
 
         if is_direct:
-            prop_expr = f"n.`{path}`" if dot > -1 else f"n.{path}"
+            raw_prop = f"n.`{path}`" if dot > -1 else f"n.{path}"
+            # n10s stores all RDF literals as strings; wrap in toFloat() for ordered comparisons
+            prop_expr = f"toFloat({raw_prop})" if cypher_op in _NUMERIC_OPS else raw_prop
             return _comparison(prop_expr, cypher_op, self._param(coerced) if cypher_op not in ("IS NOT NULL", "IS NULL") else None)
 
         # EXISTS traversal — use captured graph path when available
         graph_path = cond.get("graph_path")  # list of {rel, label} from the graph explorer
         traversal = _build_traversal(cim_class, class_prefix, graph_path)
-        e_prop = f"e.`{path}`"
+        raw_e_prop = f"e.`{path}`"
+        e_prop = f"toFloat({raw_e_prop})" if cypher_op in _NUMERIC_OPS else raw_e_prop
 
         if cypher_op in ("IS NOT NULL", "IS NULL"):
-            return f"EXISTS {{ (n:{cim_class}){traversal} WHERE {e_prop} {cypher_op} }}"
+            return f"EXISTS {{ (n:{cim_class}){traversal} WHERE {raw_e_prop} {cypher_op} }}"
 
         param_name = self._param(coerced)
-        if isinstance(coerced, (int, float)):
+        if cypher_op == "=" and isinstance(coerced, (int, float)):
+            # eq with numeric value: also try string form since n10s may store as string
             str_param = self._param(str(int(coerced)) if coerced == int(coerced) else str(coerced))
-            inner = f"({e_prop} {cypher_op} {param_name} OR {e_prop} {cypher_op} {str_param})"
+            inner = f"({raw_e_prop} {cypher_op} {param_name} OR {raw_e_prop} {cypher_op} {str_param})"
         else:
             inner = f"{e_prop} {cypher_op} {param_name}"
         return f"EXISTS {{ (n:{cim_class}){traversal} WHERE {inner} }}"
