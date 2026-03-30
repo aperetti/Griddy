@@ -27,16 +27,22 @@ def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
     except Exception as e:
         print(f"Error reading users database: {e}")
 
+    if stored_salt:
+        salt_bytes = bytes.fromhex(stored_salt)
+    else:
+        # Dummy salt to mitigate timing attacks for invalid usernames
+        salt_bytes = b'dummy_salt_bytes'
+
+    # Re-hash the provided password with the stored (or dummy) salt
+    inbound_hash = hashlib.pbkdf2_hmac('sha256', credentials.password.encode('utf8'), salt_bytes, 100000).hex()
+
     if not correct_username or not stored_hash or not stored_salt:
-         raise HTTPException(
+        # We did the hash to consume time, but auth fails anyway
+        raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Basic realm=\"Rules Engine\""},
         )
-
-    # Re-hash the provided password with the stored salt
-    salt_bytes = bytes.fromhex(stored_salt)
-    inbound_hash = hashlib.pbkdf2_hmac('sha256', credentials.password.encode('utf8'), salt_bytes, 100000).hex()
 
     is_correct_username = secrets.compare_digest(
         credentials.username.encode("utf8"), correct_username.encode("utf8")

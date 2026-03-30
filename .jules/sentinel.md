@@ -21,3 +21,7 @@
 **Vulnerability:** HIGH: The FastAPI backend had an overly permissive CORS configuration (`allow_origins=["*"]`), which allowed any domain to make cross-origin requests, potentially exposing sensitive grid data and APIs.
 **Learning:** Development defaults often leak into production environments if not explicitly restricted.
 **Prevention:** Always restrict CORS `allow_origins` using environment variables (e.g., `ALLOWED_ORIGINS`) and default to a strict list of internal and trusted local ports (e.g., 3000, 3001, 8000, 8080).
+## 2025-04-18 - Prevent Authentication Timing Attacks in Username Verification
+**Vulnerability:** The `get_current_username` function raised an `HTTPException` early if a username was not found in the SQLite database. This early return bypassed the expensive `pbkdf2_hmac` hashing step. Attackers could measure the time taken for a request to return and easily discern whether a username existed in the system (fast response = invalid username, slow response = valid username), enabling username enumeration.
+**Learning:** Returning early to save computation in authentication flows is an anti-pattern when it introduces measurable timing differences for invalid vs. valid accounts. Security mechanisms must consume roughly the same amount of time regardless of whether the identifier is valid.
+**Prevention:** Compute a dummy hash (using a dummy salt and the provided password) when the user lookup fails. Only after the expensive hashing operation is complete should the authentication function reject the request.
