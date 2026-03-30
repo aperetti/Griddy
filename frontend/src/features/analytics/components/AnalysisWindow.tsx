@@ -20,6 +20,8 @@ interface AnalysisWindowProps {
     loading?: boolean;
     onFocus?: () => void;
     layoutMode?: 'floating' | 'grid';
+    initialWidth?: number | string;
+    initialHeight?: number | string;
 }
 
 /**
@@ -43,6 +45,8 @@ function AnalysisWindowComponent({
     loading = false,
     onFocus,
     layoutMode = 'floating',
+    initialWidth,
+    initialHeight,
 }: AnalysisWindowProps) {
     const [showFilters, setShowFilters] = useState<boolean>(false);
     const [copied, setCopied] = useState(false);
@@ -57,7 +61,7 @@ function AnalysisWindowComponent({
                 console.error(`Failed to parse saved ${storageKey}`, e);
             }
         }
-        return defaultPosition();
+        return defaultPosition(initialWidth, initialHeight);
     });
 
     const rndRef = useRef<any>(null);
@@ -297,12 +301,28 @@ function AnalysisWindowComponent({
 
 /* ── Helpers ─────────────────────────────────────────────── */
 
-function defaultPosition() {
+function defaultPosition(initialWidth?: number | string, initialHeight?: number | string) {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const topMargin = vh < 600 ? 50 : 100;
-    const width = Math.min(900, vw - 40);
-    const height = Math.min(vh - topMargin - 40, 700);
+    
+    // Width
+    let width: number;
+    if (initialWidth !== undefined) {
+        width = typeof initialWidth === 'number' ? initialWidth : parseInt(initialWidth.toString());
+    } else {
+        width = Math.min(900, vw - 40);
+    }
+    width = Math.min(width, vw - 40);
+    
+    // Height
+    let height: number;
+    if (initialHeight !== undefined) {
+        height = typeof initialHeight === 'number' ? initialHeight : parseInt(initialHeight.toString());
+    } else {
+        height = Math.min(vh - topMargin - 40, 700);
+    }
+    height = Math.min(height, vh - topMargin - 40);
 
     return {
         x: Math.max(20, (vw - width) / 2),

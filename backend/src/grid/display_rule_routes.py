@@ -12,6 +12,12 @@ from fastapi import Depends
 router = APIRouter(prefix="/api/display-rules", tags=["display-rules"])
 
 # ── Models ────────────────────────────────────────────────────────
+class SVGOverride(BaseModel):
+    conditions: Any = {}
+    svg: str = ""
+    mode: str = "add"
+    tooltip_config: Optional[Dict[str, Any]] = None
+
 class RuleConfig(BaseModel):
     visual_type: str = "Custom"
     icon: Optional[str] = None
@@ -19,6 +25,7 @@ class RuleConfig(BaseModel):
     size: float = 1.0
     label: str = ""
     css_overrides: List[Any] = []
+    svg_overrides: List[SVGOverride] = []
     radial_offset: float = 0.0
     cluster_enabled: bool = False
     cluster_radius: float = 40.0
@@ -26,6 +33,8 @@ class RuleConfig(BaseModel):
     cluster_min_points: int = 2
     min_zoom: float = 0.0
     max_zoom: float = 24.0
+    rotate_to_edge: bool = False
+    tooltip_config: Optional[Dict[str, Any]] = None
 
 class RuleUpdate(BaseModel):
     name: str
@@ -39,6 +48,10 @@ class DisplayConfigUpdate(BaseModel):
     description: Optional[str] = None
     is_default: bool = False
 
+class RuleTestRequest(BaseModel):
+    match_conditions: Dict[str, Any]
+    target_class: str
+
 # ── Helpers ───────────────────────────────────────────────────────
 def _get_admin_conn():
     conn = sqlite3.connect(ADMIN_SQLITE_PATH)
@@ -46,6 +59,40 @@ def _get_admin_conn():
     return conn
 
 # ── Routes ────────────────────────────────────────────────────────
+
+@router.get("/active")
+async def get_active_display_rules():
+    """Public endpoint: returns enabled rules for the default display config.
+
+    No authentication required — rules are read-only display configuration
+    consumed by the map for client-side classification.
+    """
+    def _load():
+        with _get_admin_conn() as conn:
+            config = conn.execute(
+                "SELECT id FROM display_configs WHERE is_default = 1 LIMIT 1"
+            ).fetchone()
+            if not config:
+                return []
+            rows = conn.execute(
+                """SELECT id, priority, match_conditions, config
+                   FROM display_config_rules
+                   WHERE config_id = ? AND enabled = 1
+                   ORDER BY priority DESC""",
+                (config["id"],),
+            ).fetchall()
+            result = []
+            for row in rows:
+                try:
+                    mc = json.loads(row["match_conditions"]) if isinstance(row["match_conditions"], str) else row["match_conditions"]
+                    cfg = json.loads(row["config"]) if isinstance(row["config"], str) else row["config"]
+                    result.append({"id": row["id"], "priority": row["priority"], "match_conditions": mc, "config": cfg})
+                except Exception:
+                    pass
+            return result
+    return await run_in_threadpool(_load)
+
+
 @router.get("/configs")
 async def list_display_configs(username: str = Depends(get_current_username)):
     def _list():
@@ -261,3 +308,49 @@ async def get_sprite_map_json():
         media_type="application/json",
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
     )
+
+@router.post("/test")
+async def test_display_rule(request: RuleTestRequest, username: str = Depends(get_current_username)):
+    """
+    Diagnostic endpoint to test a rule's matching logic without saving.
+    Returns the generated Cypher query and match count.
+    """
+    from src.grid.cypher_builder import CypherRuleBuilder
+    from src.shared.dependencies import registry
+    
+    def _test():
+        import re, os
+        from neo4j import GraphDatabase
+
+        builder = CypherRuleBuilder()
+        query, params, warnings = builder.build_rule_query(request.match_conditions, request.target_class)
+
+        count_query = re.sub(r'RETURN\s+.*\s+as\s+mrid$', 'RETURN count(n) as count', query, flags=re.IGNORECASE)
+
+        match_count = 0
+        neo4j_url = os.getenv("CIMG_URL")
+        if not neo4j_url:
+            warnings.append("CIMG_URL is not set — cannot execute query against Neo4j.")
+        else:
+            username = os.getenv("CIMG_USERNAME", "neo4j")
+            password = os.getenv("CIMG_PASSWORD", "")
+            database = os.getenv("CIMG_DATABASE", "neo4j")
+            try:
+                driver = GraphDatabase.driver(neo4j_url, auth=(username, password))
+                with driver.session(database=database) as session:
+                    result = session.run(count_query, **params)
+                    row = result.single()
+                    if row:
+                        match_count = row["count"]
+                driver.close()
+            except Exception as e:
+                warnings.append(f"Neo4j query error ({neo4j_url}, db={database}): {e}")
+
+        return {
+            "query": query,
+            "params": params,
+            "match_count": match_count,
+            "warnings": warnings
+        }
+        
+    return await run_in_threadpool(_test)

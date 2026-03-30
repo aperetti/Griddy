@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Query, HTTPException
 from typing import Optional
 import networkx as nx
-from src.shared.dependencies import registry, graph_engine, display_engine, ensure_graph_built, get_active_model_ids
-from src.grid.graph_node import GraphNode
+from src.shared.dependencies import registry, graph_engine, ensure_graph_built, get_active_model_ids
 from src.discovery.discover_downstream import DiscoverDownstreamUseCase
 from src.discovery.trace_upstream import TraceUpstreamUseCase
 
@@ -19,9 +18,6 @@ async def get_topology(
     """Returns the full grid topology with coordinates for UI rendering."""
     model_ids = get_active_model_ids(models)
     ensure_graph_built(model_ids)
-    
-    # Ensure rules are reloaded from the database to show live changes
-    display_engine.load_rules()
     
     nodes, all_edges = registry.get_combined_topology(model_ids)
 
@@ -55,10 +51,7 @@ async def get_topology(
     mapped_nodes = []
     for n in nodes:
         has_coords = n['longitude'] is not None and n['latitude'] is not None
-        pos = [n['longitude'], n['latitude']] if has_coords else [0,0]
-        
-        classification = display_engine.classify_node(n)
-        
+        pos = [n['longitude'], n['latitude']] if has_coords else [0, 0]
         mapped_nodes.append({
             "id": n['node_id'],
             "type": n['node_type'],
@@ -69,21 +62,6 @@ async def get_topology(
             "phases": n.get('phases_present', ['A', 'B', 'C']),
             "base_voltage_kv": n.get('base_voltage_kv'),
             "attached_equipment": n.get('attached_equipment', []),
-            "display_type": classification.get('visual_type') if classification else None,
-            "display_icon": f"rule_{classification.get('rule_id')}" if classification and classification.get('rule_id') else (
-                "default_transformer" if n.get('node_type') == 'PowerTransformer' else 
-                "default_capacitor" if n.get('node_type') == 'Capacitor' else None
-            ),
-            "display_color": classification.get('color_hex') if classification else None,
-            "display_size": classification.get('size', 1.0) if classification else 1.0,
-            "display_label": classification.get('label') if classification else None,
-            "display_css": classification.get('display_css', '') if classification else '',
-            "cluster_enabled": classification.get('cluster_enabled', False) if classification else False,
-            "cluster_radius": classification.get('cluster_radius', 40.0) if classification else 40.0,
-            "cluster_max_zoom": classification.get('cluster_max_zoom', 20.0) if classification else 20.0,
-            "cluster_min_points": classification.get('cluster_min_points', 2) if classification else 2,
-            "display_min_zoom": classification.get('min_zoom', 0.0) if classification else 0.0,
-            "display_max_zoom": classification.get('max_zoom', 24.0) if classification else 24.0,
             "model_id": n.get('model_id', 'unknown'),
         })
 
@@ -93,15 +71,12 @@ async def get_topology(
         tgt = e['to_node_id']
         src_pos = node_coords.get(src)
         tgt_pos = node_coords.get(tgt)
-        
-        classification = display_engine.classify_edge(e)
-        
         mapped_edges.append({
             "id": e.get('edge_id', f"{src}-{tgt}"),
             "source": src,
             "target": tgt,
-            "sourcePosition": src_pos or [0,0],
-            "targetPosition": tgt_pos or [0,0],
+            "sourcePosition": src_pos or [0, 0],
+            "targetPosition": tgt_pos or [0, 0],
             "has_coords": src_pos is not None and tgt_pos is not None,
             "circuit_id": node_to_circuit.get(src, "unknown"),
             "phases": e.get('phases'),
@@ -109,17 +84,6 @@ async def get_topology(
             "name": e.get('name', ''),
             "is_open": e.get('is_open', False),
             "transformer_kva": e.get('transformer_kva'),
-            "display_type": classification.get('visual_type') if classification else None,
-            "display_icon": f"rule_{classification.get('rule_id')}" if classification and classification.get('rule_id') else (
-                "default_open_switch" if e.get('is_open') else "default_closed_switch" if e.get('edge_type') in ('Fuse', 'Switch', 'Breaker', 'Disconnector', 'LoadBreakSwitch') else 
-                "default_transformer" if e.get('edge_type') == 'PowerTransformer' else None
-            ),
-            "display_color": classification.get('color_hex') if classification else None,
-            "display_size": classification.get('size', 1.0) if classification else 1.0,
-            "display_label": classification.get('label') if classification else None,
-            "display_css": classification.get('display_css', '') if classification else '',
-            "display_min_zoom": classification.get('min_zoom', 0.0) if classification else 0.0,
-            "display_max_zoom": classification.get('max_zoom', 24.0) if classification else 24.0,
             "model_id": e.get('model_id', 'unknown'),
         })
 

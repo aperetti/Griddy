@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any, Optional
 
 from src.shared.cim.helpers import _mrid_str, _get_name, _safe_float, _parse_phase_code
-from src.shared.cim.loader import _resolve_xml_path
 from src.shared.cim.indexes import IndexBuilder
 from src.shared.cim.topology import TopologyBuilder
 
@@ -62,68 +61,79 @@ class CimModelManager:
     # Loading
     # ══════════════════════════════════════════════════════════════
 
-    def load(self, xml_path: str | None = None):
-        """Parse the CIM XML with CIM-Graph and build all indexes.
+    def load(self, feeder_uri: str | None = None):
+        """Load a CIM feeder from Neo4j by its mRID (feeder_uri).
 
+        CIMG_URL must be set. Raises immediately on connection failure or missing data.
         Safe to call multiple times — subsequent calls are no-ops.
         """
         if self._loaded:
-            logger.info("CIM model already loaded – skipping")
+            logger.info("Feeder '%s' already loaded – skipping", self.model_id)
             return
 
-        path = _resolve_xml_path(xml_path)
-        logger.info("Loading CIM model from: %s", path)
-
-        if not path.is_file():
-            raise FileNotFoundError(f"CIM XML not found: {path}")
-
-        self.model_id = path.stem if path else "unknown"
-
         import cimgraph.data_profile.cimhub_2023 as cim
-        from cimgraph.databases import XMLFile, Neo4jConnection
+        from cimgraph.databases import Neo4jConnection
         from cimgraph.models import FeederModel
 
         self.cim = cim
-
-        # Determine connection type and profile
-        neo4j_url = os.getenv("CIMG_URL")
         profile = os.getenv("CIMG_CIM_PROFILE", "cimhub_2023")
         os.environ["CIMG_CIM_PROFILE"] = profile
-        
-        # Try Neo4j first if URL is set
-        if neo4j_url:
-            try:
-                # Use model_id as the database name
-                db_name = self.model_id
-                logger.info("Attempting Neo4j connection for model '%s' (DB: %s)...", self.model_id, db_name)
-                
-                connection = Neo4jConnection(database=db_name)
-                self.network = FeederModel(container=cim.Feeder(), connection=connection)
-                
-                # Try a quick test query to see if data exists
-                test_objs = self.network.get_all_attributes(cim.Feeder)
-                if not test_objs:
-                    logger.info("No data found in Neo4j database '%s', falling back to XML.", db_name)
-                    raise ValueError("No data")
-                    
-                logger.info("Successfully loaded model '%s' from Neo4j.", self.model_id)
-                path = None # Mark as Neo4j loaded
-            except Exception as e:
-                logger.warning("Neo4j load failed for '%s' (%s), falling back to XML: %s", self.model_id, str(e), xml_path)
-                path = _resolve_xml_path(xml_path)
-                connection = XMLFile(filename=str(path))
-                self.network = FeederModel(container=cim.Feeder(), connection=connection)
-        else:
-            path = _resolve_xml_path(xml_path)
-            logger.info("Loading CIM model from XML: %s", path)
-            if not path.is_file():
-                raise FileNotFoundError(f"CIM XML not found: {path}")
-            connection = XMLFile(filename=str(path))
-            self.network = FeederModel(container=cim.Feeder(), connection=connection)
 
-        # Load equipment catalog classes (not in feeder container by default)
-        logger.info("Loading transformer and equipment catalog...")
+        if not os.getenv("CIMG_URL"):
+            raise EnvironmentError(
+                "CIMG_URL is not set. A Neo4j connection is required to load a feeder."
+            )
+        if not feeder_uri:
+            raise ValueError(
+                f"feeder_uri is required to load feeder '{self.model_id}' from Neo4j."
+            )
+
+        db_name = os.getenv("CIMG_DATABASE", "neo4j")
+        logger.info("Loading feeder '%s' (uri=%s, db=%s)...", self.model_id, feeder_uri, db_name)
+
+        # Pass the raw URI string as identifier so cimgraph preserves original casing
+        # (Neo4j stores URIs uppercase; FeederModel uses uri() to build the WHERE clause)
+        container = cim.Feeder(identifier=feeder_uri)
+        connection = Neo4jConnection()
+        self.network = FeederModel(container=container, connection=connection)
+
+        if not self.network.graph.get(cim.ConnectivityNode):
+            raise ValueError(
+                f"Feeder '{self.model_id}' (uri={feeder_uri}) loaded no ConnectivityNodes. "
+                f"Check that the feeder URI is correct and data is ingested."
+            )
+
+        # Load all classes needed for topology and equipment catalog.
+        # With Neo4j, get_all_attributes() is the only way to populate network.graph;
+        # XML loading materializes everything automatically so these calls are no-ops there.
+        # NOTE: Terminal is intentionally excluded here. create_new_graph() sets
+        # Terminal.ConnectivityNode and Terminal.ConductingEquipment as proper objects.
+        # Calling get_all_attributes(Terminal) would overwrite those with raw UUID strings
+        # (cimgraph uses expand_graph=False), breaking the terminal index.
+        #
+        # Location MUST come before PositionPoint — equipment get_all_attributes calls
+        # add Location objects to the graph; only then can get_all_attributes(PositionPoint)
+        # find any UUIDs to fetch coordinates for.
+        logger.info("Loading CIM classes (topology + equipment catalog)...")
         for cls_type in [
+            # Core topology attributes (not Terminal — see note above)
+            getattr(cim, "ConnectivityNode", None),
+            getattr(cim, "ACLineSegment", None),
+            getattr(cim, "Breaker", None),
+            getattr(cim, "LoadBreakSwitch", None),
+            getattr(cim, "Disconnector", None),
+            getattr(cim, "EnergyConsumer", None),
+            getattr(cim, "EnergySource", None),
+            getattr(cim, "Substation", None),
+            getattr(cim, "VoltageLevel", None),
+            # Phase detail
+            getattr(cim, "ACLineSegmentPhase", None),
+            getattr(cim, "EnergyConsumerPhase", None),
+            getattr(cim, "SwitchPhase", None),
+            getattr(cim, "ShuntCompensatorPhase", None),
+            # Location and PositionPoint are queried directly via Neo4j in IndexBuilder
+            # (cimgraph expand_graph=False prevents them from being added to graph here)
+            # Equipment catalog
             getattr(cim, "TransformerTankInfo", None),
             getattr(cim, "TransformerEndInfo", None),
             getattr(cim, "PowerTransformerInfo", None),
@@ -154,8 +164,7 @@ class CimModelManager:
             if objs:
                 logger.info("  %-30s %6d", cls.__name__, len(objs))
 
-        # Build indexes (includes manual XML scan for transformer ratings)
-        self._idx = IndexBuilder(cim, self.network.graph, xml_path=path)
+        self._idx = IndexBuilder(cim, self.network.graph, feeder_uri=feeder_uri)
         self._idx.build()
 
         # Build topology
@@ -183,16 +192,50 @@ class CimModelManager:
         """All pre-computed topology edges."""
         return self._topology_edges
 
+    def execute_cypher(self, query: str, params: dict = None) -> list[dict]:
+        """Execute a raw Cypher query against the Neo4j database.
+
+        Uses the standard neo4j Python driver directly with env var credentials,
+        independent of cimgraph's internal connection management.
+
+        Returns:
+            List of result records (dicts), or [] if Neo4j is not configured.
+        """
+        neo4j_url = os.getenv("CIMG_URL")
+        if not neo4j_url:
+            logger.warning("execute_cypher: CIMG_URL not set, skipping.")
+            return []
+
+        username = os.getenv("CIMG_USERNAME", "neo4j")
+        password = os.getenv("CIMG_PASSWORD", "")
+        database = os.getenv("CIMG_DATABASE", "neo4j")
+
+        from neo4j import GraphDatabase
+        try:
+            driver = GraphDatabase.driver(neo4j_url, auth=(username, password))
+            with driver.session(database=database) as session:
+                # 15-second wall-clock timeout — prevents slow classification queries
+                # from hanging the topology endpoint indefinitely.
+                result = session.run(query, **(params or {}),
+                                     timeout=15)
+                records = [dict(r) for r in result]
+            driver.close()
+            return records
+        except Exception as e:
+            logger.error("execute_cypher failed: %s", e)
+            return []
+
     def get_cim_schema(self) -> dict:
         """Return a structured schema of common CIM classes and their attributes for the rule builder."""
         schema = {}
         # Core classes we want to highlight in the rule builder
-        target_classes = [
+        from src.shared.cim.mapping import CIM_PROPERTY_MAP
+        target_classes = list(set([
             "PowerTransformer", "TransformerTank", "TransformerTankInfo", "TransformerEndInfo",
             "Fuse", "Recloser", "Breaker", "LoadBreakSwitch", "Disconnector",
             "EnergyConsumer", "EnergySource", "LinearShuntCompensator", "ACLineSegment",
             "Asset", "AssetInfo"
-        ]
+        ] + list(CIM_PROPERTY_MAP.keys())))
         
         cim = self.cim
         graph = self.network.graph
@@ -227,7 +270,61 @@ class CimModelManager:
                 "count": len(graph[cls_obj])
             }
             
+        # Add mapped properties that might not be direct attributes
+        from src.shared.cim.mapping import CIM_PROPERTY_MAP
+        for class_name, mapped_props in CIM_PROPERTY_MAP.items():
+            if class_name in schema:
+                existing_names = {a["name"] for a in schema[class_name]["attributes"]}
+                for prop_name in mapped_props:
+                    if prop_name not in existing_names:
+                        schema[class_name]["attributes"].append({
+                            "name": prop_name,
+                            "type": "number", 
+                            "is_complex": False
+                        })
+            
         return schema
+
+    def get_class_connections(self, class_name: str) -> list[str]:
+        """Discovery of classes attached to a given class in this specific model.
+        
+        Logic:
+        1. Find all instances of class_name.
+        2. Find all ConnectivityNodes sharing a Terminal with those instances.
+        3. Find all other equipment sharing those ConnectivityNodes.
+        """
+        if not self._loaded or not self._idx:
+            return []
+            
+        cim = self.cim
+        graph = self.network.graph
+        
+        cls_obj = getattr(cim, class_name, None)
+        if not cls_obj or cls_obj not in graph:
+            return []
+            
+        connected_classes = set()
+        
+        # We use the indexes for speed
+        for mrid in graph[cls_obj].keys():
+            # Get terminals for this equipment
+            terminals = self._idx.eq_terminals.get(mrid, [])
+            for _term, cn_mrid in terminals:
+                # Add the ConnectivityNode itself
+                connected_classes.add("ConnectivityNode")
+                
+                # Find all equipment attached to this node
+                peer_mrids = self._idx.cn_equipment.get(cn_mrid, [])
+                for peer_mrid in peer_mrids:
+                    if peer_mrid == mrid:
+                        continue
+                        
+                    # Lookup peer class
+                    peer_entry = self._idx.equipment_index.get(peer_mrid)
+                    if peer_entry:
+                        connected_classes.add(peer_entry[0])
+                        
+        return sorted(list(connected_classes))
 
     def get_cim_classes(self) -> dict[str, int]:
         """Summary of every CIM class in the model with object counts."""
@@ -273,6 +370,10 @@ class CimModelManager:
             val = getattr(obj, attr, None)
             if val:
                 detail[attr] = str(val)
+
+        # Apply virtual property mappings (high-value properties like ratedS, r, x)
+        from src.shared.cim.mapping import apply_mappings
+        detail.update(apply_mappings(obj))
 
         if mrid in self._idx.eq_coords:
             detail["latitude"], detail["longitude"] = self._idx.eq_coords[mrid]
@@ -364,53 +465,193 @@ class CimModelManager:
 
         return result
 
-    def get_neighbors(self, target_id: str) -> dict | None:
-        """Returns immediate graph neighbors for a connectivity node or equipment."""
-        if self._idx is None:
+    def get_equipment_detail_expanded(self, mrid: str) -> dict | None:
+        """Equipment detail with terminal connectivity nodes expanded to full objects."""
+        detail = self.get_equipment_detail(mrid)
+        if not detail:
             return None
-        
-        # 1. Is it a connectivity node?
-        node_detail = self.get_node_cim_details(target_id)
-        if node_detail:
-            # Neighbors are connected equipment
-            neighbors = []
-            for eq in node_detail["connected_equipment"]:
-                neighbors.append({
-                    "id": eq["mrid"],
-                    "type": "Equipment",
-                    "cim_class": eq["cim_class"],
-                    "name": eq["name"]
+        expanded_terminals = []
+        for terminal in detail.get('terminals', []):
+            cn_mrid = terminal.get('connectivity_node')
+            if cn_mrid and isinstance(cn_mrid, str):
+                cn_detail = self.get_node_cim_details(cn_mrid)
+                expanded_terminals.append({
+                    **terminal,
+                    'connectivity_node': cn_detail if cn_detail else cn_mrid,
                 })
-            return {
-                "id": target_id,
-                "type": "ConnectivityNode",
-                "name": node_detail["name"],
-                "neighbors": neighbors
-            }
-            
-        # 2. Is it equipment?
-        eq_detail = self.get_equipment_detail(target_id)
-        if eq_detail:
-            # Neighbors are connectivity nodes via terminals
-            neighbors = []
-            for t in eq_detail["terminals"]:
-                cn_id = t["connectivity_node"]
-                # We can't use registry here, so we hope it's in the same manager
-                cn_detail = self.get_node_cim_details(cn_id)
-                neighbors.append({
-                    "id": cn_id,
-                    "type": "ConnectivityNode",
-                    "name": cn_detail["name"] if cn_detail else cn_id
-                })
-            return {
-                "id": target_id,
-                "type": "Equipment",
-                "cim_class": eq_detail["cim_class"],
-                "name": eq_detail["name"],
-                "neighbors": neighbors
-            }
-            
-        return None
+            else:
+                expanded_terminals.append(terminal)
+        detail['terminals'] = expanded_terminals
+        return detail
+
+    def get_node_properties(self, target_id: str) -> dict | None:
+        """Return all properties of any CIM node by querying Neo4j directly.
+
+        Works for any node type regardless of equipment_index coverage.
+        """
+        import os
+        from neo4j import GraphDatabase
+
+        neo4j_url = os.getenv("CIMG_URL")
+        if not neo4j_url:
+            return None
+
+        username = os.getenv("CIMG_USERNAME", "neo4j")
+        password = os.getenv("CIMG_PASSWORD", "")
+        database = os.getenv("CIMG_DATABASE", "neo4j")
+
+        uuid_lower = target_id.lower()
+        uuid_upper = target_id.upper()
+        uri_variants = [f"urn:uuid:{uuid_lower}", f"urn:uuid:{uuid_upper}"]
+
+        query = """
+MATCH (n) WHERE n.uri IN $uris
+RETURN properties(n) AS props, labels(n) AS lbls
+LIMIT 1
+"""
+        try:
+            driver = GraphDatabase.driver(neo4j_url, auth=(username, password))
+            with driver.session(database=database) as session:
+                rows = list(session.run(query, uris=uri_variants))
+            driver.close()
+        except Exception as e:
+            logger.error("get_node_properties Neo4j query failed: %s", e)
+            return None
+
+        if not rows:
+            return None
+
+        raw: dict = dict(rows[0]["props"])
+        lbls: list[str] = rows[0]["lbls"] or []
+
+        # Determine best CIM class from labels
+        skip = {"Resource", "IdentifiedObject", "PowerSystemResource", "Equipment",
+                "ConductingEquipment", "Connector", "EnergyConnection"}
+        specific = [l for l in lbls if l not in skip]
+        cim_class = specific[0] if specific else (lbls[0] if lbls else "Object")
+
+        # Strip urn:uuid: prefix from uri and normalise mRID
+        raw_uri = raw.pop("uri", None) or ""
+        mrid = raw_uri.replace("urn:uuid:", "").upper() or target_id
+
+        # Return full namespaced keys as-is so the frontend condition path is self-describing.
+        # e.g. "TransformerEndInfo.ratedS" stays as "TransformerEndInfo.ratedS" — the
+        # frontend strips the class prefix for display but keeps the full key in the condition.
+        props: dict = {"mrid": mrid, "cim_type": cim_class}
+        for k, v in raw.items():
+            props[k] = v
+
+        return props
+
+    def get_neighbors(self, target_id: str) -> dict | None:
+        """Returns all immediate CIM graph neighbors for any node by querying Neo4j directly.
+
+        Traverses both outgoing and incoming relationships so nothing is missed
+        regardless of which direction CIM stores the reference.
+        """
+        import os
+        from neo4j import GraphDatabase
+
+        neo4j_url = os.getenv("CIMG_URL")
+        if not neo4j_url:
+            return None
+
+        username = os.getenv("CIMG_USERNAME", "neo4j")
+        password = os.getenv("CIMG_PASSWORD", "")
+        database = os.getenv("CIMG_DATABASE", "neo4j")
+
+        # Try both lowercase and uppercase URI formats — n10s may store either.
+        uuid_lower = target_id.lower()
+        uuid_upper = target_id.upper()
+        uri_variants = [
+            f"urn:uuid:{uuid_lower}",
+            f"urn:uuid:{uuid_upper}",
+        ]
+
+        # Two simple queries: outgoing then incoming edges.
+        # Avoids CALL subquery which requires Neo4j 4.1+.
+        q_outgoing = """
+MATCH (n)-[r]->(nb)
+WHERE n.uri IN $uris AND nb.uri IS NOT NULL
+RETURN
+    n.uri AS root_uri,
+    coalesce(n.`IdentifiedObject.name`, '') AS root_name,
+    labels(n)  AS root_labels,
+    type(r)    AS relation,
+    nb.uri     AS nb_uri,
+    coalesce(nb.`IdentifiedObject.name`, '') AS nb_name,
+    labels(nb) AS nb_labels
+"""
+        q_incoming = """
+MATCH (nb)-[r]->(n)
+WHERE n.uri IN $uris AND nb.uri IS NOT NULL
+RETURN
+    n.uri AS root_uri,
+    coalesce(n.`IdentifiedObject.name`, '') AS root_name,
+    labels(n)  AS root_labels,
+    type(r)    AS relation,
+    nb.uri     AS nb_uri,
+    coalesce(nb.`IdentifiedObject.name`, '') AS nb_name,
+    labels(nb) AS nb_labels
+"""
+
+        try:
+            driver = GraphDatabase.driver(neo4j_url, auth=(username, password))
+            with driver.session(database=database) as session:
+                rows = list(session.run(q_outgoing, uris=uri_variants)) + \
+                       list(session.run(q_incoming, uris=uri_variants))
+            driver.close()
+        except Exception as e:
+            logger.error("get_neighbors Neo4j query failed: %s", e)
+            return None
+
+        if not rows:
+            return None
+
+        def _strip_uri(uri: str) -> str:
+            for pfx in ("urn:uuid:", "_"):
+                if uri.startswith(pfx):
+                    uri = uri[len(pfx):]
+            return uri.upper()
+
+        def _cim_class(labels: list[str]) -> str:
+            skip = {"Resource", "IdentifiedObject", "PowerSystemResource", "Equipment",
+                    "ConductingEquipment", "Connector", "EnergyConnection"}
+            specific = [l for l in (labels or []) if l not in skip]
+            return specific[0] if specific else (labels[0] if labels else "Object")
+
+        first = rows[0]
+        root_mrid = _strip_uri(first["root_uri"])
+        root_name = first["root_name"] or root_mrid[:12]
+        root_cim_class = _cim_class(first["root_labels"])
+
+        seen: set[str] = {root_mrid}
+        neighbors = []
+        for row in rows:
+            nb_uri = row["nb_uri"]
+            if not nb_uri:
+                continue
+            nb_mrid = _strip_uri(nb_uri)
+            if nb_mrid in seen:
+                continue
+            seen.add(nb_mrid)
+            nb_class = _cim_class(row["nb_labels"])
+            nb_name = row["nb_name"] or nb_mrid[:12]
+            neighbors.append({
+                "id": nb_mrid,
+                "cim_class": nb_class,
+                "type": nb_class,
+                "name": nb_name,
+                "relation": row["relation"],
+            })
+
+        return {
+            "id": root_mrid,
+            "cim_class": root_cim_class,
+            "type": root_cim_class,
+            "name": root_name,
+            "neighbors": neighbors,
+        }
 
     def _extract_primitives(self, obj) -> dict:
         """Helper to extract all primitive properties (strings, floats, ints, bools) from any CIM object."""
@@ -491,7 +732,6 @@ class CimModelManager:
             "mrid": detail["mrid"],
             "name": detail.get("name"),
             "class": "PowerTransformer",
-            **detail
         }
         
         def _add_to_node(node: dict, child: dict):

@@ -9,42 +9,47 @@ Each model gets its own CimModelManager instance so phase indexes,
 equipment lookups, and topology are fully independent.
 """
 
-import glob
 import logging
 import os
-from pathlib import Path
 from typing import Optional
 
 from src.shared.cim_model import CimModelManager
+from src.shared.cim.profile import CimProfileService
+
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Path helpers
-# ---------------------------------------------------------------------------
-_SHARED_DIR = Path(__file__).resolve().parent
-_BACKEND_DIR = _SHARED_DIR.parents[1]
-_WORKSPACE_ROOT = _BACKEND_DIR.parent
 
-_CIM_DATA_DIR = _BACKEND_DIR / "cim" / "models"
+def _discover_feeders_from_neo4j() -> list[dict]:
+    """Query Neo4j for all Feeder nodes and return them as loadable layers."""
+    from neo4j import GraphDatabase
 
+    url = os.getenv("CIMG_URL")
+    username = os.getenv("CIMG_USERNAME", "neo4j")
+    password = os.getenv("CIMG_PASSWORD", "")
+    database = os.getenv("CIMG_DATABASE", "neo4j")
 
-def _discover_xml_files() -> list[dict]:
-    """Find all CIM XML files in the cim directory."""
-    results: list[dict] = []
-    search_dir = os.getenv("CIM_MODELS_DIR", str(_CIM_DATA_DIR))
+    driver = GraphDatabase.driver(url, auth=(username, password))
+    try:
+        with driver.session(database=database) as session:
+            rows = list(session.run(
+                "MATCH (f:Feeder) RETURN f.uri AS uri, f.`IdentifiedObject.name` AS name ORDER BY name"
+            ))
+    finally:
+        driver.close()
 
-    for xml_path in sorted(glob.glob(os.path.join(search_dir, "*.xml"))):
-        p = Path(xml_path)
-        model_id = p.stem  # e.g. "IEEE8500_3subs"
-        results.append(
-            {
-                "model_id": model_id,
-                "filename": p.name,
-                "path": str(p),
-                "size_mb": round(p.stat().st_size / 1_048_576, 1),
-            }
-        )
+    results = []
+    for row in rows:
+        uri: str = row["uri"] or ""
+        feeder_mrid = uri.replace("urn:uuid:", "")
+        name = row["name"] or feeder_mrid
+        results.append({
+            "feeder_id": name,
+            "feeder_uri": feeder_mrid,
+        })
+
+    if not results:
+        raise ValueError("No Feeder nodes found in Neo4j. Ensure the CIM model has been ingested.")
 
     return results
 
@@ -60,14 +65,17 @@ class CimModelRegistry:
     _instance: Optional["CimModelRegistry"] = None
 
     def __init__(self):
-        self._managers: dict[str, CimModelManager] = {}  # model_id → manager
-        self._available: list[dict] = []  # discovered XML metadata
-        self._active_models: set[str] = set()  # currently loaded model_ids
+        self._managers: dict[str, CimModelManager] = {}  # feeder_id → manager
+        self._available: list[dict] = []  # discovered feeder metadata from Neo4j
+        self._active_models: set[str] = set()  # currently loaded feeder_ids
         self._coordinate_offsets: dict[
             str, tuple[float, float]
         ] = {}  # model_id → (lat_offset, lon_offset)
         self._mrid_to_model: dict[str, str] = {}  # mrid → model_id
         self._node_to_model: dict[str, str] = {}  # node_id → model_id
+        self._profile = CimProfileService.get_instance()
+        self._profile.initialize()
+
 
     @classmethod
     def get_instance(cls) -> "CimModelRegistry":
@@ -82,30 +90,36 @@ class CimModelRegistry:
     # ── Discovery ─────────────────────────────────────────────────
 
     def discover(self):
-        """Scan for available XML files and populate the available list."""
-        self._available = _discover_xml_files()
+        """Discover available feeders from Neo4j (CIMG_URL required)."""
+        if not os.getenv("CIMG_URL"):
+            raise EnvironmentError(
+                "CIMG_URL is not set. A Neo4j connection is required to discover feeders."
+            )
+
+        self._available = _discover_feeders_from_neo4j()
         logger.info(
-            "Discovered %d CIM XML files: %s",
+            "Discovered %d feeder(s) in Neo4j: %s",
             len(self._available),
-            [m["model_id"] for m in self._available],
+            [f["feeder_id"] for f in self._available],
         )
 
     # ── Load / Unload ─────────────────────────────────────────────
 
-    def load_model(self, model_id: str) -> CimModelManager:
-        """Load a specific model by ID. No-op if already loaded."""
-        if model_id in self._managers and self._managers[model_id].is_loaded:
-            logger.info("Model '%s' already loaded", model_id)
-            return self._managers[model_id]
+    def load_model(self, feeder_id: str) -> CimModelManager:
+        """Load a specific feeder by ID. No-op if already loaded."""
+        if feeder_id in self._managers and self._managers[feeder_id].is_loaded:
+            logger.info("Feeder '%s' already loaded", feeder_id)
+            return self._managers[feeder_id]
 
-        meta = self._get_meta(model_id)
+        meta = self._get_meta(feeder_id)
         if meta is None:
-            raise FileNotFoundError(f"No discovered model with id '{model_id}'")
+            raise ValueError(f"No discovered feeder with id '{feeder_id}'")
 
         manager = CimModelManager()
-        manager.load(xml_path=meta["path"])
-        self._managers[model_id] = manager
-        self._active_models.add(model_id)
+        manager.model_id = feeder_id
+        manager.load(feeder_uri=meta["feeder_uri"])
+        self._managers[feeder_id] = manager
+        self._active_models.add(feeder_id)
 
         # Assign coordinate offsets so combined models don't overlap
         self._recalculate_offsets()
@@ -147,42 +161,35 @@ class CimModelRegistry:
             logger.info("Model '%s' unloaded", model_id)
 
     def load_all(self):
-        """Load all discovered CIM XML files into memory."""
+        """Discover all feeders from Neo4j and load them into memory."""
         self.discover()
-        if not self._available:
-            logger.warning("No CIM XML files discovered in %s", _CIM_DATA_DIR)
-            return
-
         for meta in self._available:
             try:
-                self.load_model(meta["model_id"])
+                self.load_model(meta["feeder_id"])
             except Exception as e:
-                logger.error("Failed to load model '%s': %s", meta["model_id"], e)
+                logger.error("Failed to load feeder '%s': %s", meta["feeder_id"], e)
 
     # ── Query ─────────────────────────────────────────────────────
 
     def list_models(self) -> list[dict]:
-        """Return metadata for all discovered models with loaded status."""
+        """Return metadata for all discovered feeders with loaded status."""
         result = []
         for meta in self._available:
-            mid = meta["model_id"]
-            mgr = self._managers.get(mid)
+            fid = meta["feeder_id"]
+            mgr = self._managers.get(fid)
             result.append(
                 {
-                    **meta,
-                    "loaded": mid in self._active_models,
-                    "node_count": len(mgr.get_topology_nodes())
-                    if mgr and mgr.is_loaded
-                    else 0,
-                    "edge_count": len(mgr.get_topology_edges())
-                    if mgr and mgr.is_loaded
-                    else 0,
+                    "feeder_id": fid,
+                    "feeder_uri": meta["feeder_uri"],
+                    "loaded": fid in self._active_models,
+                    "node_count": len(mgr.get_topology_nodes()) if mgr and mgr.is_loaded else 0,
+                    "edge_count": len(mgr.get_topology_edges()) if mgr and mgr.is_loaded else 0,
                 }
             )
         return result
 
     def get_active_model_ids(self) -> list[str]:
-        """IDs of all currently loaded models."""
+        """IDs of all currently loaded feeders."""
         return sorted(self._active_models)
 
     def get_manager(self, model_id: str) -> Optional[CimModelManager]:
@@ -305,24 +312,40 @@ class CimModelRegistry:
         return results
 
     def get_cim_schema(self) -> dict:
-        """Aggregate CIM schema from all active models."""
-        combined_schema = {}
+        """Aggregate CIM schema from all active models, falling back to profile baseline."""
+        # 1. Start with the baseline schema from the CIM profile
+        combined_schema = self._profile.get_baseline_schema().copy()
+        
+        # 2. Layer on actual instance data from loaded models
         for _mid, mgr in self.get_managers():
             if hasattr(mgr, "get_cim_schema"):
-                # Merge schemas (attributes for same class are combined)
                 mgr_schema = mgr.get_cim_schema()
                 for cls_name, cls_info in mgr_schema.items():
-                    if cls_name not in combined_schema:
+                    if cls_name not in combined_schema or combined_schema[cls_name]["count"] == 0:
                         combined_schema[cls_name] = cls_info
                     else:
-                        # Merge attributes
+                        # Existing class - merge attributes and add to count
                         existing_attrs = {
                             a["name"] for a in combined_schema[cls_name]["attributes"]
                         }
                         for attr in cls_info["attributes"]:
                             if attr["name"] not in existing_attrs:
                                 combined_schema[cls_name]["attributes"].append(attr)
+                        combined_schema[cls_name]["count"] += cls_info.get("count", 0)
         return combined_schema
+
+    def get_class_connections(self, class_name: str) -> list[str]:
+        """Discovery of classes attached to a given class (static + dynamic)."""
+        # Static baseline from profile
+        connections = set(self._profile.get_static_connections(class_name))
+        
+        # Dynamic discovery from active models
+        for _mid, mgr in self.get_managers():
+            if hasattr(mgr, "get_class_connections"):
+                connections.update(mgr.get_class_connections(class_name))
+                
+        return sorted(list(connections))
+
 
     def get_combined_topology(
         self, model_ids: list[str] | None = None
@@ -363,9 +386,9 @@ class CimModelRegistry:
 
     # ── Private helpers ───────────────────────────────────────────
 
-    def _get_meta(self, model_id: str) -> Optional[dict]:
+    def _get_meta(self, feeder_id: str) -> Optional[dict]:
         for m in self._available:
-            if m["model_id"] == model_id:
+            if m["feeder_id"] == feeder_id:
                 return m
         return None
 

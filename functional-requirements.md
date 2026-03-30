@@ -90,3 +90,9 @@ Users can create conditional formatting rules based on any attribute of a grid e
   * **Trigger CIM Ingestion**: Trigger CIM graph ingestion manually.
 * **Security**: The Admin Console must operate without direct access to the host's Docker socket, ensuring architectural isolation.
 * **Schema Mapping**: Manage and visualize the mapping between CIM classes and the internal graph representation.
+
+### 3.11 Visibility Settings Abstraction
+* **SVG Element Extraction**: The system must automatically parse uploaded SVG icons and identify unique element IDs (e.g., `#breaker-open`, `#status-ok`).
+* **Conditional Visibility Mapping**: Users can define a mapping between CIM conditions and the visibility of specific SVG elements without writing manual CSS.
+* **Reusable Visibility Profiles**: Support for creating visibility profiles that can be applied to any rule using compatible SVG icons.
+* **Dynamic Icon Variants**: The system must support rendering multiple "states" of a single SVG icon in the sprite atlas (e.g., an open vs. closed state for a single breaker rule).

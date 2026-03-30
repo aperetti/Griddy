@@ -42,6 +42,16 @@ export interface Node {
     cluster_min_points?: number;
     display_min_zoom?: number;
     display_max_zoom?: number;
+    display_rotate_to_edge?: boolean;
+    display_tooltip?: {
+        mode: 'basic' | 'advanced';
+        fields: Array<{ id: string; label: string; field: string }>;
+        html_template: string;
+    };
+    display_tooltip_overrides?: Array<{
+        conditions: any;
+        tooltip_config: { mode: 'basic' | 'advanced'; fields: Array<{ id: string; label: string; field: string }>; html_template: string };
+    }>;
 }
 
 
@@ -69,5 +79,15 @@ export interface Edge {
     display_css?: string;
     display_min_zoom?: number;
     display_max_zoom?: number;
+    display_rotate_to_edge?: boolean;
+    display_tooltip?: {
+        mode: 'basic' | 'advanced';
+        fields: Array<{ id: string; label: string; field: string }>;
+        html_template: string;
+    };
+    display_tooltip_overrides?: Array<{
+        conditions: any;
+        tooltip_config: { mode: 'basic' | 'advanced'; fields: Array<{ id: string; label: string; field: string }>; html_template: string };
+    }>;
 }
 

@@ -27,6 +27,10 @@
         *   **Visibility Ranges**: Display rules must support defining a valid zoom range (`min_zoom` to `max_zoom`) for matched assets.
         *   **Dynamic Hiding**: Assets matching a rule should only be rendered when the current map zoom falls within the specified range.
     *   **Mobile Minimap**: The minimap must be hidden on mobile viewports (width <= 768px) to maximize usable map area. This is controlled via the `isMobile` media query in `App.tsx`.
+3.1 **Sprite Atlas & Icon Management (Backend)**:
+    *   **Static Generation**: The backend must generate a high-performance sprite atlas (PNG/JSON) for grid icons to facilitate millions of nodes in a single WebGL layer.
+    *   **Variant Support**: The sprite generator must support rule-based variants, allowing a single rule to have multiple entries in the atlas based on active visibility overrides.
+    *   **SVG CSS Injection**: The system must support injecting CSS `<style>` blocks into SVGs before rasterization to the atlas.
 #### Display Rules Router (`display_rule_routes.py`)
 - Standard CRUD endpoints (`/configs`, `/rules`) backed by `admin_config.db`.
 - Complex filtering evaluations happen in pure Python.

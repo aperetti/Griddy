@@ -67,7 +67,7 @@ export function OverlayControls({
             <Menu position="bottom-end" offset={10} withArrow shadow="md" width={220}>
               <Menu.Target>
                 <Tooltip label="Main Menu" position="left">
-                  <ActionIcon size="xl" radius="sm" variant="filled" color="dark">
+                  <ActionIcon size="xl" radius="sm" variant="filled" color="dark" aria-label="Main Menu">
                     <MenuIcon size={20} />
                   </ActionIcon>
                 </Tooltip>

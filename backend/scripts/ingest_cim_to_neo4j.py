@@ -1,197 +1,203 @@
+"""
+Ingest CIM XML files into Neo4j using n10s (neosemantics) directly.
+
+After importing, runs a post-process step that casts all string-stored
+numeric properties to their correct Neo4j types (float/integer) using the
+type information from the installed cimgraph CIM profile.
+
+CIM XML files do not include rdf:datatype on literal values, so n10s
+stores everything as strings.  The profile dataclasses are the authoritative
+source for which properties are float vs int, so we derive the cast list
+from them rather than maintaining it by hand.
+"""
 import os
+import sys
 import logging
-import asyncio
 import argparse
+import dataclasses
+import inspect
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import get_type_hints
 
-import cimgraph.data_profile.cimhub_2023 as cim
-from neo4j import AsyncGraphDatabase
-from cimgraph.databases import XMLFile
-from cimgraph.models import FeederModel
+from neo4j import GraphDatabase
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(logging.INFO)
+logging.basicConfig(level=logging.INFO, handlers=[handler],
+                    format='%(levelname)s:%(name)s:%(message)s')
 logger = logging.getLogger(__name__)
 
-# Classes to ensure are loaded from XML
-CIM_CLASSES = [
-    cim.Feeder,
-    cim.ConnectivityNode,
-    cim.Terminal,
-    cim.PowerTransformer,
-    cim.PowerTransformerEnd,
-    cim.TransformerTank,
-    cim.TransformerTankEnd,
-    cim.TransformerTankInfo,
-    cim.TransformerEndInfo,
-    cim.PowerTransformerInfo,
-    cim.ACLineSegment,
-    cim.ACLineSegmentPhase,
-    cim.Fuse,
-    cim.Breaker,
-    cim.LoadBreakSwitch,
-    cim.Disconnector,
-    cim.Recloser,
-    cim.EnergyConsumer,
-    cim.EnergySource,
-    cim.LinearShuntCompensator,
-    cim.Asset,
-    cim.AssetInfo,
-    cim.BaseVoltage,
-    cim.ConnectivityNodeContainer,
-    cim.VoltageLevel,
-    cim.Substation,
-    cim.Bay,
-]
+_N10S_CONFIG = {
+    "handleVocabUris": "IGNORE",
+    "handleRDFTypes": "LABELS",
+    "handleMultival": "OVERWRITE",
+    "keepCustomDataTypes": True,
+}
 
-class CIMNeo4jIngestor:
-    def __init__(
-        self,
-        url: str = "bolt://localhost:7687",
-        username: str = "neo4j",
-        password: str = "password123",
-        database: str = "neo4j",
-        profile: str = "cimhub_2023"
-    ):
-        self.url = url
-        self.username = username
-        self.password = password
-        self.database = database
-        self.profile = profile
-        self.driver = AsyncGraphDatabase.driver(url, auth=(username, password))
+_NUMERIC_PATTERN = r"^-?[0-9]+\.?[0-9]*([eE][+-]?[0-9]+)?$"
 
-    async def upload_to_neo4j(self, model: FeederModel, model_id: str):
-        """Uploads a FeederModel to Neo4j."""
-        logger.info("Connecting to Neo4j at %s (DB: %s)...", self.url, self.database)
-        
-        try:
-            async with self.driver.session(database=self.database) as session:
-                # 1. Clear existing data for this model
-                logger.info("Clearing existing data in database '%s'...", self.database)
-                await session.run("MATCH (n) DETACH DELETE n")
 
-                # 2. Extract all objects from the graph
-                all_objects = []
-                for cls_type, objs in model.graph.items():
-                    for mrid, obj in objs.items():
-                        all_objects.append((cls_type, mrid, obj))
+def _get_numeric_props_from_profile(cim_profile: str) -> tuple[list[str], list[str]]:
+    """Return (float_props, int_props) derived from the installed CIM profile.
 
-                logger.info("Found %d objects to upload.", len(all_objects))
+    Each entry is 'ClassName.propertyName' matching the n10s property key format.
+    """
+    try:
+        from cimgraph.data_profile import cimhub_2023, rc4_2021
+        profile_map = {"cimhub_2023": cimhub_2023, "rc4_2021": rc4_2021}
+        profile = profile_map.get(cim_profile, cimhub_2023)
+    except ImportError:
+        logger.warning("cimgraph not available — skipping profile-driven type cast")
+        return [], []
 
-                # 3. Create Nodes
-                nodes_data = []
-                for cls_type, mrid, obj in all_objects:
-                    props = {
-                        "mRID": mrid,
-                        "model_id": model_id,
-                        "cim_class": cls_type.__name__
-                    }
-                    
-                    # Extract primitive attributes
-                    if hasattr(obj, "__dataclass_fields__"):
-                        for attr in obj.__dataclass_fields__:
-                            if attr in ("mRID", "name"): continue
-                            val = getattr(obj, attr, None)
-                            if isinstance(val, (str, int, float, bool)):
-                                props[attr] = val
-                            elif hasattr(val, "value"): # Enums
-                                props[attr] = str(val.value)
-                    
-                    name = getattr(obj, "name", None)
-                    if name: props["name"] = name
-                    nodes_data.append({"mrid": mrid, "labels": [cls_type.__name__, "CIMObject"], "props": props})
+    float_props, int_props = [], []
 
-                logger.info("Uploading nodes...")
-                by_label = {}
-                for n in nodes_data:
-                    label = n["labels"][0]
-                    if label not in by_label: by_label[label] = []
-                    by_label[label].append(n["props"])
+    for cls_name, cls in inspect.getmembers(profile, inspect.isclass):
+        if not dataclasses.is_dataclass(cls):
+            continue
+        for f in dataclasses.fields(cls):
+            ann = str(cls.__annotations__.get(f.name, ""))
+            key = f"{cls_name}.{f.name}"
+            if "float" in ann:
+                float_props.append(key)
+            elif "Optional[int]" in ann or ann == "int":
+                int_props.append(key)
 
-                for label, batch in by_label.items():
-                    query = f"UNWIND $batch AS props CREATE (n:{label}:CIMObject) SET n = props"
-                    await session.run(query, batch=batch)
-                
-                await session.run("CREATE INDEX mrid_idx IF NOT EXISTS FOR (n:CIMObject) ON (n.mRID)")
+    return float_props, int_props
 
-                # 4. Create Relationships
-                logger.info("Uploading relationships...")
-                rels_data = []
-                for cls_type, mrid, obj in all_objects:
-                    if hasattr(obj, "__dataclass_fields__"):
-                        for attr, field in obj.__dataclass_fields__.items():
-                            val = getattr(obj, attr, None)
-                            if val is None: continue
-                            
-                            if isinstance(val, list):
-                                for item in val:
-                                    item_mrid = getattr(item, "mRID", None)
-                                    if item_mrid:
-                                        rels_data.append({"start": mrid, "end": item_mrid, "type": attr})
-                            else:
-                                item_mrid = getattr(val, "mRID", None)
-                                if item_mrid:
-                                    rels_data.append({"start": mrid, "end": item_mrid, "type": attr})
 
-                by_rel_type = {}
-                for r in rels_data:
-                    t = r["type"]
-                    if t not in by_rel_type: by_rel_type[t] = []
-                    by_rel_type[t].append(r)
+def _cast_numeric_properties(session, cim_profile: str) -> None:
+    """Cast string-stored CIM numeric properties to Neo4j float/integer."""
+    float_props, int_props = _get_numeric_props_from_profile(cim_profile)
+    logger.info("Casting %d float and %d int properties from CIM profile %s...",
+                len(float_props), len(int_props), cim_profile)
 
-                for rel_type, batch in by_rel_type.items():
-                    sanitized_type = rel_type.replace(".", "_")
-                    query = f"""
-                    UNWIND $batch AS r
-                    MATCH (a:CIMObject {{mRID: r.start}}), (b:CIMObject {{mRID: r.end}})
-                    CREATE (a)-[:{sanitized_type}]->(b)
-                    """
-                    await session.run(query, batch=batch)
+    total_cast = 0
+    for prop in float_props:
+        label = prop.split(".")[0]
+        result = session.run(
+            f"MATCH (n:`{label}`) "
+            f"WHERE n.`{prop}` IS NOT NULL AND toString(n.`{prop}`) =~ $pat "
+            f"SET n.`{prop}` = toFloat(n.`{prop}`) "
+            f"RETURN count(n) AS cnt",
+            pat=_NUMERIC_PATTERN,
+        )
+        cnt = result.single()["cnt"]
+        if cnt:
+            total_cast += cnt
 
-                logger.info("Ingestion complete for database '%s'.", self.database)
-        finally:
-            await self.driver.close()
+    for prop in int_props:
+        label = prop.split(".")[0]
+        result = session.run(
+            f"MATCH (n:`{label}`) "
+            f"WHERE n.`{prop}` IS NOT NULL AND toString(n.`{prop}`) =~ $pat "
+            f"SET n.`{prop}` = toInteger(n.`{prop}`) "
+            f"RETURN count(n) AS cnt",
+            pat=r"^-?[0-9]+$",
+        )
+        cnt = result.single()["cnt"]
+        if cnt:
+            total_cast += cnt
 
-    def ingest(self, xml_path: str):
-        path = Path(xml_path)
-        logger.info("Loading CIM XML: %s", path.name)
-        xml_file = XMLFile(filename=str(path))
-        model = FeederModel(container=cim.Feeder(), connection=xml_file, profile_name=self.profile)
+    logger.info("  cast %d property values to numeric types.", total_cast)
 
-        logger.info("Fetching attributes for all mapped classes...")
-        for cls in CIM_CLASSES:
-            model.get_all_attributes(cls)
 
-        asyncio.run(self.upload_to_neo4j(model, path.stem))
+def _configure_n10s(session) -> None:
+    """Initialise n10s graph config. Safe to call on an already-configured graph."""
+    try:
+        session.run("CALL n10s.graphconfig.init($cfg)", cfg=_N10S_CONFIG)
+        logger.info("n10s configured.")
+    except Exception as e:
+        msg = str(e).lower()
+        if "non-empty" in msg or "already" in msg or "exists" in msg:
+            logger.info("n10s already configured, skipping.")
+        else:
+            logger.warning("n10s configure warning: %s", e)
 
-def main():
-    parser = argparse.ArgumentParser(description="Ingest CIM XML into Neo4j using cimgraph.")
-    parser.add_argument("xml_path", help="Path to the CIM XML file")
-    parser.add_argument("--url", default=os.getenv("CIMG_URL", "bolt://localhost:7687"), help="Neo4j Bolt URL")
-    parser.add_argument("--username", default=os.getenv("CIMG_USERNAME", "neo4j"), help="Neo4j Username")
-    parser.add_argument("--password", default=os.getenv("CIMG_PASSWORD", "password123"), help="Neo4j Password")
-    parser.add_argument("--database", help="Target Neo4j database (defaults to model file name)")
-    parser.add_argument("--profile", default=os.getenv("CIMG_CIM_PROFILE", "cimhub_2023"), help="CIM profile name")
+    try:
+        session.run(
+            "CREATE CONSTRAINT n10s_unique_uri IF NOT EXISTS "
+            "FOR (r:Resource) REQUIRE r.uri IS UNIQUE"
+        )
+    except Exception as e:
+        if "already exists" not in str(e).lower():
+            logger.warning("Constraint warning: %s", e)
 
-    args = parser.parse_args()
-    
-    xml_file = Path(args.xml_path)
-    if not xml_file.exists():
-        print(f"Error: XML file not found: {args.xml_path}")
+
+def _import_file(session, container_path: str) -> None:
+    """Import a single CIM RDF/XML file via n10s."""
+    file_url = f"file:///{container_path.lstrip('/')}"
+    logger.info("Importing %s", file_url)
+    result = session.run(
+        "CALL n10s.rdf.import.fetch($url, 'RDF/XML')",
+        url=file_url,
+    )
+    summary = result.single()
+    if summary:
+        logger.info("  triplesLoaded=%s status=%s",
+                    summary.get("triplesLoaded"), summary.get("terminationStatus"))
+
+
+def _to_container_path(path: Path) -> str:
+    """Convert a host path to the container-mounted path under /var/lib/neo4j/import."""
+    parts = path.parts
+    if "cim" in parts:
+        idx = parts.index("cim")
+        rel = "/".join(parts[idx:])
+        return f"/var/lib/neo4j/import/{rel}"
+    return f"/var/lib/neo4j/import/{path.name}"
+
+
+def ingest_cim(xml_path: str, url: str, username: str, password: str,
+               database: str, cim_profile: str) -> None:
+    path = Path(xml_path)
+    if not path.exists():
+        logger.error("Path not found: %s", xml_path)
         return
 
-    db_name = args.database or xml_file.stem
-    
-    ingestor = CIMNeo4jIngestor(
-        url=args.url,
-        username=args.username,
-        password=args.password,
-        database=db_name,
-        profile=args.profile
+    driver = GraphDatabase.driver(url, auth=(username, password))
+    try:
+        with driver.session(database=database) as session:
+            _configure_n10s(session)
+
+            if path.is_file():
+                _import_file(session, _to_container_path(path))
+            elif path.is_dir():
+                xml_files = sorted(path.glob("*.xml"))
+                logger.info("Found %d XML files in %s", len(list(xml_files)), path)
+                for f in sorted(path.glob("*.xml")):
+                    _import_file(session, _to_container_path(f))
+
+            _cast_numeric_properties(session, cim_profile)
+
+        logger.info("Ingestion complete.")
+    except Exception as e:
+        logger.error("Ingestion failed: %s", e)
+        raise
+    finally:
+        driver.close()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Ingest CIM XML into Neo4j via n10s."
     )
-    
-    ingestor.ingest(args.xml_path)
+    parser.add_argument("xml_path", help="CIM XML file or directory")
+    parser.add_argument("--url",         default=os.getenv("CIMG_URL", "bolt://localhost:7687"))
+    parser.add_argument("--username",    default=os.getenv("CIMG_USERNAME", "neo4j"))
+    parser.add_argument("--password",    default=os.getenv("CIMG_PASSWORD", "password123"))
+    parser.add_argument("--database",    default="neo4j")
+    parser.add_argument("--cim-profile", default=os.getenv("CIMG_CIM_PROFILE", "cimhub_2023"),
+                        dest="cim_profile")
+    args = parser.parse_args()
+
+    url = args.url
+    if url == "bolt://neo4j:7687":
+        url = "bolt://localhost:7687"
+
+    ingest_cim(args.xml_path, url, args.username, args.password,
+               args.database, args.cim_profile)
+
 
 if __name__ == "__main__":
     main()

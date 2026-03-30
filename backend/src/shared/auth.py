@@ -31,7 +31,6 @@ def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
          raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Basic realm=\"Rules Engine\""},
         )
 
     # Re-hash the provided password with the stored salt
@@ -49,6 +48,5 @@ def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Basic realm=\"Rules Engine\""},
         )
     return credentials.username

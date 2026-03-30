@@ -2,12 +2,9 @@
 
 import logging
 from collections import defaultdict
-from pathlib import Path
 from typing import Any
 
 from src.shared.cim.helpers import _mrid_str, _get_name, _safe_float, _parse_phase_code
-from src.shared.cim.loader import _manual_xml_catalog_scan
-
 logger = logging.getLogger(__name__)
 
 
@@ -18,10 +15,10 @@ class IndexBuilder:
     ``TopologyBuilder`` and ``CimModelManager``.
     """
 
-    def __init__(self, cim, graph, xml_path: Path | None = None):
+    def __init__(self, cim, graph, feeder_uri: str | None = None):
         self.cim = cim
         self.graph = graph
-        self._xml_path = xml_path
+        self._feeder_uri = feeder_uri
 
         # Public indexes
         self.equipment_index: dict[str, tuple[str, Any]] = {}     # mRID → (cls_name, obj)
@@ -38,8 +35,6 @@ class IndexBuilder:
         self.equipment_is_single_phase: dict[str, bool] = {}       # mRID → bool
         self.equipment_current_limits: dict[str, float] = {}       # mRID → Amps
         self.transformer_tap_changers: dict[str, dict] = {}        # PT/Tank mRID → dict of attributes
-        self.manual_tank_to_info: dict[str, str] = {}              # tank mRID → tankInfo mRID
-        self.manual_info_to_kva: dict[str, float] = {}             # tankInfo mRID → VA
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -48,13 +43,9 @@ class IndexBuilder:
     def build(self):
         """Orchestrate all index construction."""
         self._index_equipment()
-        self._build_coordinate_index()
+        self._build_coordinate_index_neo4j()
         self._build_terminal_index()
         self._build_phase_index()
-        if self._xml_path is not None:
-            self.manual_tank_to_info, self.manual_info_to_kva = _manual_xml_catalog_scan(
-                self._xml_path
-            )
         self._build_transformer_index()
         self._build_limit_index()
         self._classify_equipment()
@@ -72,69 +63,96 @@ class IndexBuilder:
                 if m:
                     self.equipment_index[m] = (cls_name, obj)
 
-    def _build_coordinate_index(self):
-        cim = self.cim
-        graph = self.graph
+    def _build_coordinate_index_neo4j(self):
+        """Build eq_coords directly from Neo4j.
 
-        position_points = graph.get(getattr(cim, "PositionPoint", None), {})
+        cimgraph stores Location as a plain UUID string on equipment objects
+        (expand_graph=False) and never adds Location/PositionPoint to the graph,
+        so the old graph-traversal approach always produced zero coordinates.
+        This method bypasses cimgraph and queries Neo4j directly.
+        """
+        import os
+        from neo4j import GraphDatabase
+
+        neo4j_url = os.getenv("CIMG_URL")
+        if not neo4j_url or not self._feeder_uri:
+            logger.warning("Skipping coordinate index — CIMG_URL or feeder_uri not set.")
+            return
+
+        username = os.getenv("CIMG_USERNAME", "neo4j")
+        password = os.getenv("CIMG_PASSWORD", "")
+        database = os.getenv("CIMG_DATABASE", "neo4j")
+
+        query = """
+MATCH (f:Feeder {uri: $feeder_uri})
+MATCH (eq)-[:`Equipment.EquipmentContainer`]->(f)
+MATCH (eq)-[:`PowerSystemResource.Location`]->(loc:Location)
+MATCH (pp:PositionPoint)-[:`PositionPoint.Location`]->(loc)
+RETURN
+    REPLACE(eq.uri, 'urn:uuid:', '') AS eq_mrid,
+    REPLACE(loc.uri, 'urn:uuid:', '') AS loc_mrid,
+    pp.`PositionPoint.xPosition` AS x,
+    pp.`PositionPoint.yPosition` AS y
+"""
+        try:
+            driver = GraphDatabase.driver(neo4j_url, auth=(username, password))
+            with driver.session(database=database) as session:
+                rows = list(session.run(query, feeder_uri=f"urn:uuid:{self._feeder_uri}"))
+            driver.close()
+        except Exception as e:
+            logger.error("Coordinate query failed: %s", e)
+            return
+
         raw_points: list[tuple[float, float]] = []
-
-        for _pp_id, pp in position_points.items():
-            x = _safe_float(getattr(pp, "xPosition", None))
-            y = _safe_float(getattr(pp, "yPosition", None))
+        for row in rows:
+            x = _safe_float(row["x"])
+            y = _safe_float(row["y"])
             if x is not None and y is not None:
                 raw_points.append((x, y))
 
-        # Normalise into ~0.1° box centred on Los Angeles
-        if raw_points:
-            min_x = min(p[0] for p in raw_points)
-            max_x = max(p[0] for p in raw_points)
-            min_y = min(p[1] for p in raw_points)
-            max_y = max(p[1] for p in raw_points)
+        if not raw_points:
+            logger.warning("No PositionPoints found for feeder %s", self._feeder_uri)
+            return
+
+        # Detect if already geographic (CIM: x=longitude, y=latitude)
+        xs = [p[0] for p in raw_points]
+        ys = [p[1] for p in raw_points]
+        is_geographic = (
+            all(-180.0 <= v <= 180.0 for v in xs) and
+            all(-90.0 <= v <= 90.0 for v in ys)
+        )
+
+        if is_geographic:
+            def _to_latlon(x, y): return float(y), float(x)
+        else:
+            min_x, max_x = min(xs), max(xs)
+            min_y, max_y = min(ys), max(ys)
             span_x = (max_x - min_x) or 1.0
             span_y = (max_y - min_y) or 1.0
-
-            def _normalize(x, y):
+            def _to_latlon(x, y):
                 lon = (x - min_x) / span_x * 0.1 - 118.2437
                 lat = (y - min_y) / span_y * 0.1 + 34.0522
                 return lat, lon
-        else:
-            def _normalize(x, y):
-                return 34.0522, -118.2437
 
-        # Location mRID → (lat, lon)
-        for _pp_id, pp in position_points.items():
-            loc = getattr(pp, "Location", None)
-            loc_id = _mrid_str(loc)
-            x = _safe_float(getattr(pp, "xPosition", None))
-            y = _safe_float(getattr(pp, "yPosition", None))
-            if loc_id and x is not None and y is not None:
-                if loc_id not in self.location_coords:
-                    self.location_coords[loc_id] = _normalize(x, y)
-
-        # Equipment mRID → (lat, lon)
-        eq_cls_with_location = []
-        for opt in ("ACLineSegment", "PowerTransformer", "Breaker",
-                    "LoadBreakSwitch", "EnergyConsumer", "EnergySource",
-                    "Fuse", "Disconnector", "Recloser", "Substation",
-                    "LinearShuntCompensator", "TransformerTank"):
-            cls = getattr(cim, opt, None)
-            if cls:
-                eq_cls_with_location.append(cls)
-
-        for eq_cls in eq_cls_with_location:
-            for _eid, eq in graph.get(eq_cls, {}).items():
-                eq_m = _mrid_str(eq)
-                loc = getattr(eq, "Location", None)
-                loc_id = _mrid_str(loc)
-                if eq_m and loc_id and loc_id in self.location_coords:
-                    self.eq_coords[eq_m] = self.location_coords[loc_id]
+        # Populate both location_coords and eq_coords in one pass
+        for row in rows:
+            x = _safe_float(row["x"])
+            y = _safe_float(row["y"])
+            eq_mrid = (row["eq_mrid"] or "").upper()
+            loc_mrid = (row["loc_mrid"] or "").upper()
+            if x is None or y is None or not eq_mrid:
+                continue
+            latlon = _to_latlon(x, y)
+            if loc_mrid and loc_mrid not in self.location_coords:
+                self.location_coords[loc_mrid] = latlon
+            if eq_mrid not in self.eq_coords:
+                self.eq_coords[eq_mrid] = latlon
 
         logger.info(
-            "  %d position points → %d locations → %d equipment geocoded",
-            len(raw_points),
-            len(self.location_coords),
+            "  Coordinates: %d equipment geocoded from %d position points (geographic=%s)",
             len(self.eq_coords),
+            len(raw_points),
+            is_geographic,
         )
 
     def _build_terminal_index(self):
@@ -474,43 +492,7 @@ class IndexBuilder:
                     if eq_id not in self.equipment_current_limits:
                         self.equipment_current_limits[eq_id] = val
 
-        # ── 4. Fallback: Manual XML Scan results ──
-        tank_count = 0
-        for tank_mrid, info_mrid in self.manual_tank_to_info.items():
-            if self.transformer_kva.get(tank_mrid, 0.0) == 0.0:
-                kva = self.manual_info_to_kva.get(info_mrid)
-                if kva:
-                    val = kva / 1000.0
-                    self.transformer_kva[tank_mrid] = val
-                    tank_count += 1
-
-                    tank_obj_tuple = self.equipment_index.get(tank_mrid)
-                    if tank_obj_tuple:
-                        tank_obj = tank_obj_tuple[1]
-                        pt = getattr(tank_obj, "PowerTransformer", None)
-                        pt_id = _mrid_str(pt)
-                        if pt_id:
-                            self.transformer_kva[pt_id] = max(
-                                self.transformer_kva.get(pt_id, 0.0), val
-                            )
-
-        # Fallback for PowerTransformerInfo linked directly to PowerTransformer
-        # (models that don't use Tanks for substation transformers)
-        pt_cls = getattr(cim, "PowerTransformer", None)
-        if pt_cls:
-            for _pid, pt in graph.get(pt_cls, {}).items():
-                pt_id = _mrid_str(pt)
-                if pt_id and self.transformer_kva.get(pt_id, 0.0) == 0.0:
-                    pti = getattr(pt, "PowerTransformerInfo", None)
-                    pti_id = _mrid_str(pti)
-                    if pti_id:
-                        kva = self.manual_info_to_kva.get(pti_id)
-                        if kva:
-                            self.transformer_kva[pt_id] = kva / 1000.0
-                            tank_count += 1
-
         logger.info(
-            "  Transformer KVA index: %d transformers rated (%d from manual scan fallback)",
+            "  Transformer KVA index: %d transformers rated",
             len(self.transformer_kva),
-            tank_count,
         )

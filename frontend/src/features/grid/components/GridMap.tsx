@@ -1,11 +1,13 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import DeckGL from '@deck.gl/react';
-import { ScatterplotLayer, PathLayer, IconLayer, TextLayer } from '@deck.gl/layers';
-import { PathStyleExtension } from '@deck.gl/extensions';
 import { WebMercatorViewport } from '@deck.gl/core';
-import Supercluster from 'supercluster';
 import type { Node, Edge } from '../../../shared/types';
 import { useSpriteMap } from '../hooks/useSpriteMap';
+import { useCimTooltip } from '../hooks/useCimTooltip';
+import { useViewState } from '../hooks/useViewState';
+import { useClustering } from '../hooks/useClustering';
+import { useLayers } from '../hooks/useLayers';
+import { renderRuleTooltip, getTooltipContent } from '../model/tooltipRenderer';
 
 interface GridMapProps {
     nodes: Node[];
@@ -31,797 +33,82 @@ interface GridMapProps {
     goToLocation?: { longitude: number; latitude: number } | null;
     spriteVersion?: number;
 }
-const stringToColor = (str: string): [number, number, number] => {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-        hash = str.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    // Generate subtle colors (hue, saturation ~50%, lightness ~60%)
-    // Converted to simple RGB hash
-    const c = (hash & 0x00FFFFFF).toString(16).toUpperCase();
-    const hex = "00000".substring(0, 6 - c.length) + c;
 
-    // Mix with gray to make it subtle
-    const r = Math.floor((parseInt(hex.substring(0, 2), 16) + 150) / 2);
-    const g = Math.floor((parseInt(hex.substring(2, 4), 16) + 150) / 2);
-    const b = Math.floor((parseInt(hex.substring(4, 6), 16) + 150) / 2);
+export const GridMap = React.memo((props: GridMapProps) => {
+    const {
+        nodes,
+        edges,
+        onNodeClick,
+        onEdgeClick,
+        highlightedNodes = new Set(),
+        highlightedEdges = new Set(),
+        selectedNodeIds = [],
+        nodeAverages = null,
+        nodeCurrents = null,
+        onMapClick,
+        voltageScale,
+        fitHighlightedNodesTrigger = 0,
+        skipGlobalFit = false,
+        onViewStateChange,
+        goToLocation,
+        spriteVersion = 0,
+    } = props;
 
-    return [r, g, b];
-};
-
-// Switch and breaker edge_type values
-const SWITCH_EDGE_TYPES = new Set(['Breaker', 'LoadBreakSwitch', 'Fuse', 'Disconnector', 'Recloser']);
-
-
-// Derive a visual category from node.type and attached_equipment.
-// After the CIM refactor, node.type is only "Bus" | "Substation"; richer
-// categories come from what equipment is attached at the node.
-const getVisualType = (node: Node): string => {
-    if (node.display_type) return node.display_type;
-    if (node.type === 'Substation') return 'Substation';
-    const attached = node.attached_equipment ?? [];
-    if (attached.some(eq => eq.type === 'EnergySource')) return 'Substation';
-    if (attached.some(eq => eq.type === 'EnergyConsumer')) return 'Meter';
-    if (attached.some(eq => eq.type === 'Capacitor')) return 'Capacitor';
-    return 'Bus';
-};
-
-const getNodeColor = (node: Node, visualType: string, isHighlighted: boolean, isSelected: boolean, circuitId?: string): [number, number, number] => {
-    if (isSelected) return [255, 200, 50];
-    if (isHighlighted) return [60, 160, 240];
-
-    if (node.display_color) {
-        const hex = node.display_color.replace('#', '');
-        if (hex.length === 6) {
-            const r = parseInt(hex.substring(0, 2), 16);
-            const g = parseInt(hex.substring(2, 4), 16);
-            const b = parseInt(hex.substring(4, 6), 16);
-            return [r, g, b];
-        }
-    }
-
-    if (circuitId && circuitId !== 'unknown') {
-        return stringToColor(circuitId);
-    }
-
-    switch (visualType) {
-        case 'Substation':
-            return [255, 50, 50];
-        case 'Meter':
-            return [100, 255, 100];
-        case 'Capacitor':
-            return [255, 210, 80];
-        case 'Regulator':
-            return [255, 120, 0];
-        case 'Recloser':
-            return [0, 200, 255];
-        default:
-            return [200, 200, 200];
-    }
-};
-
-const getEdgeColor = (edge: Edge, isHighlighted: boolean, isHovered: boolean, circuitId?: string): [number, number, number] => {
-    if (isHighlighted) return [60, 160, 240];
-    if (isHovered) return [255, 255, 255];
-
-    if (edge.display_color) {
-        const hex = edge.display_color.replace('#', '');
-        if (hex.length === 6) {
-            const r = parseInt(hex.substring(0, 2), 16);
-            const g = parseInt(hex.substring(2, 4), 16);
-            const b = parseInt(hex.substring(4, 6), 16);
-            return [r, g, b];
-        }
-    }
-
-    // Default coloring for switches if no rule override
-    if (edge.edge_type && SWITCH_EDGE_TYPES.has(edge.edge_type)) {
-        return edge.is_open ? [255, 107, 107] : [105, 219, 124]; // Red for open, Green for closed
-    }
-
-    if (circuitId && circuitId !== 'unknown') {
-        return stringToColor(circuitId);
-    }
-
-    return [150, 150, 150];
-};
-
-const edgeMidpoint = (d: Edge): [number, number] => [
-    (d.sourcePosition[0] + d.targetPosition[0]) / 2,
-    (d.sourcePosition[1] + d.targetPosition[1]) / 2,
-];
-
-export const GridMap = React.memo<GridMapProps>(({
-    nodes,
-    edges,
-    onNodeClick,
-    onEdgeClick,
-    highlightedNodes = new Set(),
-    highlightedEdges = new Set(),
-    selectedNodeIds = [],
-    nodeAverages = null,
-    nodeCurrents = null,
-    onMapClick,
-    voltageScale,
-    fitHighlightedNodesTrigger = 0,
-    skipGlobalFit = false,
-    onViewStateChange,
-    goToLocation,
-    spriteVersion = 0,
-}) => {
     const selectedNodeIdsSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
+
     const [mounted, setMounted] = useState(false);
-    const lastModelIdsRef = useRef<Set<string>>(new Set());
-    const lastHandledTrigger = useRef(0);
+    const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
     const isDraggingRef = useRef(false);
     const lastDragTime = useRef(0);
-    const mouseDownPos = useRef<{x: number, y: number} | null>(null);
-    const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+    const mouseDownPos = useRef<{ x: number; y: number } | null>(null);
 
-    // Load sprite atlas from backend.
     const spriteMap = useSpriteMap(spriteVersion);
-
-    const [viewState, setViewState] = useState<any>({
-        longitude: -118.2437,
-        latitude: 34.0522,
-        zoom: 14,
-        pitch: 0,
-        bearing: 0
-    });
+    const { cimCache, hoverInfo, onTooltipHover } = useCimTooltip();
     const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
     const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
 
-    // Initial and conditional fit-to-bounds
-    useEffect(() => {
-        if (nodes.length > 0 && dimensions.width > 0 && !skipGlobalFit) {
-            // Compute current active model IDs for change detection
-            const currentModelIds = new Set(nodes.map(n => n.model_id).filter(Boolean) as string[]);
-            const modelIdsChanged = currentModelIds.size !== lastModelIdsRef.current.size || 
-                                   Array.from(currentModelIds).some(id => !lastModelIdsRef.current.has(id));
+    const { viewState, setViewState, handleViewStateChange } = useViewState({
+        nodes, dimensions, highlightedNodes, fitHighlightedNodesTrigger, skipGlobalFit, goToLocation, onViewStateChange,
+    });
 
-            // Should we perform a fit bounds?
-            // 1. If waitHighlightedNodesTrigger changed (manual request)
-            // 2. If the set of models changed (new model loaded)
-            // 3. If this is the initial mount (lastModelIdsRef is empty)
-            const isInitialFit = lastModelIdsRef.current.size === 0;
-            const isManualFit = fitHighlightedNodesTrigger > lastHandledTrigger.current;
-            const shouldFit = isInitialFit || isManualFit || modelIdsChanged;
+    const { clusteredData, nodePositions, visualEdgePaths } = useClustering({ nodes, edges, viewState, dimensions });
 
-            if (!shouldFit) return;
+    const layers = useLayers({
+        clusteredData, visualEdgePaths, nodes, edges, nodePositions, spriteMap, viewState,
+        hoveredNodeId, hoveredEdgeId, highlightedNodes, highlightedEdges, selectedNodeIdsSet,
+        nodeAverages, voltageScale, isDraggingRef,
+        onNodeClick, onEdgeClick, setHoveredNodeId, setHoveredEdgeId, onTooltipHover, setViewState,
+    });
 
-            if (isManualFit) {
-                lastHandledTrigger.current = fitHighlightedNodesTrigger;
-            }
-            lastModelIdsRef.current = currentModelIds;
-
-            const highlightedIds = highlightedNodes;
-            const nodesToFit = highlightedIds.size > 0 
-                ? nodes.filter(n => highlightedIds.has(n.id))
-                : nodes;
-
-            if (nodesToFit.length === 0) return;
-
-            const viewport = new WebMercatorViewport({
-                width: dimensions.width,
-                height: dimensions.height,
-                ...viewState
-            });
-
-            // If more than one node is highlighted, check if they are all visible
-            if (highlightedNodes.size > 1) {
-                const allVisible = nodesToFit.every(n => {
-                    const [x, y] = viewport.project(n.position);
-                    const paddingX = dimensions.width * 0.1;
-                    const paddingY = dimensions.height * 0.1;
-                    return (
-                        x >= paddingX &&
-                        x <= dimensions.width - paddingX &&
-                        y >= paddingY &&
-                        y <= dimensions.height - paddingY
-                    );
-                });
-
-                if (allVisible) {
-                    console.log('[GridMap] All nodes already visible, skipping zoom transition');
-                    return;
-                }
-            }
-
-            let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
-            nodesToFit.forEach(n => {
-                const [lon, lat] = n.position;
-                if (!isNaN(lon) && !isNaN(lat)) {
-                    minLon = Math.min(minLon, lon);
-                    maxLon = Math.max(maxLon, lon);
-                    minLat = Math.min(minLat, lat);
-                    maxLat = Math.max(maxLat, lat);
-                }
-            });
-
-            if (minLon === Infinity) return;
-
-            let targetLon, targetLat, targetZoom;
-
-            if (nodesToFit.length === 1) {
-                targetLon = nodesToFit[0].position[0];
-                targetLat = nodesToFit[0].position[1];
-                targetZoom = Math.max(viewState.zoom, 17); // Focus in but don't zoom out
-            } else {
-                const bounds = viewport.fitBounds(
-                    [[minLon, minLat], [maxLon, maxLat]],
-                    {
-                        padding: Math.min(dimensions.width, dimensions.height) * 0.2,
-                        maxZoom: 18
-                    }
-                );
-                targetLon = bounds.longitude;
-                targetLat = bounds.latitude;
-                targetZoom = bounds.zoom;
-            }
-
-            setViewState((prev: any) => ({
-                ...prev,
-                longitude: targetLon,
-                latitude: targetLat,
-                zoom: targetZoom,
-                transitionDuration: 1000
-            }));
-        }
-    }, [nodes, dimensions.width, dimensions.height, fitHighlightedNodesTrigger, highlightedNodes, skipGlobalFit]);
-
-    // Handle external navigation from search/HUD
-    const lastGoTo = useRef<{ longitude: number; latitude: number } | null>(null);
-    useEffect(() => {
-        if (goToLocation && goToLocation !== lastGoTo.current) {
-            lastGoTo.current = goToLocation;
-            setViewState((prev: any) => ({
-                ...prev,
-                longitude: goToLocation.longitude,
-                latitude: goToLocation.latitude,
-                transitionDuration: 300
-            }));
-        }
-    }, [goToLocation]);
-
-    // The original `useEffect` for mounting and dimensions.
-    // This `useEffect` should remain as is.
     useEffect(() => {
         setMounted(true);
-        const updateSize = () => {
-            setDimensions({
-                width: window.innerWidth,
-                height: window.innerHeight >= 500 ? window.innerHeight : 500
-            });
-        };
+        const updateSize = () => setDimensions({
+            width: window.innerWidth,
+            height: window.innerHeight >= 500 ? window.innerHeight : 500,
+        });
         updateSize();
         window.addEventListener('resize', updateSize);
         return () => window.removeEventListener('resize', updateSize);
     }, []);
 
-    const nodePositions = useMemo(() => {
-        const posMap: Record<string, [number, number]> = {};
-        nodes.forEach(node => {
-            posMap[node.id] = node.position;
-        });
-        return posMap;
-    }, [nodes]);
-
-    const offsetEdges = useMemo(() => {
-        return edges.map(edge => ({
-            ...edge,
-            sourcePosition: nodePositions[edge.source] || edge.sourcePosition,
-            targetPosition: nodePositions[edge.target] || edge.targetPosition
-        }));
-    }, [edges, nodePositions]);
-
-    const visualEdgePaths = useMemo(() => {
-        const OFFSET = 0.00004; // ~4-5 meters
-        const visibleEdges = offsetEdges.filter(e =>
-            (e.display_min_zoom === undefined || viewState.zoom >= e.display_min_zoom) &&
-            (e.display_max_zoom === undefined || viewState.zoom <= e.display_max_zoom)
-        );
-
-        return visibleEdges.flatMap(e => {
-            const isSwitch = (e.edge_type && SWITCH_EDGE_TYPES.has(e.edge_type));
-            if (!isSwitch) return [{ ...e, path: [e.sourcePosition, e.targetPosition] }];
-
-            const mid = edgeMidpoint(e);
-            const dx = (e.targetPosition[0] - e.sourcePosition[0]) * Math.cos((e.sourcePosition[1] * Math.PI) / 180);
-            const dy = e.targetPosition[1] - e.sourcePosition[1];
-            const len = Math.sqrt(dx * dx + dy * dy);
-            if (len < OFFSET * 3) return [{ ...e, path: [e.sourcePosition, e.targetPosition] }];
-
-            const ux = (e.targetPosition[0] - e.sourcePosition[0]) / Math.sqrt(Math.pow(e.targetPosition[0] - e.sourcePosition[0], 2) + Math.pow(e.targetPosition[1] - e.sourcePosition[1], 2));
-            const uy = (e.targetPosition[1] - e.sourcePosition[1]) / Math.sqrt(Math.pow(e.targetPosition[0] - e.sourcePosition[0], 2) + Math.pow(e.targetPosition[1] - e.sourcePosition[1], 2));
-
-            return [
-                { ...e, path: [e.sourcePosition, [mid[0] - ux * (OFFSET / Math.cos((mid[1] * Math.PI) / 180)), mid[1] - uy * OFFSET]] },
-                { ...e, path: [[mid[0] + ux * (OFFSET / Math.cos((mid[1] * Math.PI) / 180)), mid[1] + uy * OFFSET], e.targetPosition] }
-            ];
-        });
-    }, [offsetEdges, viewState.zoom]);
-    
-    // Clustering Logic
-    const clusteredData = useMemo(() => {
-        const zoom = Math.floor(viewState.zoom);
-        
-        const visibleNodes = nodes.filter(n =>
-            (n.display_min_zoom === undefined || viewState.zoom >= n.display_min_zoom) &&
-            (n.display_max_zoom === undefined || viewState.zoom <= n.display_max_zoom)
-        );
-
-        // Group nodes by their clustering configuration
-        // We use a key like "radius-maxZoom-minPoints"
-        const configs = new Map<string, { nodes: Node[], radius: number, maxZoom: number, minPoints: number }>();
-
-        visibleNodes.forEach(node => {
-            if (!node.cluster_enabled) return;
-            const key = `${node.cluster_radius}-${node.cluster_max_zoom}-${node.cluster_min_points}`;
-            if (!configs.has(key)) {
-                configs.set(key, { 
-                    nodes: [], 
-                    radius: node.cluster_radius || 40, 
-                    maxZoom: node.cluster_max_zoom || 20, 
-                    minPoints: node.cluster_min_points || 2 
-                });
-            }
-            configs.get(key)!.nodes.push(node);
-        });
-
-        const allClusteredNodes = new Set<string>();
-        const clusters: any[] = [];
-        const unclusteredNodes: Node[] = [];
-
-        // For each unique configuration, perform clustering
-        configs.forEach((cfg) => {
-            const sc = new Supercluster({
-                radius: cfg.radius,
-                maxZoom: cfg.maxZoom,
-                minPoints: cfg.minPoints
-            });
-
-            const points = cfg.nodes.map((n: Node) => ({
-                type: 'Feature' as const,
-                properties: { nodeId: n.id, node: n },
-                geometry: {
-                    type: 'Point' as const,
-                    coordinates: n.position
-                }
-            }));
-
-            sc.load(points);
-
-            // Get viewport bounds for clustering if possible, otherwise use full data
-            let bounds: any = [-180, -85, 180, 85];
-            if (dimensions.width > 0) {
-                try {
-                    const viewport = new WebMercatorViewport({
-                        width: dimensions.width,
-                        height: dimensions.height,
-                        ...viewState
-                    });
-                    bounds = viewport.getBounds();
-                } catch (e) {}
-            }
-
-            const results = sc.getClusters(bounds, zoom);
-            
-            results.forEach(feat => {
-                if (feat.properties.cluster) {
-                    clusters.push({
-                        id: `cluster-${feat.id}`,
-                        position: feat.geometry.coordinates,
-                        pointCount: feat.properties.point_count,
-                        pointCountAbbreviated: feat.properties.point_count_abbreviated,
-                        // Use properties of the first node for styling if needed, or defaults
-                        config: cfg
-                    });
-                } else {
-                    unclusteredNodes.push(feat.properties.node);
-                }
-            });
-            
-            // Track which nodes are technically handled by this cluster config
-            cfg.nodes.forEach(n => allClusteredNodes.add(n.id));
-        });
-
-        // Final list of nodes to render:
-        // 1. Nodes that had clustering disabled
-        // 2. Nodes that had clustering enabled but were returned as unclustered by supercluster
-        const staticNodes = visibleNodes.filter(n => !n.cluster_enabled);
-        
-        return {
-            nodesToRender: [...staticNodes, ...unclusteredNodes],
-            clusters
-        };
-    }, [nodes, viewState.zoom, viewState.longitude, viewState.latitude, dimensions]);
-
-    const layers = useMemo(() => [
-        new ScatterplotLayer({
-            id: 'selection-halo',
-            data: clusteredData.nodesToRender.filter(n => selectedNodeIdsSet.has(n.id)),
-            getPosition: (d: Node) => nodePositions[d.id],
-            getFillColor: [255, 255, 255, 80],
-            getRadius: (d: Node) => {
-                const vt = getVisualType(d);
-                const baseRadius = vt === 'Meter' || vt === 'Bus' ? 4 : 8;
-                return baseRadius * 1.1;
-            },
-            radiusUnits: 'pixels',
-            radiusScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
-            radiusMinPixels: 2,
-            pickable: false,
-            updateTriggers: {
-                getRadius: [selectedNodeIdsSet, viewState.zoom],
-                getFillColor: [selectedNodeIdsSet]
-            }
-        }),
-        new PathLayer({
-            id: 'grid-lines-hit-area',
-            data: visualEdgePaths,
-            getPath: (d: any) => d.path,
-            getColor: () => [0, 0, 0, 0],
-            getWidth: () => 15, // Large hit area
-            widthUnits: 'pixels',
-            pickable: true,
-            autoHighlight: false,
-            onHover: (info) => {
-                setHoveredEdgeId(info.object ? (info.object.id || `${info.object.source}-${info.object.target}`) : null);
-            },
-            onClick: (info, event) => {
-                const srcEvent = (event as any).srcEvent as MouseEvent;
-                if (info.object && srcEvent && onEdgeClick) {
-                    onEdgeClick(info.object as Edge, srcEvent.shiftKey || srcEvent.ctrlKey);
-                }
-            }
-        }),
-        new PathLayer({
-            id: 'grid-lines',
-            data: visualEdgePaths,
-            getPath: (d: any) => d.path,
-            getColor: (d: Edge) => {
-                if (nodeAverages && nodeAverages[d.target] !== undefined && voltageScale) {
-                    const voltage = nodeAverages[d.target];
-                    const pu = voltage / (voltageScale.baseVoltage || 120);
-                    // Soft coral for critical high
-                    if (pu > voltageScale.criticalHigh) return [255, 107, 107, 200];
-                    // Muted orange for high warning
-                    if (pu >= voltageScale.highWarning) return [250, 150, 80, 200];
-                    // Emerald green for low warning (since it's inverted from normal logic, this is 'in band' here)
-                    if (pu >= voltageScale.lowWarning) return [46, 204, 113, 200];
-                    // Soft gold for critical low (since it's warning)
-                    if (pu >= voltageScale.criticalLow) return [241, 196, 15, 200];
-                    // Periwinkle/Indigo for extreme low
-                    return [142, 68, 173, 200];
-                }
-                if (highlightedEdges.has(d.id || '') || highlightedEdges.has(`${d.source}-${d.target}`)) return [60, 160, 240, 200];
-                return d.circuit_id && d.circuit_id !== 'unknown' ? [...stringToColor(d.circuit_id), 120] as [number, number, number, number] : [150, 150, 150, 150];
-            },
-            getWidth: (d: Edge) => {
-                const isHovered = (d.id && hoveredEdgeId === d.id) || hoveredEdgeId === `${d.source}-${d.target}`;
-                if (isHovered) return 4;
-                
-                // Base width: scale from 1.0 to 2.5 based on primary phase count
-                const realPhases = d.phases ? d.phases.filter(p => !['N', 'Neutral'].includes(p)) : ['A', 'B', 'C'];
-                const phaseCount = Math.max(1, realPhases.length);
-                let width = 1 + (phaseCount - 1) * 0.75; // 1.0, 1.75, 2.5
-                
-                if (nodeAverages && nodeAverages[d.target] !== undefined) width += 1;
-                if (highlightedEdges.has(d.id || '') || highlightedEdges.has(`${d.source}-${d.target}`)) width += 1;
-                
-                return width;
-            },
-            widthUnits: 'pixels',
-            getDashArray: (d: Edge) => {
-                const count = d.phases ? d.phases.length : 3;
-                if (count === 1) return [4, 4];
-                if (count === 2) return [12, 6];
-                return [0, 0];
-            },
-            dashJustified: true,
-            extensions: [new PathStyleExtension({ dash: true })],
-            pickable: false,
-            updateTriggers: {
-                getColor: [highlightedEdges, nodeAverages, voltageScale],
-                getWidth: [highlightedEdges, hoveredEdgeId, nodeAverages]
-            }
-        }),
-        new ScatterplotLayer({
-            id: 'grid-nodes',
-            data: clusteredData.nodesToRender.filter(n => getVisualType(n) !== 'Bus' && !n.display_icon),
-            getPosition: (d: Node) => nodePositions[d.id],
-            getFillColor: (d: Node) => {
-                if (selectedNodeIdsSet.has(d.id)) return [255, 200, 50, 255];
-
-                if (nodeAverages && nodeAverages[d.id] !== undefined && voltageScale) {
-                    const voltage = nodeAverages[d.id];
-                    const pu = voltage / (voltageScale.baseVoltage || 120);
-                    if (pu > voltageScale.criticalHigh) return [255, 107, 107, 200];
-                    if (pu >= voltageScale.highWarning) return [250, 150, 80, 200];
-                    if (pu >= voltageScale.lowWarning) return [46, 204, 113, 200];
-                    if (pu >= voltageScale.criticalLow) return [241, 196, 15, 200];
-                    return [142, 68, 173, 200];
-                }
-
-                const vt = getVisualType(d);
-                const color = getNodeColor(d, vt, highlightedNodes.has(d.id), false, d.circuit_id);
-                return [color[0], color[1], color[2], 255];
-            },
-            getRadius: (d: Node) => {
-                const isHovered = hoveredNodeId === d.id;
-                const isHighlighted = highlightedNodes.has(d.id);
-                const isSelected = selectedNodeIdsSet.has(d.id);
-                const baseRadius = 2;
-                let radius = isHovered ? baseRadius * 2.5 : baseRadius;
-                if (isHighlighted) radius *= 1.5;
-                if (isSelected) radius *= 1.1;
-                return radius;
-            },
-            updateTriggers: {
-                getRadius: [hoveredNodeId, highlightedNodes, selectedNodeIdsSet],
-                getFillColor: [highlightedNodes, selectedNodeIdsSet, nodeAverages, voltageScale]
-            },
-            radiusUnits: 'pixels',
-            radiusScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
-            radiusMinPixels: 1,
-            pickable: true,
-            autoHighlight: true,
-            highlightColor: [255, 255, 255, 50],
-            onHover: (info) => {
-                setHoveredNodeId(info.object ? info.object.id : null);
-            },
-            onClick: (info, event) => {
-                if (isDraggingRef.current) return;
-                const srcEvent = (event as any).srcEvent as MouseEvent;
-                console.log('[GridMap] Interaction:', info.object?.id, 'Shift:', srcEvent?.shiftKey);
-                if (info.object && srcEvent) {
-                    onNodeClick(info.object, srcEvent.shiftKey || srcEvent.ctrlKey);
-                }
-            }
-        }),
-        new IconLayer({
-        }),
-        spriteMap && new IconLayer<Node>({
-            id: 'grid-nodes-custom',
-            data: clusteredData.nodesToRender.filter(n => !!n.display_icon && !!spriteMap.mapping[n.display_icon!]),
-            getPosition: (d: Node) => d.position,
-            // Sprite atlas mode — one shared texture, no per-datum image loading
-            iconAtlas: spriteMap.atlasUrl,
-            iconMapping: spriteMap.mapping,
-            getIcon: (d: Node) => d.display_icon!,
-            getColor: (d: Node) => getNodeColor(d, getVisualType(d), highlightedNodes.has(d.id), selectedNodeIdsSet.has(d.id), d.circuit_id),
-            getSize: (d: Node) => {
-                const isHovered = hoveredNodeId === d.id;
-                const isHighlighted = highlightedNodes.has(d.id);
-                const sizeAttr = d.display_size ?? 1.0;
-                let size = isHovered ? sizeAttr * 1.5 : sizeAttr;
-                if (isHighlighted) size *= 1.2;
-                return size;
-            },
-            sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
-            sizeMinPixels: 1,
-            pickable: true,
-            onHover: (info) => {
-                setHoveredNodeId(info.object ? info.object.id : null);
-            },
-            onClick: (info, event) => {
-                if (isDraggingRef.current) return;
-                const srcEvent = (event as any).srcEvent as MouseEvent;
-                if (info.object && srcEvent) {
-                    onNodeClick(info.object, srcEvent.shiftKey || srcEvent.ctrlKey);
-                }
-            },
-            updateTriggers: {
-                getSize: [hoveredNodeId, highlightedNodes, nodes],
-                getIcon: [nodes, spriteMap],
-                getColor: [highlightedNodes, selectedNodeIdsSet, nodes],
-            }
-        }),
-        spriteMap && new IconLayer({
-            id: 'grid-custom-edge-icons',
-            data: edges.filter(e => e.display_icon && !!spriteMap.mapping[e.display_icon!]),
-            getPosition: (d: Edge) => edgeMidpoint(d),
-            // Sprite atlas mode — one shared texture, no per-datum image loading
-            iconAtlas: spriteMap.atlasUrl,
-            iconMapping: spriteMap.mapping,
-            getIcon: (d: Edge) => d.display_icon!,
-            getColor: (d: Edge) => getEdgeColor(d, highlightedEdges.has(d.id || ''), hoveredEdgeId === d.id, d.circuit_id),
-            getSize: (d: Edge) => {
-                const isHovered = hoveredEdgeId === d.id;
-                const isHighlighted = highlightedEdges.has(d.id || '');
-                const sizeAttr = d.display_size ?? 1.0;
-                let size = isHovered ? sizeAttr * 1.5 : sizeAttr;
-                if (isHighlighted) size *= 1.2;
-                return size;
-            },
-            sizeScale: Math.pow(1.5, (viewState.zoom || 14) - 14),
-            sizeMinPixels: 1,
-            pickable: true,
-            onHover: (info) => {
-                setHoveredEdgeId(info.object ? (info.object.id ?? null) : null);
-            },
-            onClick: (info, event) => {
-                if (isDraggingRef.current) return;
-                const srcEvent = (event as any).srcEvent as MouseEvent;
-                if (info.object && srcEvent && onEdgeClick) {
-                    onEdgeClick(info.object as Edge, srcEvent.shiftKey || srcEvent.ctrlKey);
-                }
-            },
-            updateTriggers: {
-                getSize: [hoveredEdgeId, highlightedEdges, edges],
-                getIcon: [edges, spriteMap],
-                getColor: [highlightedEdges, hoveredEdgeId, edges],
-            }
-        }),
-        new ScatterplotLayer({
-            id: 'clusters',
-            data: clusteredData.clusters,
-            getPosition: (d: any) => d.position,
-            getFillColor: [40, 40, 40, 220],
-            getLineColor: [100, 100, 100, 255],
-            getLineWidth: 2,
-            lineWidthUnits: 'pixels',
-            getRadius: (d: any) => {
-                const count = d.pointCount;
-                if (count < 10) return 15;
-                if (count < 100) return 20;
-                return 25;
-            },
-            radiusUnits: 'pixels',
-            pickable: true,
-            onClick: (info) => {
-                if (info.object && info.object.position) {
-                    setViewState((prev: any) => ({
-                        ...prev,
-                        longitude: info.object.position[0],
-                        latitude: info.object.position[1],
-                        zoom: prev.zoom + 2,
-                        transitionDuration: 500
-                    }));
-                }
-            }
-        }),
-        new TextLayer({
-            id: 'cluster-counts',
-            data: clusteredData.clusters,
-            getPosition: (d: any) => d.position,
-            getText: (d: any) => d.pointCountAbbreviated.toString(),
-            getSize: 12,
-            getColor: [255, 255, 255],
-            getAngle: 0,
-            getTextAnchor: 'middle',
-            getAlignmentBaseline: 'center',
-            updateTriggers: {
-                getPosition: [clusteredData.clusters]
-            }
-        })
-    ], [clusteredData, visualEdgePaths, hoveredNodeId, hoveredEdgeId, highlightedNodes, highlightedEdges, selectedNodeIdsSet, nodeAverages, voltageScale, onNodeClick, onEdgeClick, viewState.zoom, nodePositions]);
-
-    const getTooltipContent = (object: any) => {
-        if (!object) return null;
-        
-        // Cluster detected
-        if (object.pointCount) {
-            return {
-                html: `
-                <div class="grid-map-tooltip" style="padding: 10px; background: #1A1B1E; border: 1px solid #373A40; border-radius: 8px; color: #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.5); min-width: 150px; pointer-events: auto;">
-                    <div style="font-size: 14px; font-weight: 700; margin-bottom: 5px; color: #4dabf7;">Cluster</div>
-                    <div style="font-size: 13px;">
-                        <span><strong>Aggregated nodes:</strong> ${object.pointCount}</span>
-                    </div>
-                    <div style="margin-top: 8px; font-size: 11px; opacity: 0.6;">Click to expand</div>
-                </div>
-                `,
-                style: { backgroundColor: 'transparent', fontSize: '12px' }
-            };
-        }
-        
-        // Node detected (Nodes have 'position' and 'type', but not 'source')
-        if ('position' in object && !('source' in object)) {
-            const node = object as Node;
-            let attachedInfo = '';
-            if (node.attached_equipment && node.attached_equipment.length > 0) {
-                attachedInfo = `<div style="margin-top: 8px; border-top: 1px solid #373A40; padding-top: 5px;">`;
-                node.attached_equipment.forEach(eq => {
-                    attachedInfo += `<div style="margin-top: 2px;">• <strong>${eq.type}:</strong> ${eq.name}`;
-                    if (eq.active_power_w != null) {
-                        attachedInfo += `<br/>&nbsp;&nbsp;Rating: ${(eq.active_power_w / 1000).toFixed(1)} kVA`;
-                    }
-                    if (eq.phases) {
-                        attachedInfo += `<br/>&nbsp;&nbsp;Phases: ${eq.phases.join('')}`;
-                    }
-                    attachedInfo += `</div>`;
-                });
-                attachedInfo += `</div>`;
-            }
-            
-            return {
-                html: `
-                <div class="grid-map-tooltip" style="padding: 10px; background: #1A1B1E; border: 1px solid #373A40; border-radius: 8px; color: #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.5); min-width: 150px; pointer-events: auto;">
-                    <div style="font-size: 14px; font-weight: 700; margin-bottom: 5px; color: #4dabf7;">${node.name || 'Unnamed Node'}</div>
-                    <div style="opacity: 0.8; font-size: 12px; margin-bottom: 8px;">${node.id}</div>
-                    <div style="display: flex; gap: 10px; font-size: 13px;">
-                        <span><strong>Type:</strong> ${node.type || 'ConnectivityNode'}</span>
-                        <span><strong>Phases:</strong> ${Array.isArray(node.phases) ? node.phases.join('') : (node.phases || 'ABC')}</span>
-                    </div>
-                    ${attachedInfo}
-                </div>
-                `,
-                style: { backgroundColor: 'transparent', fontSize: '12px' }
-            };
-        } 
-        
-        // Edge detected
-        const edgeObj = object as Edge;
-        const phaseData = Array.isArray(edgeObj.phases) ? edgeObj.phases.join('') : (edgeObj.phases || 'ABC');
-        
-        let details = '';
-        if (edgeObj.transformer_kva && edgeObj.transformer_kva > 0) {
-            details = `<div style="margin-top: 5px; color: #ffd43b;"><strong>Rating:</strong> ${edgeObj.transformer_kva.toFixed(1)} kVA</div>`;
-        } else if (edgeObj.is_open !== undefined && edgeObj.edge_type && SWITCH_EDGE_TYPES.has(edgeObj.edge_type)) {
-            details = `<div style="margin-top: 5px; color: ${edgeObj.is_open ? '#ff6b6b' : '#69db7c'};"><strong>State:</strong> ${edgeObj.is_open ? 'OPEN' : 'CLOSED'}</div>`;
-        } else if (edgeObj.length_m) {
-            details = `<div style="margin-top: 5px;"><strong>Length:</strong> ${edgeObj.length_m.toFixed(1)} m</div>`;
-        }
-
-        let powerStats = '';
-        if ((edgeObj.edge_type === 'PowerTransformer' || edgeObj.is_regulator) && nodeCurrents && nodeCurrents[edgeObj.target] && nodeAverages && nodeAverages[edgeObj.target]) {
-            const currents = nodeCurrents[edgeObj.target];
-            const voltage = nodeAverages[edgeObj.target];
-            const totalS = (voltage * (currents.a + currents.b + currents.c)) / 1000.0;
-            powerStats = `<div style="margin-top: 8px; border-top: 1px solid #373A40; padding-top: 5px; color: #91a7ff;"><strong>Apparent Power:</strong> ${totalS.toFixed(1)} kVA</div>`;
-        }
-
-        return {
-            html: `
-            <div class="grid-map-tooltip" style="padding: 10px; background: #1A1B1E; border: 1px solid #373A40; border-radius: 8px; color: #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.5); min-width: 150px; pointer-events: auto;">
-                <div style="font-size: 14px; font-weight: 700; margin-bottom: 5px; color: #4dabf7;">${edgeObj.name || (edgeObj.edge_type ?? 'Edge')}</div>
-                <div style="opacity: 0.8; font-size: 12px; margin-bottom: 8px;">${edgeObj.id || `${edgeObj.source} → ${edgeObj.target}`}</div>
-                <div style="display: flex; gap: 10px; font-size: 13px;">
-                    <span><strong>Type:</strong> ${edgeObj.edge_type || 'Line'}</span>
-                    <span><strong>Phases:</strong> ${phaseData}</span>
-                </div>
-                ${details}
-                ${powerStats}
-            </div>
-            `,
-            style: { backgroundColor: 'transparent', fontSize: '12px' }
-        };
-    };
+    const tooltipCtx = { nodeAverages, nodeCurrents };
 
     const persistentTooltip = useMemo(() => {
         if (selectedNodeIds.length !== 1 || !dimensions.width) return null;
-        
-        const nodeId = selectedNodeIds[0];
-        const node = nodes.find(n => n.id === nodeId);
+        const node = nodes.find(n => n.id === selectedNodeIds[0]);
         if (!node) return null;
 
-        const viewport = new WebMercatorViewport({
-            width: dimensions.width,
-            height: dimensions.height,
-            ...viewState
-        });
-
+        const viewport = new WebMercatorViewport({ width: dimensions.width, height: dimensions.height, ...viewState });
         const [x, y] = viewport.project(nodePositions[node.id] || node.position);
-        
-        // Don't show if off screen
         if (x < 0 || x > dimensions.width || y < 0 || y > dimensions.height) return null;
 
-        const tooltip = getTooltipContent(node);
+        const tooltip = getTooltipContent(node, tooltipCtx);
         if (!tooltip) return null;
 
         return (
             <div
                 className="persistent-grid-tooltip"
-                style={{
-                    position: 'absolute',
-                    left: x,
-                    top: y,
-                    transform: 'translate(-50%, -105%)',
-                    zIndex: 1000,
-                    pointerEvents: 'auto',
-                    cursor: 'default'
-                }}
+                style={{ position: 'absolute', left: x, top: y, transform: 'translate(-50%, -105%)', zIndex: 1000, pointerEvents: 'auto', cursor: 'default' }}
                 dangerouslySetInnerHTML={{ __html: tooltip.html }}
                 onClick={(e) => e.stopPropagation()}
             />
@@ -829,93 +116,74 @@ export const GridMap = React.memo<GridMapProps>(({
     }, [selectedNodeIds, nodes, viewState, dimensions, nodeAverages, nodeCurrents, voltageScale, nodePositions]);
 
     return (
-        <div
-            style={{ position: 'relative', width: '100vw', height: '100vh', minHeight: '500px', background: '#141517' }}
-        >
+        <div style={{ position: 'relative', width: '100vw', height: '100vh', minHeight: '500px', background: '#141517' }}>
             {mounted && dimensions.width > 0 && dimensions.height > 0 && (
                 <>
-                <DeckGL
-                    width={dimensions.width}
-                    height={dimensions.height}
-                    useDevicePixels={false}
-                    onWebGLInitialized={(gl) => {
-                        if (!gl) console.error("WebGL context failed to initialize.");
-                    }}
-                    initialViewState={viewState}
-                    viewState={viewState}
-                    onViewStateChange={({ viewState: vs }) => {
-                        setViewState(vs);
-                        onViewStateChange?.(vs);
-                    }}
-                    onInteractionStateChange={({ isDragging, isPanning, isZooming }) => {
-                        if (isDragging || isPanning || isZooming) {
-                            isDraggingRef.current = true;
-                            lastDragTime.current = Date.now();
-                        } else if (!isDragging && !isPanning && !isZooming) {
-                            // Delay slightly to give onClick handles a chance to see the dragging state
-                            setTimeout(() => {
-                                isDraggingRef.current = false;
-                            }, 250);
-                        }
-                    }}
-                    onDragStart={(info) => {
-                        mouseDownPos.current = { x: info.x, y: info.y };
-                    }}
-                    onDragEnd={() => {
-                        // Position check is handled in onClick, but we can clear here too
-                        // Don't clear mouseDownPos yet, onClick needs it
-                    }}
-                    getCursor={({ isHovering }) => isHovering ? 'pointer' : (isDraggingRef.current ? 'grabbing' : 'grab')}
-                    onClick={(info, event) => {
-                        const now = Date.now();
-                        const timeSinceDrag = now - lastDragTime.current;
-                        
-                        // Prevent deselection if click was on the tooltip overlay
-                        const srcEvent = (event as any)?.srcEvent || (event as any)?.nativeEvent;
-                        const target = srcEvent?.target as HTMLElement;
-                        if (target && (target.closest('.grid-map-tooltip') || (target as any).dataset?.gridMapTooltip || target.closest('.persistent-grid-tooltip'))) {
-                            console.log('[GridMap] Click on tooltip detected, ignoring background click');
+                    <DeckGL
+                        width={dimensions.width}
+                        height={dimensions.height}
+                        useDevicePixels={false}
+                        onWebGLInitialized={(gl) => { if (!gl) console.error('WebGL context failed to initialize.'); }}
+                        initialViewState={viewState}
+                        viewState={viewState}
+                        onViewStateChange={handleViewStateChange}
+                        onInteractionStateChange={({ isDragging, isPanning, isZooming }) => {
+                            if (isDragging || isPanning || isZooming) {
+                                isDraggingRef.current = true;
+                                lastDragTime.current = Date.now();
+                            } else if (!isDragging && !isPanning && !isZooming) {
+                                setTimeout(() => { isDraggingRef.current = false; }, 250);
+                            }
+                        }}
+                        onDragStart={(info) => { mouseDownPos.current = { x: info.x, y: info.y }; }}
+                        onDragEnd={() => {}}
+                        getCursor={({ isHovering }) => isHovering ? 'pointer' : (isDraggingRef.current ? 'grabbing' : 'grab')}
+                        onClick={(info, event) => {
+                            const timeSinceDrag = Date.now() - lastDragTime.current;
+                            const srcEvent = (event as any)?.srcEvent || (event as any)?.nativeEvent;
+                            const target = srcEvent?.target as HTMLElement;
+                            if (target && (target.closest('.grid-map-tooltip') || target.closest('.persistent-grid-tooltip'))) {
+                                console.log('[GridMap] Click on tooltip detected, ignoring background click');
+                                mouseDownPos.current = null;
+                                return;
+                            }
+                            let isActualClick = true;
+                            if (mouseDownPos.current) {
+                                const dx = info.x - mouseDownPos.current.x;
+                                const dy = info.y - mouseDownPos.current.y;
+                                console.log('[GridMap] onClick check - dist:', Math.sqrt(dx * dx + dy * dy).toFixed(1), 'isDragging:', isDraggingRef.current);
+                                if (Math.sqrt(dx * dx + dy * dy) > 7) isActualClick = false;
+                            }
+                            if (isDraggingRef.current || timeSinceDrag < 200 || !isActualClick) {
+                                console.log('[GridMap] Skipping selection clear due to drag/movement detection.');
+                                mouseDownPos.current = null;
+                                return;
+                            }
                             mouseDownPos.current = null;
-                            return;
-                        }
-
-                        // Check distance to distinguish click from micro-drag
-                        let isActualClick = true;
-                        if (mouseDownPos.current) {
-                            const dx = info.x - mouseDownPos.current.x;
-                            const dy = info.y - mouseDownPos.current.y;
-                            const dist = Math.sqrt(dx * dx + dy * dy);
-                            console.log('[GridMap] onClick check - dist:', dist.toFixed(1), 'isDragging:', isDraggingRef.current);
-                            if (dist > 7) isActualClick = false;
-                        }
-
-                        if (isDraggingRef.current || timeSinceDrag < 200 || !isActualClick) {
-                            console.log('[GridMap] Skipping selection clear due to drag/movement detection.');
-                            mouseDownPos.current = null;
-                            return;
-                        }
-
-                        mouseDownPos.current = null;
-                        if (!info.object && onMapClick) {
-                            console.log('[GridMap] Background click - CLEARING SELECTION');
-                            onMapClick();
-                        }
-                    }}
-                    controller={{
-                        dragRotate: false,
-                        doubleClickZoom: true,
-                        touchRotate: false
-                    }}
-                    layers={layers}
-                    getTooltip={info => {
-                        // If selecting, don't show hover tooltip if it's the same node
-                        if (selectedNodeIds.length === 1 && info.object && info.object.id === selectedNodeIds[0]) {
-                            return null;
-                        }
-                        return getTooltipContent(info.object);
-                    }}
-                />
-                {persistentTooltip}
+                            if (!info.object && onMapClick) {
+                                console.log('[GridMap] Background click - CLEARING SELECTION');
+                                onMapClick();
+                            }
+                        }}
+                        controller={{ dragRotate: false, doubleClickZoom: true, touchRotate: false }}
+                        layers={layers}
+                        getTooltip={info => {
+                            if (selectedNodeIds.length === 1 && info.object?.id === selectedNodeIds[0]) return null;
+                            if (info.object?.display_tooltip) return null;
+                            return getTooltipContent(info.object, tooltipCtx);
+                        }}
+                    />
+                    {persistentTooltip}
+                    {hoverInfo && (() => {
+                        const html = renderRuleTooltip(hoverInfo.obj, cimCache[hoverInfo.obj.id ?? '']);
+                        if (!html) return null;
+                        return (
+                            <div
+                                style={{ position: 'absolute', left: hoverInfo.x + 12, top: hoverInfo.y + 12, zIndex: 500, pointerEvents: 'none' }}
+                                dangerouslySetInnerHTML={{ __html: html }}
+                            />
+                        );
+                    })()}
                 </>
             )}
         </div>

@@ -3,7 +3,10 @@ import '@mantine/dates/styles.css';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   MantineProvider,
-  Box
+  Box,
+  Loader,
+  Text,
+  Group,
 } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 
@@ -19,6 +22,7 @@ import { AnalysisToolbar } from './features/grid/components/AnalysisToolbar';
 import { AnalysisTray } from './features/analytics/components/AnalysisTray';
 
 import { useTopology } from './hooks/useTopology';
+import { useRuleClassification } from './features/grid/hooks/useRuleClassification';
 import { useAnalyticsState, SETTINGS_KEY } from './hooks/useAnalyticsState';
 import { useAnalysisExecution } from './hooks/useAnalysisExecution';
 import { fetchTopology, fetchModels } from './shared/api';
@@ -57,6 +61,11 @@ export default function App() {
 
   // Hooks
   const topology = useTopology();
+  const [spriteVersion, setSpriteVersion] = useState(0);
+  const { classifiedNodes, classifiedEdges, refresh: refreshRules, loading: rulesLoading } = useRuleClassification(
+    topology.nodes,
+    topology.edges,
+  );
   const analytics = useAnalyticsState();
 
   const [dateRange, setDateRange] = useState(() => calculateRange(analytics.globalConfig));
@@ -94,7 +103,7 @@ export default function App() {
         try {
           const models = await fetchModels();
           if (models.length > 0) {
-            topology.setActiveModelIds([models[0].model_id]);
+            topology.setActiveModelIds([models[0].feeder_id]);
             return;
           }
         } catch (err) {
@@ -194,15 +203,15 @@ export default function App() {
         onClose={() => setDisplayRulesOpen(false)}
         onFocus={bringDisplayRulesToFront}
         zIndex={displayRulesZIndex}
-        onRulesChanged={topology.refreshTopology}
+        onRulesChanged={() => { refreshRules(); setSpriteVersion(v => v + 1); }}
       />
 
       <Box style={{ height: '100vh', width: '100vw', background: '#101113', overflow: 'hidden', display: 'flex' }}>
         {/* Map Container */}
         <Box style={{ flex: 1, position: 'relative', height: '100%', zIndex: 0 }}>
           <GridMap
-            nodes={topology.nodes}
-            edges={topology.edges}
+            nodes={classifiedNodes}
+            edges={classifiedEdges}
             onNodeClick={(node, multiSelect) => onNodeClick(node, multiSelect)}
             onEdgeClick={(edge, multiSelect) => onEdgeClick(edge, multiSelect)}
             highlightedNodes={topology.highlightedNodes}
@@ -213,6 +222,7 @@ export default function App() {
             voltageScale={voltageScale}
             onViewStateChange={setViewState}
             goToLocation={targetLocation}
+            spriteVersion={spriteVersion}
           />
 
           {!isMobile && (
@@ -230,6 +240,30 @@ export default function App() {
             setVoltageScale={setVoltageScale}
             visible={analytics.analysisWindows.some(w => w.type === 'voltage' && w.isOpen)}
           />
+
+          {rulesLoading && (
+            <Box style={{
+              position: 'absolute',
+              bottom: 24,
+              right: 16,
+              zIndex: 1000,
+              pointerEvents: 'none',
+            }}>
+              <Group
+                gap="xs"
+                style={{
+                  background: 'rgba(0,0,0,0.7)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: 6,
+                  padding: '6px 12px',
+                  backdropFilter: 'blur(4px)',
+                }}
+              >
+                <Loader size={12} color="blue" />
+                <Text size="xs" c="dimmed">Applying rules…</Text>
+              </Group>
+            </Box>
+          )}
 
           <OverlayControls
             activeModelIds={topology.activeModelIds}
@@ -281,23 +315,18 @@ export default function App() {
                 const name = nodeIds.length === 1 ? (topology.nodes.find(n => n.id === nodeIds[0])?.name || 'Selected Asset') : `${nodeIds.length} Assets`;
                 execution.handleRunVoltageMap(nodeIds, name);
               }}
-              onViewDiagnostic={() => {
-                const firstId = Array.from(topology.highlightedNodes)[0];
-                if (firstId) {
-                  const node = topology.nodes.find(n => n.id === firstId);
-                  const name = node?.name || 'Diagnostic';
-                  analytics.setAnalysisWindows(prev => [...prev, {
-                    id: `diag-${Date.now()}`,
-                    type: 'diagnostic',
-                    nodeIds: [firstId],
-                    nodeName: name,
-                    isOpen: true,
-                    isMinimized: false,
-                    loading: false,
-                    data: [],
-                    zIndex: 1000
-                  }]);
-                }
+              onViewDiagnostic={(node) => {
+                analytics.setAnalysisWindows(prev => [...prev, {
+                  id: `diag-${Date.now()}`,
+                  type: 'diagnostic',
+                  nodeIds: [node.id],
+                  nodeName: node.name || 'Diagnostic',
+                  isOpen: true,
+                  isMinimized: false,
+                  loading: false,
+                  data: [],
+                  zIndex: 1000
+                }]);
               }}
               visible={topology.highlightedNodes.size > 0 || topology.highlightedEdges.size > 0}
               dateRange={dateRange}

@@ -1,4 +1,5 @@
 import type { Node, Edge } from "../types";
+import { buildRuleQuery } from '../../features/grid/model/ruleQueryBuilder';
 
 export interface TopologyResponse {
     nodes: Node[];
@@ -6,10 +7,8 @@ export interface TopologyResponse {
 }
 
 export interface ModelInfo {
-    model_id: string;
-    filename: string;
-    path: string;
-    size_mb: number;
+    feeder_id: string;
+    feeder_uri: string;
     loaded: boolean;
     node_count: number;
     edge_count: number;
@@ -102,10 +101,13 @@ export interface RuleConfig {
     cluster_min_points?: number;
     min_zoom?: number;
     max_zoom?: number;
-    css_overrides?: Array<{
+    svg_overrides?: Array<{
         conditions: any;
-        css: string;
+        svg: string;
+        mode: 'replace' | 'add';
     }>;
+    rotate_to_edge?: boolean;
+    tooltip_config?: any;
 }
 
 export interface DisplayRule {
@@ -124,6 +126,13 @@ const getAuthHeaders = (): Record<string, string> => {
         return { 'Authorization': `Basic ${token}` };
     }
     return {};
+};
+
+/** Public — no auth required. Returns enabled rules for the default display config. */
+export const fetchActiveDisplayRules = async (): Promise<Array<{ id: number; priority: number; match_conditions: any; config: RuleConfig }>> => {
+    const res = await fetch(`${API_BASE}/display-rules/active`);
+    if (!res.ok) return [];
+    return res.json();
 };
 
 export const fetchDisplayConfigs = async (): Promise<DisplayConfig[]> => {
@@ -229,6 +238,49 @@ export const duplicateDisplayRule = async (ruleId: number): Promise<{id: number,
     return res.json();
 };
 
+export interface RuleTestResponse {
+    query: string;
+    params: Record<string, any>;
+    match_count: number;
+    warnings: string[];
+}
+
+export const testDisplayRule = async (match_conditions: any, target_class: string): Promise<RuleTestResponse> => {
+    let conditions = match_conditions;
+    if (typeof conditions === 'string') {
+        try {
+            conditions = JSON.parse(conditions);
+        } catch (e) {
+            return { query: '', params: {}, match_count: 0, warnings: ['Invalid JSON in match conditions'] };
+        }
+    }
+
+    // Build Cypher client-side using @neo4j/cypher-builder
+    const built = buildRuleQuery({ ...conditions, target_class });
+    if (!built) {
+        return { query: '', params: {}, match_count: 0, warnings: ['No target class or empty conditions'] };
+    }
+
+    const res = await fetch(`${API_BASE}/cim/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cypher: built.cypher, params: built.params }),
+    });
+
+    if (!res.ok) {
+        const text = await res.text();
+        return { query: built.cypher, params: built.params as Record<string, any>, match_count: 0, warnings: [text] };
+    }
+
+    const data = await res.json();
+    return {
+        query: built.cypher,
+        params: built.params as Record<string, any>,
+        match_count: data.count ?? 0,
+        warnings: [],
+    };
+};
+
 export const fetchTopology = async (models?: string[]): Promise<TopologyResponse> => {
     let url = `${API_BASE}/graph/topology`;
     if (models && models.length > 0) {
@@ -332,28 +384,28 @@ export const nlQuery = async (query: string): Promise<any> => {
     return res.json();
 };
 
-// --- Model Management ---
+// --- Feeder Management ---
 
 export const fetchModels = async (): Promise<ModelInfo[]> => {
-    const res = await fetch(`${API_BASE}/models`);
+    const res = await fetch(`${API_BASE}/feeders`);
     if (!res.ok) {
-        throw new Error('Failed to fetch models');
+        throw new Error('Failed to fetch feeders');
     }
     return res.json();
 };
 
-export const loadModel = async (modelId: string): Promise<ModelInfo> => {
-    const res = await fetch(`${API_BASE}/models/${modelId}/load`, { method: 'POST' });
+export const loadModel = async (feederId: string): Promise<ModelInfo> => {
+    const res = await fetch(`${API_BASE}/feeders/${feederId}/load`, { method: 'POST' });
     if (!res.ok) {
-        throw new Error(`Failed to load model ${modelId}`);
+        throw new Error(`Failed to load feeder ${feederId}`);
     }
     return res.json();
 };
 
-export const unloadModel = async (modelId: string): Promise<{ status: string }> => {
-    const res = await fetch(`${API_BASE}/models/${modelId}/unload`, { method: 'POST' });
+export const unloadModel = async (feederId: string): Promise<{ status: string }> => {
+    const res = await fetch(`${API_BASE}/feeders/${feederId}/unload`, { method: 'POST' });
     if (!res.ok) {
-        throw new Error(`Failed to unload model ${modelId}`);
+        throw new Error(`Failed to unload feeder ${feederId}`);
     }
     return res.json();
 };
@@ -373,6 +425,12 @@ export const fetchCimNode = async (nodeId: string): Promise<any> => {
     if (!res.ok) {
         throw new Error(`Failed to fetch CIM node detail for ${nodeId}`);
     }
+    return res.json();
+};
+
+export const fetchCimProperties = async (mrid: string): Promise<any> => {
+    const res = await fetch(`${API_BASE}/cim/properties/${mrid}`);
+    if (!res.ok) throw new Error(`Failed to fetch CIM properties for ${mrid}`);
     return res.json();
 };
 
@@ -398,6 +456,19 @@ export const fetchCimSchema = async (): Promise<Record<string, any>> => {
     const response = await fetch(`${API_BASE}/cim/schema`);
     if (!response.ok) throw new Error('Failed to fetch CIM schema');
     return response.json();
+};
+
+export const fetchCimEquipmentExpanded = async (mrid: string): Promise<any> => {
+    const res = await fetch(`${API_BASE}/cim/equipment/${encodeURIComponent(mrid)}/expanded`);
+    if (!res.ok) throw new Error(`Failed to fetch expanded CIM detail for ${mrid}`);
+    return res.json();
+};
+
+export const fetchCimConnections = async (className: string): Promise<string[]> => {
+    const response = await fetch(`${API_BASE}/cim/connections/${encodeURIComponent(className)}`);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.connected_classes ?? [];
 };
 
 export const fetchConfigOverrides = async (): Promise<Array<{key: string, value: string}>> => {
