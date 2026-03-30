@@ -214,7 +214,10 @@ class CimModelManager:
         try:
             driver = GraphDatabase.driver(neo4j_url, auth=(username, password))
             with driver.session(database=database) as session:
-                result = session.run(query, **(params or {}))
+                # 15-second wall-clock timeout — prevents slow classification queries
+                # from hanging the topology endpoint indefinitely.
+                result = session.run(query, **(params or {}),
+                                     timeout=15)
                 records = [dict(r) for r in result]
             driver.close()
             return records
@@ -481,92 +484,174 @@ class CimModelManager:
         detail['terminals'] = expanded_terminals
         return detail
 
-    def get_neighbors(self, target_id: str) -> dict | None:
-        """Returns all immediate CIM graph neighbors for a connectivity node or equipment.
+    def get_node_properties(self, target_id: str) -> dict | None:
+        """Return all properties of any CIM node by querying Neo4j directly.
 
-        For equipment this includes:
-        - ConnectivityNodes reached via Terminals (topology connections)
-        - All other CIM objects directly referenced by this equipment's fields
-          (e.g. Location, EquipmentContainer, TransformerTank, BaseVoltage, etc.)
+        Works for any node type regardless of equipment_index coverage.
         """
-        if self._idx is None:
+        import os
+        from neo4j import GraphDatabase
+
+        neo4j_url = os.getenv("CIMG_URL")
+        if not neo4j_url:
             return None
 
-        # 1. Is it a connectivity node?
-        node_detail = self.get_node_cim_details(target_id)
-        if node_detail:
-            neighbors = []
-            for eq in node_detail["connected_equipment"]:
-                neighbors.append({
-                    "id": eq["mrid"],
-                    "type": "Equipment",
-                    "cim_class": eq["cim_class"],
-                    "name": eq["name"],
-                    "relation": "ConnectivityNode.Equipment",
-                })
-            return {
-                "id": target_id,
-                "type": "ConnectivityNode",
-                "cim_class": "ConnectivityNode",
-                "name": node_detail["name"],
-                "neighbors": neighbors,
-            }
+        username = os.getenv("CIMG_USERNAME", "neo4j")
+        password = os.getenv("CIMG_PASSWORD", "")
+        database = os.getenv("CIMG_DATABASE", "neo4j")
 
-        # 2. Is it equipment?
-        eq_detail = self.get_equipment_detail(target_id)
-        if eq_detail:
-            neighbors: list[dict] = []
-            seen_ids: set[str] = set()
+        uuid_lower = target_id.lower()
+        uuid_upper = target_id.upper()
+        uri_variants = [f"urn:uuid:{uuid_lower}", f"urn:uuid:{uuid_upper}"]
 
-            # a) Terminal → ConnectivityNode topology connections
-            for t in eq_detail["terminals"]:
-                cn_id = t["connectivity_node"]
-                if not cn_id or cn_id in seen_ids:
-                    continue
-                seen_ids.add(cn_id)
-                cn_detail = self.get_node_cim_details(cn_id)
-                neighbors.append({
-                    "id": cn_id,
-                    "type": "ConnectivityNode",
-                    "cim_class": "ConnectivityNode",
-                    "name": cn_detail["name"] if cn_detail else cn_id,
-                    "relation": "Terminal.ConnectivityNode",
-                })
+        query = """
+MATCH (n) WHERE n.uri IN $uris
+RETURN properties(n) AS props, labels(n) AS lbls
+LIMIT 1
+"""
+        try:
+            driver = GraphDatabase.driver(neo4j_url, auth=(username, password))
+            with driver.session(database=database) as session:
+                rows = list(session.run(query, uris=uri_variants))
+            driver.close()
+        except Exception as e:
+            logger.error("get_node_properties Neo4j query failed: %s", e)
+            return None
 
-            # b) All other CIM object references on this equipment
-            entry = self._idx.equipment_index.get(target_id)
-            if entry:
-                cls_name, obj = entry
-                if hasattr(obj, "__dataclass_fields__"):
-                    for attr_name in obj.__dataclass_fields__:
-                        val = getattr(obj, attr_name, None)
-                        if val is None:
-                            continue
-                        items: list = val if isinstance(val, list) else [val]
-                        for item in items:
-                            if item is None or isinstance(item, (str, int, float, bool)):
-                                continue
-                            item_mrid = _mrid_str(item)
-                            if not item_mrid or item_mrid in seen_ids:
-                                continue
-                            seen_ids.add(item_mrid)
-                            neighbors.append({
-                                "id": item_mrid,
-                                "type": type(item).__name__,
-                                "cim_class": type(item).__name__,
-                                "name": _get_name(item) or item_mrid[:12],
-                                "relation": f"{cls_name}.{attr_name}",
-                            })
+        if not rows:
+            return None
 
-            return {
-                "id": target_id,
-                "type": "Equipment",
-                "cim_class": eq_detail["cim_class"],
-                "name": eq_detail["name"],
-                "neighbors": neighbors,
-            }
+        raw: dict = dict(rows[0]["props"])
+        lbls: list[str] = rows[0]["lbls"] or []
 
-        return None
+        # Determine best CIM class from labels
+        skip = {"Resource", "IdentifiedObject", "PowerSystemResource", "Equipment",
+                "ConductingEquipment", "Connector", "EnergyConnection"}
+        specific = [l for l in lbls if l not in skip]
+        cim_class = specific[0] if specific else (lbls[0] if lbls else "Object")
+
+        # Strip urn:uuid: prefix from uri and normalise mRID
+        raw_uri = raw.pop("uri", None) or ""
+        mrid = raw_uri.replace("urn:uuid:", "").upper() or target_id
+
+        # Return full namespaced keys as-is so the frontend condition path is self-describing.
+        # e.g. "TransformerEndInfo.ratedS" stays as "TransformerEndInfo.ratedS" — the
+        # frontend strips the class prefix for display but keeps the full key in the condition.
+        props: dict = {"mrid": mrid, "cim_type": cim_class}
+        for k, v in raw.items():
+            props[k] = v
+
+        return props
+
+    def get_neighbors(self, target_id: str) -> dict | None:
+        """Returns all immediate CIM graph neighbors for any node by querying Neo4j directly.
+
+        Traverses both outgoing and incoming relationships so nothing is missed
+        regardless of which direction CIM stores the reference.
+        """
+        import os
+        from neo4j import GraphDatabase
+
+        neo4j_url = os.getenv("CIMG_URL")
+        if not neo4j_url:
+            return None
+
+        username = os.getenv("CIMG_USERNAME", "neo4j")
+        password = os.getenv("CIMG_PASSWORD", "")
+        database = os.getenv("CIMG_DATABASE", "neo4j")
+
+        # Try both lowercase and uppercase URI formats — n10s may store either.
+        uuid_lower = target_id.lower()
+        uuid_upper = target_id.upper()
+        uri_variants = [
+            f"urn:uuid:{uuid_lower}",
+            f"urn:uuid:{uuid_upper}",
+        ]
+
+        # Two simple queries: outgoing then incoming edges.
+        # Avoids CALL subquery which requires Neo4j 4.1+.
+        q_outgoing = """
+MATCH (n)-[r]->(nb)
+WHERE n.uri IN $uris AND nb.uri IS NOT NULL
+RETURN
+    n.uri AS root_uri,
+    coalesce(n.`IdentifiedObject.name`, '') AS root_name,
+    labels(n)  AS root_labels,
+    type(r)    AS relation,
+    nb.uri     AS nb_uri,
+    coalesce(nb.`IdentifiedObject.name`, '') AS nb_name,
+    labels(nb) AS nb_labels
+"""
+        q_incoming = """
+MATCH (nb)-[r]->(n)
+WHERE n.uri IN $uris AND nb.uri IS NOT NULL
+RETURN
+    n.uri AS root_uri,
+    coalesce(n.`IdentifiedObject.name`, '') AS root_name,
+    labels(n)  AS root_labels,
+    type(r)    AS relation,
+    nb.uri     AS nb_uri,
+    coalesce(nb.`IdentifiedObject.name`, '') AS nb_name,
+    labels(nb) AS nb_labels
+"""
+
+        try:
+            driver = GraphDatabase.driver(neo4j_url, auth=(username, password))
+            with driver.session(database=database) as session:
+                rows = list(session.run(q_outgoing, uris=uri_variants)) + \
+                       list(session.run(q_incoming, uris=uri_variants))
+            driver.close()
+        except Exception as e:
+            logger.error("get_neighbors Neo4j query failed: %s", e)
+            return None
+
+        if not rows:
+            return None
+
+        def _strip_uri(uri: str) -> str:
+            for pfx in ("urn:uuid:", "_"):
+                if uri.startswith(pfx):
+                    uri = uri[len(pfx):]
+            return uri.upper()
+
+        def _cim_class(labels: list[str]) -> str:
+            skip = {"Resource", "IdentifiedObject", "PowerSystemResource", "Equipment",
+                    "ConductingEquipment", "Connector", "EnergyConnection"}
+            specific = [l for l in (labels or []) if l not in skip]
+            return specific[0] if specific else (labels[0] if labels else "Object")
+
+        first = rows[0]
+        root_mrid = _strip_uri(first["root_uri"])
+        root_name = first["root_name"] or root_mrid[:12]
+        root_cim_class = _cim_class(first["root_labels"])
+
+        seen: set[str] = {root_mrid}
+        neighbors = []
+        for row in rows:
+            nb_uri = row["nb_uri"]
+            if not nb_uri:
+                continue
+            nb_mrid = _strip_uri(nb_uri)
+            if nb_mrid in seen:
+                continue
+            seen.add(nb_mrid)
+            nb_class = _cim_class(row["nb_labels"])
+            nb_name = row["nb_name"] or nb_mrid[:12]
+            neighbors.append({
+                "id": nb_mrid,
+                "cim_class": nb_class,
+                "type": nb_class,
+                "name": nb_name,
+                "relation": row["relation"],
+            })
+
+        return {
+            "id": root_mrid,
+            "cim_class": root_cim_class,
+            "type": root_cim_class,
+            "name": root_name,
+            "neighbors": neighbors,
+        }
 
     def _extract_primitives(self, obj) -> dict:
         """Helper to extract all primitive properties (strings, floats, ints, bools) from any CIM object."""

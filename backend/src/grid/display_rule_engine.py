@@ -18,6 +18,9 @@ class DisplayRuleEngine:
         self._config_name = "None"
         self._engine = CimRuleEngine()
         self._mapper = CimMapper()
+        # Bulk classification cache: model_id -> classification_map
+        # Populated lazily in classify_all; invalidated on load_rules().
+        self._classify_cache: Dict[str, Dict[str, Any]] = {}
         self.load_rules()
 
     def _ensure_dict(self, val: Any) -> Dict[str, Any]:
@@ -73,6 +76,7 @@ class DisplayRuleEngine:
 
             conn.close()
             logger.info(f"Loaded {len(self._rules)} display rules from config '{self._config_name}'")
+            self._classify_cache.clear()  # Invalidate bulk classification cache
         except Exception as e:
             logger.error(f"Error loading display rules: {e}")
             self._rules = []
@@ -81,12 +85,19 @@ class DisplayRuleEngine:
         """
         Performs bulk classification of all equipment in the database based on the loaded rules.
         This uses Cypher queries to delegate matching to the Neo4j engine.
-        
+
+        Results are cached per model until load_rules() is called (i.e. until rules change).
+
         Returns:
             A mapping of equipment_mrid -> classification_dict
         """
         if not self._rules:
             return {}
+
+        model_id = getattr(cim_manager, 'model_id', id(cim_manager))
+        if model_id in self._classify_cache:
+            logger.debug("classify_all: returning cached result for model %s", model_id)
+            return self._classify_cache[model_id]
 
         builder = CypherRuleBuilder()
         classification_map = {}
@@ -152,6 +163,8 @@ class DisplayRuleEngine:
             except Exception as e:
                 logger.error("Error in bulk classification for rule %s: %s", rule.get('id'), e)
 
+        self._classify_cache[model_id] = classification_map
+        logger.info("classify_all: cached %d classifications for model %s", len(classification_map), model_id)
         return classification_map
 
     def classify_node(self, node_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:

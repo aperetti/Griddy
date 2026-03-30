@@ -21,11 +21,19 @@ export const DEFAULT_TOOLTIP_CONFIG: TooltipConfig = {
     html_template: '',
 };
 
+export interface GraphPathStep {
+    rel: string;    // Neo4j relationship type, e.g. "TransformerTank.PowerTransformer"
+    label: string;  // CIM class at the end of this hop, e.g. "TransformerTank"
+}
+
 export interface Condition {
     id: string;
     path: string;
     op: string;
     value: any;
+    /** Exact graph traversal path captured from the explorer. When present, the
+     *  query builder uses these specific relationship hops instead of [*1..3]. */
+    graph_path?: GraphPathStep[];
 }
 
 export interface ConditionGroup {

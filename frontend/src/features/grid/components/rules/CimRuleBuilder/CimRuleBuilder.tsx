@@ -22,6 +22,7 @@ export const CimRuleBuilder = ({ value, onChange }: CimRuleBuilderProps) => {
         setTargetClass,
         setLogicalOp,
         addCondition,
+        addFilledCondition,
         addGroup,
         updateCondition,
         removeNodeItem
@@ -63,12 +64,11 @@ export const CimRuleBuilder = ({ value, onChange }: CimRuleBuilderProps) => {
 
             <Collapse in={showAssistant}>
                 <Box mb="md">
-                    <RuleAssistant 
+                    <RuleAssistant
                         targetClass={conditions.target_class}
-                        onSelectAttribute={(path, val, op) => {
-                            updateCondition('ROOT', { path, value: val, op: op || '==' });
-                            // Note: This logic might need refinement based on where the user wants to add
-                        }} 
+                        onSelectAttribute={(path, val, op, graphPath) => {
+                            addFilledCondition(conditions.id, path, val, op || '==', graphPath);
+                        }}
                     />
                 </Box>
             </Collapse>

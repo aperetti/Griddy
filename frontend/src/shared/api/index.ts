@@ -1,4 +1,5 @@
 import type { Node, Edge } from "../types";
+import { buildRuleQuery } from '../../features/grid/model/ruleQueryBuilder';
 
 export interface TopologyResponse {
     nodes: Node[];
@@ -106,6 +107,7 @@ export interface RuleConfig {
         mode: 'replace' | 'add';
     }>;
     rotate_to_edge?: boolean;
+    tooltip_config?: any;
 }
 
 export interface DisplayRule {
@@ -124,6 +126,13 @@ const getAuthHeaders = (): Record<string, string> => {
         return { 'Authorization': `Basic ${token}` };
     }
     return {};
+};
+
+/** Public — no auth required. Returns enabled rules for the default display config. */
+export const fetchActiveDisplayRules = async (): Promise<Array<{ id: number; priority: number; match_conditions: any; config: RuleConfig }>> => {
+    const res = await fetch(`${API_BASE}/display-rules/active`);
+    if (!res.ok) return [];
+    return res.json();
 };
 
 export const fetchDisplayConfigs = async (): Promise<DisplayConfig[]> => {
@@ -246,18 +255,30 @@ export const testDisplayRule = async (match_conditions: any, target_class: strin
         }
     }
 
-    const res = await fetch(`${ADMIN_API_BASE}/display-rules/test`, {
+    // Build Cypher client-side using @neo4j/cypher-builder
+    const built = buildRuleQuery({ ...conditions, target_class });
+    if (!built) {
+        return { query: '', params: {}, match_count: 0, warnings: ['No target class or empty conditions'] };
+    }
+
+    const res = await fetch(`${API_BASE}/cim/query`, {
         method: 'POST',
-        headers: { 
-            'Content-Type': 'application/json',
-            ...getAuthHeaders()
-        },
-        body: JSON.stringify({ match_conditions: conditions, target_class })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cypher: built.cypher, params: built.params }),
     });
-    
-    if (res.status === 401) throw new Error('Unauthorized');
-    if (!res.ok) throw new Error(await res.text());
-    return res.json();
+
+    if (!res.ok) {
+        const text = await res.text();
+        return { query: built.cypher, params: built.params as Record<string, any>, match_count: 0, warnings: [text] };
+    }
+
+    const data = await res.json();
+    return {
+        query: built.cypher,
+        params: built.params as Record<string, any>,
+        match_count: data.count ?? 0,
+        warnings: [],
+    };
 };
 
 export const fetchTopology = async (models?: string[]): Promise<TopologyResponse> => {
@@ -404,6 +425,12 @@ export const fetchCimNode = async (nodeId: string): Promise<any> => {
     if (!res.ok) {
         throw new Error(`Failed to fetch CIM node detail for ${nodeId}`);
     }
+    return res.json();
+};
+
+export const fetchCimProperties = async (mrid: string): Promise<any> => {
+    const res = await fetch(`${API_BASE}/cim/properties/${mrid}`);
+    if (!res.ok) throw new Error(`Failed to fetch CIM properties for ${mrid}`);
     return res.json();
 };
 

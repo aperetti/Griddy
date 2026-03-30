@@ -1,156 +1,102 @@
 """
-CIM Property Mapping for Cypher Query Generation.
+CIM Property Mapping — display labels and scale factors.
 
-Maps human-friendly property names (used in display rules) to 
-CIM attributes and relationship paths in the Neo4j database.
+Used by apply_mappings() to compute virtual/derived display properties for
+CIM objects held in memory. The Cypher rule builder no longer uses this for
+query generation (it uses generic EXISTS traversal instead).
 """
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 # Default mappings shared across multiple CIM classes
 DEFAULT_MAPPINGS = {
-    "name": {"attribute": "IdentifiedObject.name", "label": "Name"},
-    "mrid": {"attribute": "IdentifiedObject.mRID", "label": "mRID"},
+    "name":        {"attribute": "IdentifiedObject.name",        "label": "Name"},
+    "mrid":        {"attribute": "IdentifiedObject.mRID",        "label": "mRID"},
     "description": {"attribute": "IdentifiedObject.description", "label": "Description"},
 }
 
-# Map of Display Property -> Cypher fragment/mapping
-# Structure: { CIM_CLASS: { DISPLAY_PROPERTY: MAPPING_SPEC } }
-CIM_PROPERTY_MAP = {
+# Display-label and optional scale factor per class/property.
+# No rel_path or rel_path_or entries — Cypher generation uses generic EXISTS traversal.
+CIM_PROPERTY_MAP: Dict[str, Dict[str, Any]] = {
     "PowerTransformer": {
-        "ratedS": {
-            "rel_path": "-[:PowerTransformerEnd]->(e:PowerTransformerEnd)",
-            "attribute": "e.ratedS",
-            "scale": 1e6,  # VA to MVA
-            "label": "Rated Power (MVA)",
-        },
-        "rating": { # Alias for ratedS
-            "rel_path": "-[:PowerTransformerEnd]->(e:PowerTransformerEnd)",
-            "attribute": "e.ratedS",
-            "scale": 1e6, 
-            "label": "Rating (MVA)",
-        },
-        "voltage_kv": {
-            "rel_path": "-[:PowerTransformerEnd]->(e:PowerTransformerEnd)",
-            "attribute": "e.ratedU",
-            "scale": 1000.0, # V to kV
-            "label": "Rated Voltage (kV)",
-        }
+        "ratedS":     {"attribute": "PowerTransformerEnd.ratedS",  "label": "Rated Power (VA)"},
+        "rating":     {"attribute": "PowerTransformerEnd.ratedS",  "label": "Rating (VA)"},
+        "voltage_kv": {"attribute": "PowerTransformerEnd.ratedU",  "label": "Rated Voltage (V)"},
     },
     "EnergyConsumer": {
-        "p_mw": {
-            "attribute": "EnergyConsumer.p",
-            "scale": 1e6,
-            "label": "Active Power (MW)",
-        },
-        "q_mvar": {
-            "attribute": "EnergyConsumer.q",
-            "scale": 1e6,
-            "label": "Reactive Power (MVAr)",
-        },
-        "rating": {
-            "attribute": "EnergyConsumer.p",
-            "scale": 1000.0, # W to kVA (assuming pf=1 for display)
-            "label": "Rating (kVA)",
-        },
-        "ratedS": { # Alias
-            "attribute": "EnergyConsumer.p",
-            "scale": 1000.0,
-            "label": "Rated Power (kVA)",
-        }
+        "p_mw":   {"attribute": "EnergyConsumer.p", "scale": 1e6,    "label": "Active Power (MW)"},
+        "q_mvar": {"attribute": "EnergyConsumer.q", "scale": 1e6,    "label": "Reactive Power (MVAr)"},
+        "rating": {"attribute": "EnergyConsumer.p", "scale": 1000.0, "label": "Rating (kVA)"},
+        "ratedS": {"attribute": "EnergyConsumer.p", "scale": 1000.0, "label": "Rated Power (kVA)"},
     },
     "ACLineSegment": {
         "length_m": {"attribute": "ACLineSegment.length", "label": "Length (m)"},
-        "r": {"attribute": "ACLineSegment.r", "label": "Resistance (Ohm)"},
-        "x": {"attribute": "ACLineSegment.x", "label": "Reactance (Ohm)"},
+        "r":        {"attribute": "ACLineSegment.r",      "label": "Resistance (Ohm)"},
+        "x":        {"attribute": "ACLineSegment.x",      "label": "Reactance (Ohm)"},
     },
     "Switch": {
-        "is_open": {
-            "attribute": "Switch.normalOpen",
-            "type": "boolean",
-            "label": "Normally Open",
-        }
-    }
+        "is_open": {"attribute": "Switch.normalOpen", "type": "boolean", "label": "Normally Open"},
+    },
 }
 
-# List of base classes and their common subclasses to include in rule matching
-CIM_BASE_CLASSES = {
-    "Switch": ["Switch", "LoadBreakSwitch", "Fuse", "Breaker", "Disconnector", "Sectionaliser", "Recloser"],
-    "PowerTransformer": ["PowerTransformer", "Transformer"],
-    "ConductingEquipment": ["ConductingEquipment", "ACLineSegment", "Switch", "PowerTransformer", "EnergyConsumer", "GeneratingUnit"],
+# List of base classes and their common subclasses to include in rule matching.
+CIM_BASE_CLASSES: Dict[str, list] = {
+    "Switch":               ["Switch", "LoadBreakSwitch", "Fuse", "Breaker", "Disconnector", "Sectionaliser", "Recloser"],
+    "PowerTransformer":     ["PowerTransformer", "Transformer"],
+    "ConductingEquipment":  ["ConductingEquipment", "ACLineSegment", "Switch", "PowerTransformer", "EnergyConsumer", "GeneratingUnit"],
 }
 
-# Operator mapping for Cypher
-CYPHER_OPERATORS = {
-    "eq": "=",
-    "==": "=",
-    "neq": "<>",
-    "!=": "<>",
-    "gt": ">",
-    ">": ">",
-    "lt": "<",
-    "<": "<",
-    "gte": ">=",
-    ">=": ">=",
-    "lte": "<=",
-    "<=": "<=",
-    "contains": "CONTAINS",
+# Operator mapping for Cypher (kept for any legacy callers)
+CYPHER_OPERATORS: Dict[str, str] = {
+    "eq": "=",    "==": "=",
+    "neq": "<>",  "!=": "<>",
+    "gt": ">",    ">": ">",
+    "lt": "<",    "<": "<",
+    "gte": ">=",  ">=": ">=",
+    "lte": "<=",  "<=": "<=",
+    "contains":    "CONTAINS",
     "starts_with": "STARTS WITH",
-    "ends_with": "ENDS WITH",
-    "exists": "IS NOT NULL",
-    "not_exists": "IS NULL",
+    "ends_with":   "ENDS WITH",
+    "exists":      "IS NOT NULL",
+    "not_exists":  "IS NULL",
 }
+
 
 def apply_mappings(obj: Any) -> Dict[str, Any]:
     """
-    Calculates virtual properties for a CIM object.
-    Supports both native objects (with getattr) and dictionaries.
+    Calculates virtual/display properties for a CIM object held in memory.
+    Supports both native objects (getattr) and dicts.
     """
-    results = {}
+    results: Dict[str, Any] = {}
     cls_name = ""
-    
+
     if hasattr(obj, "__class__"):
         cls_name = obj.__class__.__name__
     elif isinstance(obj, dict):
-        cls_name = obj.get("cim_class") or obj.get("type")
-        
+        cls_name = obj.get("cim_class") or obj.get("type") or ""
+
     if not cls_name or cls_name not in CIM_PROPERTY_MAP:
         return results
-        
-    specs = CIM_PROPERTY_MAP.get(cls_name, {})
-    # Merge with default mappings
-    all_specs = {**DEFAULT_MAPPINGS, **specs}
-    
-    for prop_name, spec in all_specs.items():
-        # We only support direct attributes in this local mapping 
-        # (rel_path requires graph traversal, handled in Cypher/Manager)
-        if spec.get("rel_path"):
-            continue
-            
+
+    specs = {**DEFAULT_MAPPINGS, **CIM_PROPERTY_MAP.get(cls_name, {})}
+
+    for prop_name, spec in specs.items():
         attr = spec.get("attribute")
-        if not attr: continue
-        
-        # Try to get the value from the object or dictionary
+        if not attr:
+            continue
+
         val = None
-        if hasattr(obj, "__class__") and not isinstance(obj, dict):
-            # For native objects, we try the leaf attribute name first
-            raw_attr = attr.split('.')[-1]
-            val = getattr(obj, raw_attr, None)
-        elif isinstance(obj, dict):
-            # For dictionaries (e.g. from Neo4j driver), we try the full attribute name
-            # as it matches the database property key exactly.
+        if isinstance(obj, dict):
             val = obj.get(attr)
-            if val is None and '.' in attr:
-                # Fallback to leaf name if not found with prefix
-                val = obj.get(attr.split('.')[-1])
-            
+            if val is None and "." in attr:
+                val = obj.get(attr.split(".")[-1])
+        elif not isinstance(obj, dict):
+            val = getattr(obj, attr.split(".")[-1], None)
+
         if val is not None:
             try:
                 scale = spec.get("scale", 1.0)
-                if isinstance(val, (int, float)):
-                    results[prop_name] = val / scale
-                else:
-                    results[prop_name] = val
-            except:
+                results[prop_name] = val / scale if isinstance(val, (int, float)) else val
+            except Exception:
                 results[prop_name] = val
-                
+
     return results

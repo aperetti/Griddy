@@ -5,8 +5,10 @@ import { useMediaQuery } from '@mantine/hooks';
 import { useRuleAssistant } from '../../../hooks/useRuleAssistant';
 import { GraphExplorer } from './GraphExplorer';
 
+import type { GraphPathStep } from '../../../hooks/useGraphExplorer';
+
 interface RuleAssistantProps {
-    onSelectAttribute: (path: string, value: any, operator?: string) => void;
+    onSelectAttribute: (path: string, value: any, operator?: string, graphPath?: GraphPathStep[]) => void;
     targetClass?: string;
     zIndex?: number;
 }

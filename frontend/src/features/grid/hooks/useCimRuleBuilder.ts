@@ -5,9 +5,10 @@ import {
     removeNode,
     genId 
 } from '../model/rules';
-import type { 
-    Condition, 
-    MatchConditions 
+import type {
+    Condition,
+    GraphPathStep,
+    MatchConditions
 } from '../model/rules';
 
 export function useCimRuleBuilder(value: string | any, onChange: (value: string) => void) {
@@ -55,6 +56,16 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
         handleUpdate(next as MatchConditions);
     }, [conditions, handleUpdate]);
 
+    const addFilledCondition = useCallback((groupId: string, path: string, value: any, op: string, graphPath?: GraphPathStep[]) => {
+        const newCond: Condition = { id: genId(), path, op, value: value ?? '' };
+        if (graphPath && graphPath.length > 0) newCond.graph_path = graphPath;
+        const next = updateNode(conditions, groupId, (n) => ({
+            ...n,
+            conditions: [...n.conditions, newCond]
+        }));
+        handleUpdate(next as MatchConditions);
+    }, [conditions, handleUpdate]);
+
     const addGroup = useCallback((groupId: string) => {
         const next = updateNode(conditions, groupId, (n) => ({
             ...n,
@@ -78,6 +89,7 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
         setTargetClass,
         setLogicalOp,
         addCondition,
+        addFilledCondition,
         addGroup,
         updateCondition,
         removeNodeItem

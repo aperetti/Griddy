@@ -1,178 +1,197 @@
+"""
+Generic Cypher query builder for CIM display rules.
+
+Mirrors the logic in frontend/src/features/grid/model/ruleQueryBuilder.ts so that
+both the client (test/preview) and server (bulk classify_all) produce equivalent queries.
+
+Design
+------
+Condition ``path`` stores the full Neo4j property key as stored by n10s/cimgraph, e.g.:
+  - "IdentifiedObject.name"         (base class property — on every node)
+  - "EnergyConsumer.p"              (class property — direct match on target node)
+  - "TransformerEndInfo.ratedS"     (related-object property — EXISTS traversal)
+
+If the class prefix of ``path`` is the target class itself, or is a known CIM base/mixin
+class whose attributes n10s flattens onto equipment nodes, we match directly on ``n``.
+
+Otherwise we generate a variable-length EXISTS subquery:
+  EXISTS { (n)-[*1..5]-(e:CimClass) WHERE e.`path` = $p0 }
+
+This requires no knowledge of specific relationship names and works for any CIM topology.
+"""
 import logging
-from typing import Any, Dict, List, Tuple
-from src.shared.cim.mapping import CIM_PROPERTY_MAP, DEFAULT_MAPPINGS, CYPHER_OPERATORS
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-class CypherRuleBuilder:
-    """
-    Translates JSON rules from the Display Rules Engine into Cypher query fragments.
-    Ensures safe execution via parameterization.
-    """
+# CIM base/mixin classes whose properties are stored directly on equipment nodes
+# (i.e. n10s/cimgraph flatten inherited attributes onto the node itself)
+_INHERITED_CLASSES = frozenset({
+    "IdentifiedObject",
+    "PowerSystemResource",
+    "Equipment",
+    "ConductingEquipment",
+    "Switch",
+    "Conductor",
+    "EnergyConnection",
+    "ConnectivityNodeContainer",
+    "EquipmentContainer",
+})
 
-    def __init__(self):
+# Operator translation table
+_OPS: Dict[str, str] = {
+    "eq": "=",  "==": "=",
+    "neq": "<>", "!=": "<>",
+    "gt": ">",   ">": ">",
+    "lt": "<",   "<": "<",
+    "gte": ">=", ">=": ">=",
+    "lte": "<=", "<=": "<=",
+    "contains":    "CONTAINS",
+    "starts_with": "STARTS WITH",
+    "ends_with":   "ENDS WITH",
+    "exists":      "IS NOT NULL",
+    "not_exists":  "IS NULL",
+}
+
+# mRID property key used by n10s
+_MRID_KEY = "IdentifiedObject.mRID"
+
+
+class CypherRuleBuilder:
+    """Builds parameterized Cypher MATCH queries from MatchConditions dicts."""
+
+    def __init__(self) -> None:
         self.params: Dict[str, Any] = {}
-        self._param_idx = 0
+        self._idx = 0
+        self.warnings: List[str] = []
+
+    # ── Public API ────────────────────────────────────────────────────────────
+
+    def build_rule_query(
+        self,
+        rule_config: Dict[str, Any],
+        cim_class: str,
+    ) -> Tuple[str, Dict[str, Any], List[str]]:
+        """Return (cypher, params, warnings) for the given rule conditions."""
+        self.params = {}
+        self._idx = 0
         self.warnings = []
 
-    def _format_property(self, prop: str, alias: str = "n") -> str:
-        """Formats a property name for Cypher.
+        where = self._build_group(rule_config, cim_class)
+        mrid_expr = f"n.`{_MRID_KEY}`"
 
-        Neo4j (via n10s/cimloader) stores CIM properties using the full local URI
-        name after the namespace #, e.g. 'IdentifiedObject.mRID', 'EnergyConsumer.p'.
-        These contain dots and require backtick-escaping in Cypher.
+        if where:
+            query = f"MATCH (n:{cim_class}) WHERE {where} RETURN {mrid_expr} AS mrid"
+        else:
+            query = f"MATCH (n:{cim_class}) RETURN {mrid_expr} AS mrid"
 
-        Handles three cases:
-        1. Already alias-prefixed (e.g. 'e.ratedS') — returned as-is.
-        2. CIM namespaced form (e.g. 'IdentifiedObject.mRID') — wrapped in backticks:
-           n.`IdentifiedObject.mRID`
-        3. Plain attribute name (e.g. 'normalOpen') — prefixed with alias: n.normalOpen
-        """
-        if not prop:
-            return ""
-        if '.' in prop:
-            first = prop.split('.')[0]
-            # Case 1: already has a Cypher alias prefix
-            if first in ('n', 'e', 'edge', 'r'):
-                return prop
-            # Case 2: CIM-namespaced property — backtick-escape the whole name
-            return f"{alias}.`{prop}`"
-        # Case 3: plain name
-        return f"{alias}.{prop}"
+        return query, self.params, self.warnings
 
-    def _get_param_name(self, value: Any) -> str:
-        """Register a parameter and return its $name."""
-        key = f"p{self._param_idx}"
-        self._param_idx += 1
+    # ── Internal helpers ─────────────────────────────────────────────────────
+
+    def _param(self, value: Any) -> str:
+        key = f"p{self._idx}"
+        self._idx += 1
         self.params[key] = value
         return f"${key}"
 
-    def build_rule_query(self, rule_config: Dict[str, Any], cim_class: str) -> Tuple[str, Dict[str, Any], List[str]]:
-        """
-        Builds a complete Cypher query to find mRIDs matching a rule.
-        
-        Args:
-            rule_config: The rule configuration (matching logic).
-            cim_class: The base CIM class to search (e.g. PowerTransformer).
-            
-        Returns:
-            Tuple of (query_string, parameters_dict, warnings_list).
-        """
-        self.params = {}
-        self._param_idx = 0
-        self.warnings = []
-        
-        # Base class filter
-        from src.shared.cim.mapping import CIM_BASE_CLASSES
-        
-        # Determine target classes (original + optional subclasses)
-        target_classes = [cim_class]
-        if cim_class in CIM_BASE_CLASSES:
-            target_classes = list(set(target_classes + CIM_BASE_CLASSES[cim_class]))
-            
-        where_clause = self._build_where_clause(rule_config, cim_class)
-        
-        # mRID is stored as 'IdentifiedObject.mRID' in Neo4j (n10s preserves the full local URI name)
-        mrid_prop = DEFAULT_MAPPINGS.get("mrid", {}).get("attribute", "IdentifiedObject.mRID")
-        mrid_expr = self._format_property(mrid_prop, "n")
+    def _build_group(self, group: Dict[str, Any], cim_class: str) -> str:
+        logical_op = group.get("logical_op", "AND").upper()
+        parts: List[str] = []
 
-        # Build the MATCH part with label expansion if needed
-        if len(target_classes) > 1:
-            class_param = self._get_param_name(target_classes)
-            match_clause = f"MATCH (n) WHERE any(lbl IN labels(n) WHERE lbl IN {class_param})"
-            if where_clause:
-                query = f"{match_clause} AND {where_clause} RETURN {mrid_expr} as mrid"
-            else:
-                query = f"{match_clause} RETURN {mrid_expr} as mrid"
-        else:
-            if where_clause:
-                query = f"MATCH (n:{cim_class}) WHERE {where_clause} RETURN {mrid_expr} as mrid"
-            else:
-                query = f"MATCH (n:{cim_class}) RETURN {mrid_expr} as mrid"
-            
-        return query, self.params, self.warnings
-
-    def _build_where_clause(self, conditions: Dict[str, Any], cim_class: str) -> str:
-        """Recursively builds the WHERE clause from JSON conditions."""
-        if not conditions:
-            return ""
-
-        logical_op = conditions.get("logical_op", "AND").upper()
-        cond_list = conditions.get("conditions", [])
-        
-        if not cond_list:
-            return ""
-
-        fragments = []
-        for cond in cond_list:
+        for cond in group.get("conditions", []):
             if "logical_op" in cond:
-                # Nested condition
-                sub_clause = self._build_where_clause(cond, cim_class)
-                if sub_clause:
-                    fragments.append(f"({sub_clause})")
+                sub = self._build_group(cond, cim_class)
+                if sub:
+                    parts.append(f"({sub})")
             else:
-                # Leaf condition
-                fragment = self._build_leaf_condition(cond, cim_class)
-                if fragment:
-                    fragments.append(fragment)
+                leaf = self._build_leaf(cond, cim_class)
+                if leaf:
+                    parts.append(leaf)
 
-        if not fragments:
-            return ""
-            
-        return f" {logical_op} ".join(fragments)
+        return f" {logical_op} ".join(parts)
 
-    def _build_leaf_condition(self, cond: Dict[str, Any], cim_class: str) -> str:
-        """Translates a single property condition into a Cypher EXISTS block or direct attribute check."""
-        prop = cond.get("path")
-        op_str = cond.get("op")
+    def _build_leaf(self, cond: Dict[str, Any], cim_class: str) -> str:
+        path = cond.get("path", "")
+        op_str = cond.get("op", "")
         val = cond.get("value")
-        
-        if not prop:
-            self.warnings.append("Missing 'path' in condition.")
+
+        if not path or not op_str:
             return ""
-            
-        # 1. Map operator
-        cypher_op = CYPHER_OPERATORS.get(op_str)
+
+        cypher_op = _OPS.get(op_str)
         if not cypher_op:
-            msg = f"Unrecognized operator: {op_str}"
-            logger.warning(msg)
-            self.warnings.append(msg)
+            self.warnings.append(f"Unknown operator: {op_str!r}")
             return ""
 
-        # 2. Get property mapping (check class-specific, then defaults)
-        class_map = CIM_PROPERTY_MAP.get(cim_class, {})
-        mapping = class_map.get(prop) or DEFAULT_MAPPINGS.get(prop)
+        coerced = _coerce(val)
 
-        # 3. Build fragment
-        if not mapping:
-            # Fallback for direct attributes if not in map
-            if isinstance(prop, str) and prop.isidentifier():
-                param_name = self._get_param_name(val)
-                return f"n.{prop} {cypher_op} {param_name}"
-            else:
-                msg = f"Property '{prop}' for class '{cim_class}' is not mapped and is not a valid identifier."
-                logger.warning(msg)
-                self.warnings.append(msg)
-                return ""
+        dot = path.find(".")
+        class_prefix = path[:dot] if dot > -1 else None
+        is_direct = (
+            not class_prefix
+            or class_prefix == cim_class
+            or class_prefix in _INHERITED_CLASSES
+        )
 
-        # Handle mapped properties
-        rel_path = mapping.get("rel_path")
-        attr = mapping.get("attribute")
-        scale = mapping.get("scale", 1.0)
-        
-        if isinstance(val, (int, float)) and scale != 1.0:
-            try:
-                val = float(val) * scale
-            except (ValueError, TypeError):
-                pass
+        if is_direct:
+            prop_expr = f"n.`{path}`" if dot > -1 else f"n.{path}"
+            return _comparison(prop_expr, cypher_op, self._param(coerced) if cypher_op not in ("IS NOT NULL", "IS NULL") else None)
 
-        param_name = self._get_param_name(val)
-        
-        # Format the attribute for Cypher (handle namespacing)
-        # Note: if it has a rel_path, the attribute might start with 'e.' (handled in _format_property)
-        formatted_attr = self._format_property(attr, "n")
+        # EXISTS traversal — use captured graph path when available
+        graph_path = cond.get("graph_path")  # list of {rel, label} from the graph explorer
+        traversal = _build_traversal(cim_class, class_prefix, graph_path)
+        e_prop = f"e.`{path}`"
 
-        if rel_path:
-            return f"EXISTS {{ (n){rel_path} WHERE {formatted_attr} {cypher_op} {param_name} }}"
+        if cypher_op in ("IS NOT NULL", "IS NULL"):
+            return f"EXISTS {{ (n:{cim_class}){traversal} WHERE {e_prop} {cypher_op} }}"
+
+        param_name = self._param(coerced)
+        if isinstance(coerced, (int, float)):
+            str_param = self._param(str(int(coerced)) if coerced == int(coerced) else str(coerced))
+            inner = f"({e_prop} {cypher_op} {param_name} OR {e_prop} {cypher_op} {str_param})"
         else:
-            return f"{formatted_attr} {cypher_op} {param_name}"
+            inner = f"{e_prop} {cypher_op} {param_name}"
+        return f"EXISTS {{ (n:{cim_class}){traversal} WHERE {inner} }}"
+
+
+# ── Module-level helpers ──────────────────────────────────────────────────────
+
+def _build_traversal(root_class: str, target_class: Optional[str], graph_path: Optional[list]) -> str:
+    """Build the relationship traversal fragment for an EXISTS subquery.
+
+    If ``graph_path`` is provided (list of {rel, label} dicts captured from the
+    graph explorer), generates a specific hop-by-hop pattern:
+        -[:`rel1`]-(:Node1)-[:`rel2`]-(e:TargetClass)
+
+    Otherwise falls back to a variable-length undirected path:
+        -[*1..3]-(e:TargetClass)
+    """
+    if graph_path and len(graph_path) > 0:
+        parts = []
+        for hop in graph_path[:-1]:
+            rel = hop.get("rel", "")
+            label = hop.get("label", "")
+            parts.append(f"-[:`{rel}`]-({f':{label}' if label else ''})")
+        last = graph_path[-1]
+        parts.append(f"-[:`{last.get('rel', '')}`]-(e:{target_class})")
+        return "".join(parts)
+    return f"-[*1..3]-(e:{target_class})"
+
+
+def _comparison(prop: str, op: str, param: Optional[str]) -> str:
+    if param is None:
+        return f"{prop} {op}"
+    return f"{prop} {op} {param}"
+
+
+def _coerce(val: Any) -> Any:
+    """Coerce string-encoded numbers to their numeric type."""
+    if not isinstance(val, str) or val == "":
+        return val
+    try:
+        if "." in val:
+            return float(val)
+        return int(val)
+    except (ValueError, TypeError):
+        return val

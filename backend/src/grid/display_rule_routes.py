@@ -59,6 +59,40 @@ def _get_admin_conn():
     return conn
 
 # ── Routes ────────────────────────────────────────────────────────
+
+@router.get("/active")
+async def get_active_display_rules():
+    """Public endpoint: returns enabled rules for the default display config.
+
+    No authentication required — rules are read-only display configuration
+    consumed by the map for client-side classification.
+    """
+    def _load():
+        with _get_admin_conn() as conn:
+            config = conn.execute(
+                "SELECT id FROM display_configs WHERE is_default = 1 LIMIT 1"
+            ).fetchone()
+            if not config:
+                return []
+            rows = conn.execute(
+                """SELECT id, priority, match_conditions, config
+                   FROM display_config_rules
+                   WHERE config_id = ? AND enabled = 1
+                   ORDER BY priority DESC""",
+                (config["id"],),
+            ).fetchall()
+            result = []
+            for row in rows:
+                try:
+                    mc = json.loads(row["match_conditions"]) if isinstance(row["match_conditions"], str) else row["match_conditions"]
+                    cfg = json.loads(row["config"]) if isinstance(row["config"], str) else row["config"]
+                    result.append({"id": row["id"], "priority": row["priority"], "match_conditions": mc, "config": cfg})
+                except Exception:
+                    pass
+            return result
+    return await run_in_threadpool(_load)
+
+
 @router.get("/configs")
 async def list_display_configs(username: str = Depends(get_current_username)):
     def _list():
