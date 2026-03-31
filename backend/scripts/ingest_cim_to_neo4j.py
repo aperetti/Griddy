@@ -192,8 +192,6 @@ def main() -> None:
     args = parser.parse_args()
 
     url = args.url
-    if url == "bolt://neo4j:7687":
-        url = "bolt://localhost:7687"
 
     ingest_cim(args.xml_path, url, args.username, args.password,
                args.database, args.cim_profile)

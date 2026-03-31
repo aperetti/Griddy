@@ -49,7 +49,7 @@ def _discover_feeders_from_neo4j() -> list[dict]:
         })
 
     if not results:
-        raise ValueError("No Feeder nodes found in Neo4j. Ensure the CIM model has been ingested.")
+        logger.warning("No Feeder nodes found in Neo4j. Ingestion might be in progress.")
 
     return results
 
