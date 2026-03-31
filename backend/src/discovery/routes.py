@@ -1,7 +1,8 @@
 import os
 import re
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 from fastapi.concurrency import run_in_threadpool
+from src.shared.auth import get_current_username
 from pydantic import BaseModel
 from typing import Any, Dict, List
 import sqlite3
@@ -237,7 +238,7 @@ def _get_admin_conn():
 
 
 @router.get("/config", tags=["admin"])
-async def get_config_overrides():
+async def get_config_overrides(username: str = Depends(get_current_username)):
     """Read all configuration overrides from the admin database."""
 
     def _get():
@@ -251,7 +252,7 @@ async def get_config_overrides():
 
 
 @router.post("/config", tags=["admin"])
-async def set_config_override(config: ConfigUpdate):
+async def set_config_override(config: ConfigUpdate, username: str = Depends(get_current_username)):
     """Set or update a configuration override."""
 
     def _set():
