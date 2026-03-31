@@ -24,6 +24,9 @@ services:
       - CIMG_CIM_PROFILE=${CIMG_CIM_PROFILE:-cimhub_2023}
       - CIMG_IEC61970_301=${CIMG_IEC61970_301:-8}
       - CIM_MODEL_NAMES=${CIM_MODEL_NAMES:-IEEE8500}
+    depends_on:
+      neo4j:
+        condition: service_healthy
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     restart: unless-stopped
@@ -72,6 +75,9 @@ services:
       - CIMG_USERNAME=${CIMG_USERNAME:-neo4j}
       - CIMG_PASSWORD=${CIMG_PASSWORD:-password123}
       - REFRESH_DB=${REFRESH_DB:-false}
+    depends_on:
+      neo4j:
+        condition: service_healthy
     profiles: [ "tools" ]
     deploy:
       resources:
@@ -118,6 +124,12 @@ services:
       - neo4j_data:/data
       - neo4j_logs:/logs
       - ./backend/cim:/var/lib/neo4j/import/cim
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     restart: unless-stopped
 
   ingestor:
@@ -144,7 +156,8 @@ services:
       - CIMG_PASSWORD=${CIMG_PASSWORD:-password123}
       - CIMG_CIM_PROFILE=${CIMG_CIM_PROFILE:-cimhub_2023}
     depends_on:
-      - neo4j
+      neo4j:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
