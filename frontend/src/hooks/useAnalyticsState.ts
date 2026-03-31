@@ -19,7 +19,7 @@ export interface AnalysisType {
 
 export interface AnalysisInstance {
   id: string;
-  type: keyof AnalysisType;
+  type: keyof AnalysisType | string;
   nodeIds: string[];
   nodeName: string;
   isOpen: boolean;

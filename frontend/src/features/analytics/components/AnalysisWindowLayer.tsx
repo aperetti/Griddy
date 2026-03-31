@@ -1,74 +1,23 @@
-import { ConsumptionTimeSeriesModal } from './ConsumptionTimeSeriesModal';
-import { VoltageDistributionModal } from './VoltageDistributionModal';
 import { DiagnosticModal } from './DiagnosticModal';
 import { type AnalysisInstance } from '../../../hooks/useAnalyticsState';
+import { pluginRegistry } from '../../../plugins';
 
 interface AnalysisWindowLayerProps {
   windows: AnalysisInstance[];
   onClose: (id: string) => void;
-  onConfirmConsumption: (win: AnalysisInstance) => void;
-  onConfirmVoltage: (win: AnalysisInstance) => void;
-  onShowVoltageDistribution: (nodeIds: string[], nodeName: string, degrees?: number) => void;
+  onUpdateWindow: (id: string, updates: Partial<AnalysisInstance>) => void;
   onMinimize: (id: string) => void;
 }
 
 export function AnalysisWindowLayer({
   windows,
   onClose,
-  onConfirmConsumption,
-  onConfirmVoltage,
-  onShowVoltageDistribution,
+  onUpdateWindow,
   onMinimize,
 }: AnalysisWindowLayerProps) {
   return (
     <>
       {windows.map(win => {
-        if (win.type === 'consumption') {
-          return (
-            <ConsumptionTimeSeriesModal
-              key={win.id}
-              isOpen={win.isOpen}
-              onClose={() => onClose(win.id)}
-              zIndex={win.zIndex || 0}
-              loading={win.loading}
-              data={win.data}
-              estimatedRows={win.estimatedRows}
-              nodeName={win.nodeName}
-              layoutMode="floating"
-              onMinimize={() => onMinimize(win.id)}
-              isMinimized={win.isMinimized}
-              isPaused={win.isPaused}
-              onConfirm={() => onConfirmConsumption(win)}
-            />
-          );
-        }
-        if (win.type === 'voltage') {
-          return (
-            <VoltageDistributionModal
-              key={win.id}
-              isOpen={win.isOpen}
-              onClose={() => onClose(win.id)}
-              zIndex={win.zIndex || 0}
-              loading={win.loading}
-              data={win.data}
-              scatterData={win.scatterData || []}
-              timeSeriesData={win.timeSeriesData || []}
-              estimatedRows={win.estimatedRows}
-              nodeName={win.nodeName}
-              degrees={win.degrees ?? 5}
-              onDegreesChange={(d: number | null) => {
-                if (win.nodeIds && win.nodeName) {
-                  onShowVoltageDistribution(win.nodeIds, win.nodeName, d ?? 5);
-                }
-              }}
-              layoutMode="floating"
-              onMinimize={() => onMinimize(win.id)}
-              isMinimized={win.isMinimized}
-              isPaused={win.isPaused}
-              onConfirm={() => onConfirmVoltage(win)}
-            />
-          );
-        }
         if (win.type === 'diagnostic') {
           return (
             <DiagnosticModal
@@ -82,6 +31,18 @@ export function AnalysisWindowLayer({
               onMinimize={() => onMinimize(win.id)}
               isMinimized={win.isMinimized}
             />
+          );
+        }
+        const pluginDef = pluginRegistry.get(win.type);
+        if (pluginDef) {
+          return (
+            <span key={win.id}>
+              {pluginDef.renderWindow(win, {
+                onClose: () => onClose(win.id),
+                onMinimize: () => onMinimize(win.id),
+                updateWindow: (updates) => onUpdateWindow(win.id, updates),
+              })}
+            </span>
           );
         }
         return null;

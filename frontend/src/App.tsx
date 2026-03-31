@@ -24,9 +24,10 @@ import { AnalysisTray } from './features/analytics/components/AnalysisTray';
 import { useTopology } from './hooks/useTopology';
 import { useRuleClassification } from './features/grid/hooks/useRuleClassification';
 import { useAnalyticsState, SETTINGS_KEY } from './hooks/useAnalyticsState';
-import { useAnalysisExecution } from './hooks/useAnalysisExecution';
 import { fetchTopology, fetchModels } from './shared/api';
 import type { Node, Edge } from './shared/types';
+import { pluginRegistry } from './plugins';
+import type { PluginDefinition } from './plugins/types';
 
 const calculateRange = (config: any) => {
   const end = config.endDateType === 'now' ? new Date() : new Date(config.fixedEndDate);
@@ -75,15 +76,37 @@ export default function App() {
     }
   }, [analytics.globalConfig]);
 
-  const execution = useAnalysisExecution({
-    dateRange,
-    updateWindow: analytics.updateWindow,
+  const selectedNodes = topology.nodes.filter(n => topology.highlightedNodes.has(n.id));
+  const selectedEdgeIds = Array.from(topology.highlightedEdges);
+  const applicablePlugins = Array.from(pluginRegistry.values()).filter(
+    p => p.appliesToNodes(selectedNodes, topology.highlightedEdges.size)
+  );
+
+  const pluginCtx = {
+    selectedNodes,
+    selectedEdgeIds,
+    resolveEdgeNodesToNodeIds: (edgeIds: string[]) =>
+      Array.from(new Set(
+        edgeIds.map(eid =>
+          topology.edges.find(e => e.id === eid || `${e.source}-${e.target}` === eid)?.target
+        ).filter(Boolean) as string[]
+      )),
     setAnalysisWindows: analytics.setAnalysisWindows,
     bringWindowToFront: analytics.bringWindowToFront,
+    updateWindow: analytics.updateWindow,
+    dateRange,
     systemConfig: analytics.systemConfig,
-    setHighlightedNodes: topology.setHighlightedNodes,
-    setHighlightedEdges: topology.setHighlightedEdges
-  });
+    addHighlightedNodes: (ids: string[]) => topology.setHighlightedNodes(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.add(id));
+      return next;
+    }),
+    addHighlightedEdges: (ids: string[]) => topology.setHighlightedEdges(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.add(id));
+      return next;
+    }),
+  };
 
   const bringDisplayRulesToFront = useCallback(() => {
     analytics.setMaxZIndex(prev => {
@@ -286,35 +309,9 @@ export default function App() {
             maxWidth: 'calc(100vw - 20px)'
           }}>
             <AnalysisToolbar
-              selectedNodes={topology.nodes.filter(n => topology.highlightedNodes.has(n.id))}
+              selectedNodes={selectedNodes}
               selectedEdgeCount={topology.highlightedEdges.size}
               onClearSelection={topology.handleClearSelection}
-              onViewConsumption={() => {
-                let nodeIds = Array.from(topology.highlightedNodes);
-                if (nodeIds.length === 0 && topology.highlightedEdges.size > 0) {
-                  const edgeIds = Array.from(topology.highlightedEdges);
-                  nodeIds = Array.from(new Set(
-                    edgeIds.map(eid =>
-                      topology.edges.find(e => e.id === eid || `${e.source}-${e.target}` === eid)?.target
-                    ).filter(Boolean) as string[]
-                  ));
-                }
-                const name = nodeIds.length === 1 ? (topology.nodes.find(n => n.id === nodeIds[0])?.name || 'Selected Asset') : `${nodeIds.length} Assets`;
-                execution.handleRunConsumption(nodeIds, name);
-              }}
-              onViewVoltage={() => {
-                let nodeIds = Array.from(topology.highlightedNodes);
-                if (nodeIds.length === 0 && topology.highlightedEdges.size > 0) {
-                  const edgeIds = Array.from(topology.highlightedEdges);
-                  nodeIds = Array.from(new Set(
-                    edgeIds.map(eid =>
-                      topology.edges.find(e => e.id === eid || `${e.source}-${e.target}` === eid)?.target
-                    ).filter(Boolean) as string[]
-                  ));
-                }
-                const name = nodeIds.length === 1 ? (topology.nodes.find(n => n.id === nodeIds[0])?.name || 'Selected Asset') : `${nodeIds.length} Assets`;
-                execution.handleRunVoltageMap(nodeIds, name);
-              }}
               onViewDiagnostic={(node) => {
                 analytics.setAnalysisWindows(prev => [...prev, {
                   id: `diag-${Date.now()}`,
@@ -332,16 +329,16 @@ export default function App() {
               dateRange={dateRange}
               configLabel="Global Profile"
               onOpenSettings={() => setSettingsOpen(true)}
+              plugins={applicablePlugins}
+              onRunPlugin={(plugin: PluginDefinition) => plugin.handleRun(pluginCtx)}
             />
           </Box>
 
           <AnalysisWindowLayer
             windows={analytics.analysisWindows.filter(win => win.isOpen && !win.isMinimized)}
             onClose={analytics.removeWindow}
+            onUpdateWindow={analytics.updateWindow}
             onMinimize={analytics.toggleMinimize}
-            onConfirmConsumption={(win) => execution.performConsumptionFetch(win.id, win.nodeIds, dateRange.start, dateRange.end)}
-            onConfirmVoltage={(win) => execution.performVoltageFetch(win.id, win.nodeIds, dateRange.start, dateRange.end, win.degrees ?? 5)}
-            onShowVoltageDistribution={execution.handleRunVoltageMap}
           />
           
           <AnalysisTray 

@@ -3,7 +3,21 @@ title: Release Updates
 ---
 # Release Updates
 
-This page tracks the evolution of the Griddy project. We are currently in **Alpha** (v0.2.3-alpha).
+This page tracks the evolution of the Griddy project. We are currently in **Alpha** (v0.2.4-alpha).
+
+## [0.2.4-alpha] - 2026-03-29 (Commit: ebd567f)
+### Added
+- **Unified Rule Engine Architecture**: Re-engineered the Cypher query builder to use generic `EXISTS` traversals. This allows for complex property matching across any CIM relationship without requiring pre-defined manual mappings.
+- **Rich Contextual Metadata (Tooltips)**: Integrated `tooltip_config` and `tooltip_overrides` into Display Rules. The frontend now receives comprehensive hover data for both nodes and edges.
+- **Bulk Classification Cache**: Implemented a model-aware lazy classification cache that dramatically reduces API latency for topology-heavy views.
+- **Improved CIM Metadata**: Added `cim_mapping.py` to consolidate display labels, custom units, and scale factors for standardized equipment categorization.
+
+### Changed
+- **Async Topology Processing**: Offloaded graph classification logic to a dedicated thread pool using `run_in_threadpool`, ensuring the FastAPI event loop remains responsive during large-scale network queries.
+- **Cleaned Up Graph Views**: Reduced clutter in the map view by optimizing default node labels and improving zoom-dependent visibility.
+
+### Fixed
+- **Rule Engine Stability**: Resolved a parameter mismatch in the manual VoltageAnalysis module and fixed edge cases in property traversal.
 
 ## [0.2.3-alpha] - 2026-03-27 (Commit: c075154)
 ### Added

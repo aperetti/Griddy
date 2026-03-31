@@ -35,6 +35,18 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Plugin SDK',
+      link: {
+        type: 'generated-index',
+      },
+      items: [
+        'sdk/index',
+        'sdk/installation',
+        'sdk/api-reference',
+      ],
+    },
+    {
+      type: 'category',
       label: 'Guides & Examples',
       link: {
         type: 'generated-index',
