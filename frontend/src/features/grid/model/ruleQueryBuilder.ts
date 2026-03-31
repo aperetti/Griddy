@@ -144,7 +144,7 @@ function buildLeafExpr(
 }
 
 function buildComparison(
-    prop: Cypher.PropertyRef,
+    prop: Cypher.Property,
     op: string,
     value: unknown,
 ): Cypher.Predicate | undefined {

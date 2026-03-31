@@ -190,7 +190,7 @@ export function useGraphExplorer() {
                 const fwd = `${id}-${nb.id}`;
                 const rev = `${nb.id}-${id}`;
                 if (!existingIds.has(fwd) && !existingIds.has(rev)) {
-                    toAdd.push({ id: fwd, source: id, target: nb.id, label: nb.relation });
+                    toAdd.push({ id: fwd, source: id, target: nb.id, rel: nb.relation });
                 }
             }
             return toAdd.length > 0 ? [...prev, ...toAdd] : prev;

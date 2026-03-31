@@ -1,4 +1,4 @@
-import { useMemo, useRef, MutableRefObject } from 'react';
+import { useMemo, type MutableRefObject } from 'react';
 import { ScatterplotLayer, PathLayer, IconLayer, TextLayer } from '@deck.gl/layers';
 import { PathStyleExtension } from '@deck.gl/extensions';
 import type { Node, Edge } from '../../../shared/types';

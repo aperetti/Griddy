@@ -26,7 +26,7 @@ function buildDisplayProps(config: RuleConfig, ruleId: number) {
     return {
         display_type: config.visual_type,
         display_icon: `rule_${ruleId}`,
-        display_color: config.color_hex ?? null,
+        display_color: config.color_hex ?? undefined,
         display_size: config.size ?? 1.0,
         display_label: config.label ?? '',
         cluster_enabled: config.cluster_enabled ?? false,
@@ -36,7 +36,7 @@ function buildDisplayProps(config: RuleConfig, ruleId: number) {
         display_min_zoom: config.min_zoom ?? 0.0,
         display_max_zoom: config.max_zoom ?? 24.0,
         display_rotate_to_edge: config.rotate_to_edge ?? false,
-        display_tooltip: config.tooltip_config ?? null,
+        display_tooltip: config.tooltip_config ?? undefined,
     };
 }
 

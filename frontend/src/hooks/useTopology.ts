@@ -1,6 +1,5 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import type { Node, Edge } from '../shared/types';
-import { fetchTopology } from '../shared/api';
 
 export function useTopology() {
   const [nodes, setNodes] = useState<Node[]>([]);
