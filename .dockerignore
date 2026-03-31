@@ -1,0 +1,26 @@
+# Exclude data and database files
+backend/cim/
+ingest/
+archive/
+*.db
+*.duckdb
+*.sqlite
+cim_readings/
+data/
+
+# Python artifacts
+**/__pycache__/
+**/*.pyc
+.venv/
+venv/
+
+# Node.js artifacts
+node_modules/
+
+# IDE and Tooling
+.vscode/
+.git/
+.agents/
+.gemini/
+.idea/
+.DS_Store
