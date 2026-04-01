@@ -8,11 +8,16 @@ Endpoint:
 
     node_ids  — comma-separated connectivity-node IDs or equipment mRIDs
 """
+import logging
+
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from plugins.sdk import sdk
 
 router = APIRouter(prefix="/api/plugins/transformer-loading", tags=["plugins"])
+logger = logging.getLogger(__name__)
+
+MAX_NODE_IDS = 100
 
 # Cypher queries both the connectivity-node ID path and the direct mRID path
 # so callers can pass either form without needing to know which they have.
@@ -92,4 +97,13 @@ async def get_transformer_loading(node_ids: str):
     ids = [i.strip() for i in node_ids.split(",") if i.strip()]
     if not ids:
         raise HTTPException(status_code=400, detail="No node IDs provided")
-    return await run_in_threadpool(_fetch, ids)
+    if len(ids) > MAX_NODE_IDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Too many node IDs ({len(ids)}); maximum is {MAX_NODE_IDS}",
+        )
+    try:
+        return await run_in_threadpool(_fetch, ids)
+    except Exception as exc:
+        logger.error("get_transformer_loading failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Transformer loading query failed")

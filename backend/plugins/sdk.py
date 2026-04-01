@@ -40,7 +40,9 @@ class PluginCimService:
         """
         import re
         _WRITE = re.compile(
-            r"\b(CREATE|MERGE|SET|DELETE|REMOVE|DROP|CALL\s+apoc\..*write)\b",
+            r"\b(CREATE|MERGE|SET|DELETE|REMOVE|DROP|FOREACH"
+            r"|CALL\s+apoc\.(create|merge|refactor|periodic|lock|trigger|"
+            r"custom|graph\.create|util\.sleep))\b",
             re.IGNORECASE,
         )
         if _WRITE.search(query):
