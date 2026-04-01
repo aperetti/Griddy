@@ -21,6 +21,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Feature Slice Routers
 from src.shared.config_watcher import watcher
+# Plugin system
+from plugins import include_plugin_routers
+from plugins.registry_routes import router as plugin_registry_router
 from src.grid.topology_routes import router as topology_router
 from src.grid.display_rule_routes import router as display_rule_router
 from src.discovery.routes import router as discovery_router
@@ -84,6 +87,10 @@ app.include_router(alarm_router)
 app.include_router(analytics_router)
 app.include_router(agent_router)
 app.include_router(model_router)
+
+# Plugin routes (each gated by its enabled status in config_overrides)
+app.include_router(plugin_registry_router)
+include_plugin_routers(app)
 
 # Mount static files for the UI
 ui_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'frontend', 'dist')

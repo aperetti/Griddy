@@ -471,6 +471,12 @@ export const fetchCimConnections = async (className: string): Promise<string[]> 
     return data.connected_classes ?? [];
 };
 
+export const fetchPluginRegistry = async (): Promise<Array<{name: string, enabled: boolean}>> => {
+    const response = await fetch(`${API_BASE}/plugins/registry`);
+    if (!response.ok) throw new Error('Failed to fetch plugin registry');
+    return response.json();
+};
+
 export const fetchConfigOverrides = async (): Promise<Array<{key: string, value: string}>> => {
     const response = await fetch(`${API_BASE}/cim/config`);
     if (!response.ok) throw new Error('Failed to fetch configuration overrides');

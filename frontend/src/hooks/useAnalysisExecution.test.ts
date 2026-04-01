@@ -1,96 +1,178 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useAnalysisExecution } from './useAnalysisExecution';
-import * as api from '../shared/api';
+import { consumptionPlugin } from '../plugins/consumption';
+import { voltagePlugin } from '../plugins/voltage';
+import * as consumptionApi from '../plugins/consumption/api';
+import * as voltageApi from '../plugins/voltage/api';
+import type { PluginExecutionContext } from '../plugins/types';
+import type { Node } from '../shared/types';
 
-// Mock api
-vi.mock('../shared/api', () => ({
-  fetchConsumption: vi.fn(),
-  fetchVoltageDistribution: vi.fn(),
-  fetchConsumptionEstimate: vi.fn(),
-  fetchVoltageEstimate: vi.fn(),
+vi.mock('../plugins/consumption/api', () => ({
+    fetchConsumptionPlugin: vi.fn(),
+    fetchConsumptionEstimatePlugin: vi.fn(),
 }));
 
-// Mock React hooks to work outside of a component for testing logic
-vi.mock('react', () => ({
-  useCallback: (fn: any) => fn,
-  useMemo: (fn: any) => fn(),
-  useEffect: vi.fn(),
-  useState: (initial: any) => [initial, vi.fn()],
+vi.mock('../plugins/voltage/api', () => ({
+    fetchVoltagePlugin: vi.fn(),
+    fetchVoltageEstimatePlugin: vi.fn(),
 }));
 
-describe('useAnalysisExecution logic', () => {
-  const mockProps = {
-    dateRange: { start: '2023-01-01', end: '2023-01-02' },
-    updateWindow: vi.fn(),
-    setAnalysisWindows: vi.fn(),
-    bringWindowToFront: vi.fn(),
-    systemConfig: {},
-    setHighlightedNodes: vi.fn(),
-    setHighlightedEdges: vi.fn(),
-  };
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('should update highlights when consumption fetch completes', async () => {
-    const mockResp = {
-      time_series: [],
-      downstream_node_ids: ['node1', 'node2'],
-      downstream_edge_ids: ['edge1'],
+function makeCtx(overrides: Partial<PluginExecutionContext> = {}): PluginExecutionContext {
+    return {
+        selectedNodes: [{ id: 'node1', name: 'Node 1' } as Node],
+        selectedEdgeIds: [],
+        resolveEdgeNodesToNodeIds: () => [],
+        setAnalysisWindows: vi.fn(),
+        bringWindowToFront: vi.fn(),
+        updateWindow: vi.fn(),
+        dateRange: { start: '2024-01-01T00:00:00', end: '2024-01-07T23:59:59' },
+        systemConfig: {},
+        addHighlightedNodes: vi.fn(),
+        addHighlightedEdges: vi.fn(),
+        ...overrides,
     };
-    (api.fetchConsumption as any).mockResolvedValue(mockResp);
+}
 
-    const hook = useAnalysisExecution(mockProps as any);
-    
-    await hook.performConsumptionFetch('win1', ['root'], '2023-01-01', '2023-01-02');
+describe('Consumption plugin handleRun', () => {
+    beforeEach(() => vi.clearAllMocks());
 
-    expect(mockProps.setHighlightedNodes).toHaveBeenCalled();
-    expect(mockProps.setHighlightedEdges).toHaveBeenCalled();
+    it('adds a window and calls bringWindowToFront immediately', async () => {
+        (consumptionApi.fetchConsumptionEstimatePlugin as any).mockResolvedValue({
+            estimated_rows: 100,
+            node_count: 1,
+        });
+        (consumptionApi.fetchConsumptionPlugin as any).mockResolvedValue({
+            time_series: [],
+            downstream_node_ids: [],
+            downstream_edge_ids: [],
+        });
 
-    // Verify the highlight update logic (functional update)
-    const nodeUpdateFn = (mockProps.setHighlightedNodes as any).mock.calls[0][0];
-    const initialNodes = new Set<string>(['existing']);
-    const updatedNodes = nodeUpdateFn(initialNodes);
-    expect(updatedNodes.has('node1')).toBe(true);
-    expect(updatedNodes.has('node2')).toBe(true);
-    expect(updatedNodes.has('existing')).toBe(true);
-  });
+        const ctx = makeCtx();
+        await consumptionPlugin.handleRun(ctx);
 
-  it('should update highlights when voltage fetch completes', async () => {
-    const mockResp = {
-      distribution: [],
-      downstream_node_ids: ['v-node1'],
-      downstream_edge_ids: ['v-edge1'],
-    };
-    (api.fetchVoltageDistribution as any).mockResolvedValue(mockResp);
+        expect(ctx.setAnalysisWindows).toHaveBeenCalledOnce();
+        const updater = (ctx.setAnalysisWindows as any).mock.calls[0][0];
+        const result = updater([]);
+        expect(result).toHaveLength(1);
+        expect(result[0].isOpen).toBe(true);
+        expect(result[0].loading).toBe(true);
+        expect(result[0].type).toBe('consumption');
 
-    const hook = useAnalysisExecution(mockProps as any);
-    
-    await hook.performVoltageFetch('win1', ['root'], '2023-01-01', '2023-01-02', 5);
+        expect(ctx.bringWindowToFront).toHaveBeenCalledOnce();
+    });
 
-    expect(mockProps.setHighlightedNodes).toHaveBeenCalled();
-    const nodeUpdateFn = (mockProps.setHighlightedNodes as any).mock.calls[0][0];
-    const updatedNodes = nodeUpdateFn(new Set());
-    expect(updatedNodes.has('v-node1')).toBe(true);
-  });
+    it('highlights nodes from estimate response', async () => {
+        (consumptionApi.fetchConsumptionEstimatePlugin as any).mockResolvedValue({
+            estimated_rows: 100,
+            node_count: 1,
+            downstream_node_ids: ['est-node1'],
+            downstream_edge_ids: ['est-edge1'],
+        });
+        (consumptionApi.fetchConsumptionPlugin as any).mockResolvedValue({
+            time_series: [],
+            downstream_node_ids: [],
+            downstream_edge_ids: [],
+        });
 
-  it('should update highlights from estimate in handleRunConsumption', async () => {
-    const mockEst = {
-      estimated_rows: 100,
-      downstream_node_ids: ['est-node'],
-      downstream_edge_ids: ['est-edge'],
-    };
-    (api.fetchConsumptionEstimate as any).mockResolvedValue(mockEst);
-    (api.fetchConsumption as any).mockResolvedValue({ time_series: [] });
+        const ctx = makeCtx();
+        await consumptionPlugin.handleRun(ctx);
 
-    const hook = useAnalysisExecution(mockProps as any);
-    
-    await hook.handleRunConsumption(['root'], 'Test Node');
+        expect(ctx.addHighlightedNodes).toHaveBeenCalledWith(['est-node1']);
+        expect(ctx.addHighlightedEdges).toHaveBeenCalledWith(['est-edge1']);
+    });
 
-    expect(mockProps.setHighlightedNodes).toHaveBeenCalled();
-    const nodeUpdateFn = (mockProps.setHighlightedNodes as any).mock.calls[0][0];
-    const updatedNodes = nodeUpdateFn(new Set());
-    expect(updatedNodes.has('est-node')).toBe(true);
-  });
+    it('highlights nodes from full fetch response', async () => {
+        (consumptionApi.fetchConsumptionEstimatePlugin as any).mockResolvedValue({
+            estimated_rows: 100,
+            node_count: 1,
+        });
+        (consumptionApi.fetchConsumptionPlugin as any).mockResolvedValue({
+            time_series: [{ timestamp: '2024-01-01T00:00:00Z' }],
+            downstream_node_ids: ['node1', 'node2'],
+            downstream_edge_ids: ['edge1'],
+        });
+
+        const ctx = makeCtx();
+        await consumptionPlugin.handleRun(ctx);
+
+        expect(ctx.addHighlightedNodes).toHaveBeenCalledWith(['node1', 'node2']);
+        expect(ctx.addHighlightedEdges).toHaveBeenCalledWith(['edge1']);
+    });
+
+    it('pauses the window when estimated_rows exceeds threshold', async () => {
+        (consumptionApi.fetchConsumptionEstimatePlugin as any).mockResolvedValue({
+            estimated_rows: 3_000_000,
+            node_count: 1,
+        });
+
+        const ctx = makeCtx();
+        await consumptionPlugin.handleRun(ctx);
+
+        expect(ctx.updateWindow).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.objectContaining({ isPaused: true, loading: false }),
+        );
+        expect(consumptionApi.fetchConsumptionPlugin).not.toHaveBeenCalled();
+    });
+
+    it('sets loading:false with empty data array on estimate failure', async () => {
+        (consumptionApi.fetchConsumptionEstimatePlugin as any).mockRejectedValue(new Error('500'));
+
+        const ctx = makeCtx();
+        await consumptionPlugin.handleRun(ctx);
+
+        expect(ctx.updateWindow).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.objectContaining({ loading: false }),
+        );
+    });
+
+    it('returns early when no nodes and no edges are selected', async () => {
+        const ctx = makeCtx({ selectedNodes: [], selectedEdgeIds: [] });
+        await consumptionPlugin.handleRun(ctx);
+
+        expect(ctx.setAnalysisWindows).not.toHaveBeenCalled();
+    });
+});
+
+describe('Voltage plugin handleRun', () => {
+    beforeEach(() => vi.clearAllMocks());
+
+    it('adds a window immediately with loading:true', async () => {
+        (voltageApi.fetchVoltageEstimatePlugin as any).mockResolvedValue({
+            estimated_rows: 100,
+            node_count: 1,
+        });
+        (voltageApi.fetchVoltagePlugin as any).mockResolvedValue({
+            distribution: [],
+            scatter: [],
+            timeseries: [],
+            downstream_node_ids: [],
+            downstream_edge_ids: [],
+        });
+
+        const ctx = makeCtx();
+        await voltagePlugin.handleRun(ctx);
+
+        const updater = (ctx.setAnalysisWindows as any).mock.calls[0][0];
+        const result = updater([]);
+        expect(result[0].isOpen).toBe(true);
+        expect(result[0].loading).toBe(true);
+        expect(result[0].type).toBe('voltage');
+    });
+
+    it('pauses the window when estimated_rows exceeds threshold', async () => {
+        (voltageApi.fetchVoltageEstimatePlugin as any).mockResolvedValue({
+            estimated_rows: 5_000_000,
+            node_count: 1,
+        });
+
+        const ctx = makeCtx();
+        await voltagePlugin.handleRun(ctx);
+
+        expect(ctx.updateWindow).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.objectContaining({ isPaused: true, loading: false }),
+        );
+        expect(voltageApi.fetchVoltagePlugin).not.toHaveBeenCalled();
+    });
 });

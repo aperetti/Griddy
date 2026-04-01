@@ -50,6 +50,23 @@
         *   Condition matching must accurately traverse both the node's properties and any `attached_equipment` matching a `target_class`.
     *   Existing Endpoints: Re-use `/api/analytics/phase-balance/{node_id}` to calculate the downstream aggregations upon node click.
 
+## 3.2 Plugin System Architecture
+* **Backend Plugin Contract**: Every plugin is a FastAPI router under `backend/plugins/<name>/routes.py`. Plugins must never create database connections directly — all data access goes through the `PluginSDK` (`sdk.cim`, `sdk.topology`, `sdk.analytics`).
+* **PluginSDK**: A singleton (`plugins/sdk.py`) exposes three namespaced services:
+    * `sdk.cim` — read-only Cypher queries and equipment lookups against Neo4j via the shared `CimModelRegistry`.
+    * `sdk.topology` — downstream/upstream traversal via the shared `NetworkXEngine`.
+    * `sdk.analytics` — pre-built time-series use cases (consumption, voltage distribution) backed by DuckDB/Parquet.
+* **Write Protection**: `sdk.cim.run_cypher` must reject queries containing write keywords (`CREATE`, `MERGE`, `SET`, `DELETE`, `REMOVE`, `DROP`).
+* **Plugin Registry (Backend)**: `backend/plugins/__init__.py` exports `PLUGIN_ROUTERS`; adding a plugin requires one import line here plus `app.include_router` in `main.py`.
+* **Frontend Plugin Contract**: Each plugin exports a `PluginDefinition` object implementing:
+    * `type: string` — unique slug used as the `AnalysisInstance.type` discriminant.
+    * `appliesToNodes(nodes, edgeCount) → boolean` — controls toolbar button visibility.
+    * `handleRun(ctx: PluginExecutionContext) → void` — creates a loading `AnalysisInstance`, fetches data, and updates the instance.
+    * `renderWindow(instance, callbacks) → ReactNode` — renders the floating window.
+* **Plugin Registry (Frontend)**: `frontend/src/plugins/index.ts` exports a `Map<string, PluginDefinition>`; adding a plugin requires one import and one map entry.
+* **AnalysisWindowLayer**: Dispatches rendering to the correct plugin's `renderWindow` by looking up `win.type` in the registry; the diagnostic window remains a special-cased type.
+* **Isolation**: Plugin frontend code lives under `frontend/src/plugins/<name>/`. Backend code lives under `backend/plugins/<name>/`. Neither may import from core feature slices.
+
 ## 4. Admin Console Service (Node.js/Fastify)
 * **Core**: Use Fastify for high-performance Node.js service implementation.
 * **Architecture**: Follow Vertical Slice Architecture.

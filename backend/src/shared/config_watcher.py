@@ -3,6 +3,7 @@ import os
 import asyncio
 import logging
 from typing import Dict, Any
+from src.shared.database_setup import ADMIN_SQLITE_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,7 @@ class ConfigWatcher:
         finally:
             conn.close()
 
-# Global watcher instance
-CONFIG_DB_PATH = os.getenv("CONFIG_DB_PATH", "admin.sqlite")
-watcher = ConfigWatcher(CONFIG_DB_PATH)
+# Global watcher instance — path is resolved in database_setup to correctly
+# locate admin-console/admin-backend/admin.sqlite in dev and /data/config in Docker.
+_config_db_path = os.getenv("CONFIG_DB_PATH") or os.getenv("ADMIN_DB_PATH") or ADMIN_SQLITE_PATH
+watcher = ConfigWatcher(_config_db_path)

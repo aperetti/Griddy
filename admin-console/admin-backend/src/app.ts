@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import { dataRoutes } from './features/data/routes.js';
 import { configRoutes } from './features/config/routes.js';
 import { usersRoutes } from './features/users/routes.js';
+import { pluginsRoutes } from './features/plugins/routes.js';
 
 const fastify = Fastify({
   logger: true
@@ -17,6 +18,7 @@ await fastify.register(cors, {
 await fastify.register(dataRoutes, { prefix: '/api/data' });
 await fastify.register(configRoutes, { prefix: '/api/config' });
 await fastify.register(usersRoutes, { prefix: '/api/users' });
+await fastify.register(pluginsRoutes, { prefix: '/api/plugins' });
 fastify.get('/ping', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 
 const start = async () => {

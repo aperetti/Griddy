@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { type GlobalConfig } from '../features/analytics/components/GlobalSettingsModal';
 import { fetchConfigOverrides } from '../shared/api';
 
@@ -19,7 +19,7 @@ export interface AnalysisType {
 
 export interface AnalysisInstance {
   id: string;
-  type: keyof AnalysisType;
+  type: keyof AnalysisType | string;
   nodeIds: string[];
   nodeName: string;
   isOpen: boolean;
@@ -39,6 +39,7 @@ export interface AnalysisInstance {
 export function useAnalyticsState() {
   const [analysisWindows, setAnalysisWindows] = useState<AnalysisInstance[]>([]);
   const [maxZIndex, setMaxZIndex] = useState(1000);
+  const maxZIndexRef = useRef(1000);
   const [systemConfig, setSystemConfig] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -81,14 +82,19 @@ export function useAnalyticsState() {
     ));
   }, []);
 
+  const getNextZIndex = useCallback(() => {
+    maxZIndexRef.current += 1;
+    setMaxZIndex(maxZIndexRef.current);
+    return maxZIndexRef.current;
+  }, []);
+
   const bringWindowToFront = useCallback((id: string) => {
-    setMaxZIndex(prev => {
-      const newZ = prev + 1;
-      setAnalysisWindows(current => current.map(w =>
-        w.id === id ? { ...w, zIndex: newZ } : w
-      ));
-      return newZ;
-    });
+    const newZ = maxZIndexRef.current + 1;
+    maxZIndexRef.current = newZ;
+    setMaxZIndex(newZ);
+    setAnalysisWindows(current => current.map(w =>
+      w.id === id ? { ...w, zIndex: newZ } : w
+    ));
   }, []);
 
   return {
@@ -102,6 +108,7 @@ export function useAnalyticsState() {
     removeWindow,
     toggleMinimize,
     bringWindowToFront,
+    getNextZIndex,
     systemConfig
   };
 }

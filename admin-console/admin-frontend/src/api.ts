@@ -21,6 +21,13 @@ export const configApi = {
   set: (key: string, value: string) => api.post('/config', { key, value }).then(res => res.data),
 };
 
+export const pluginsApi = {
+  getRegistry: (): Promise<{ name: string; enabled: boolean }[]> =>
+    api.get('/plugins').then(res => res.data),
+  setEnabled: (name: string, enabled: boolean) =>
+    api.put(`/plugins/${name}/enabled`, { enabled }).then(res => res.data),
+};
+
 export const usersApi = {
   get: () => api.get('/users').then(res => res.data),
   set: (username: string, password?: string) => api.post('/users', { username, password }).then(res => res.data),

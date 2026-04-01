@@ -1,7 +1,17 @@
 """Use Case: Aggregate Consumption Analytics."""
 import duckdb
+import logging
 from typing import Dict, Any, List
 from src.shared.graph_engine import GraphEngine
+
+logger = logging.getLogger(__name__)
+
+
+def _safe_parquet_path(path: str) -> str:
+    """Return a SQL-safe parquet directory path or raise ValueError."""
+    if "'" in path or '"' in path:
+        raise ValueError(f"PARQUET_DIR contains invalid characters: {path!r}")
+    return path.replace("\\", "/")
 
 class CalculateAggregateConsumptionUseCase:
     """Aggregates kwh_dlv and kwh_rcv over time for downstream meters."""
@@ -26,24 +36,22 @@ class CalculateAggregateConsumptionUseCase:
         placeholders = ",".join(["?"] * len(nodes_to_query))
         query_params = nodes_to_query + [start_time, end_time]
         
+        safe_dir = _safe_parquet_path(self.parquet_dir)
         prefetch_query = f"""
             SELECT COUNT(*) as estimated_rows
-            FROM read_parquet('{self.parquet_dir}/*.parquet') r
+            FROM read_parquet('{safe_dir}/*.parquet') r
             WHERE r.node_id IN ({placeholders})
               AND r.timestamp >= CAST(? AS TIMESTAMP)
               AND r.timestamp <= CAST(? AS TIMESTAMP)
         """
-        
-        try:
-            with duckdb.connect(self.db_path, read_only=True) as conn:
-                prefetch_results = conn.execute(prefetch_query, query_params).fetchone()
-            
-            return {
-                "estimated_rows": prefetch_results[0] if prefetch_results else 0,
-                "node_count": len(nodes_to_query)
-            }
-        except Exception as e:
-            return {"error": str(e)}
+
+        with duckdb.connect(self.db_path, read_only=True) as conn:
+            prefetch_results = conn.execute(prefetch_query, query_params).fetchone()
+
+        return {
+            "estimated_rows": prefetch_results[0] if prefetch_results else 0,
+            "node_count": len(nodes_to_query)
+        }
 
     def execute(self, start_node_ids: List[str], start_time: str, end_time: str) -> Dict[str, Any]:
         """
@@ -91,19 +99,20 @@ class CalculateAggregateConsumptionUseCase:
         # Combine weight params with the time params
         query_params = weight_params + [start_time, end_time]
         
+        safe_dir = _safe_parquet_path(self.parquet_dir)
         query = f"""
             WITH phase_weights(node_id, wa, wb, wc) AS (
                 VALUES {values_clause}
             ),
             aggregated AS (
-                SELECT 
+                SELECT
                     r.timestamp,
                     SUM(COALESCE(r.kwh_dlv, 0)) as total_kwh_dlv,
                     SUM(COALESCE(r.kwh_rcv, 0)) as total_kwh_rcv,
                     SUM(COALESCE(r.kwh_dlv, 0) * pw.wa) as kwh_a,
                     SUM(COALESCE(r.kwh_dlv, 0) * pw.wb) as kwh_b,
                     SUM(COALESCE(r.kwh_dlv, 0) * pw.wc) as kwh_c
-                FROM read_parquet('{self.parquet_dir.replace("\\", "/")}/*.parquet') r
+                FROM read_parquet('{safe_dir}/*.parquet') r
                 JOIN phase_weights pw ON r.node_id = pw.node_id
                 WHERE r.timestamp >= CAST(? AS TIMESTAMP)
                   AND r.timestamp <= CAST(? AS TIMESTAMP)
@@ -125,12 +134,10 @@ class CalculateAggregateConsumptionUseCase:
             ORDER BY a.timestamp ASC
         """
         
-        try:
-            with duckdb.connect(self.db_path, read_only=True) as conn:
-                print(f"DEBUG: SQL: {query}")
-                results = conn.execute(query, query_params).fetchall()
-                
-            time_series = [
+        with duckdb.connect(self.db_path, read_only=True) as conn:
+            results = conn.execute(query, query_params).fetchall()
+
+        time_series = [
                 {
                     "timestamp": row[0].isoformat() + "Z",
                     "kwh_delivered": float(row[1]),
@@ -144,12 +151,10 @@ class CalculateAggregateConsumptionUseCase:
                 for row in results
             ]
             
-            return {
-                "start_node_ids": start_node_ids,
-                "node_count": len(nodes_to_query),
-                "downstream_node_ids": nodes_to_query,
-                "downstream_edge_ids": list(all_downstream_edges),
-                "time_series": time_series
-            }
-        except Exception as e:
-             return {"error": str(e)}
+        return {
+            "start_node_ids": start_node_ids,
+            "node_count": len(nodes_to_query),
+            "downstream_node_ids": nodes_to_query,
+            "downstream_edge_ids": list(all_downstream_edges),
+            "time_series": time_series
+        }

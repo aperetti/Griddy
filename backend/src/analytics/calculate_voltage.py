@@ -1,7 +1,17 @@
 """Use Case: Voltage Distribution."""
 import duckdb
+import logging
 from typing import Dict, Any, List
 from src.shared.graph_engine import GraphEngine
+
+logger = logging.getLogger(__name__)
+
+
+def _safe_parquet_path(path: str) -> str:
+    """Return a SQL-safe parquet directory path or raise ValueError."""
+    if "'" in path or '"' in path:
+        raise ValueError(f"PARQUET_DIR contains invalid characters: {path!r}")
+    return path.replace("\\", "/")
 
 class CalculateVoltageDistributionUseCase:
     """Calculates voltage statistics (mean, median, stddev) for downstream meters."""
@@ -22,24 +32,22 @@ class CalculateVoltageDistributionUseCase:
         placeholders = ",".join(["?"] * len(nodes_to_query))
         query_params = nodes_to_query + [start_time, end_time]
         
+        safe_dir = _safe_parquet_path(self.parquet_dir)
         prefetch_query = f"""
             SELECT COUNT(*) as estimated_rows
-            FROM read_parquet('{self.parquet_dir}/*.parquet')
+            FROM read_parquet('{safe_dir}/*.parquet')
             WHERE node_id IN ({placeholders})
               AND timestamp >= CAST(? AS TIMESTAMP)
               AND timestamp <= CAST(? AS TIMESTAMP)
         """
-        
-        try:
-            with duckdb.connect(self.db_path, read_only=True) as conn:
-                prefetch_results = conn.execute(prefetch_query, query_params).fetchone()
-            
-            return {
-                "estimated_rows": prefetch_results[0] if prefetch_results else 0,
-                "node_count": len(nodes_to_query)
-            }
-        except Exception as e:
-            return {"error": str(e)}
+
+        with duckdb.connect(self.db_path, read_only=True) as conn:
+            prefetch_results = conn.execute(prefetch_query, query_params).fetchone()
+
+        return {
+            "estimated_rows": prefetch_results[0] if prefetch_results else 0,
+            "node_count": len(nodes_to_query)
+        }
 
     def execute(self, start_node_ids: List[str], start_time: str, end_time: str, degrees: int = None) -> Dict[str, Any]:
         """
@@ -55,11 +63,12 @@ class CalculateVoltageDistributionUseCase:
         nodes_to_query = list(all_downstream_nodes) if all_downstream_nodes else start_node_ids
         placeholders = ",".join(["?"] * len(nodes_to_query))
         query_params = nodes_to_query + [start_time, end_time]
-        
+        safe_dir = _safe_parquet_path(self.parquet_dir)
+
         query = f"""
             WITH raw_readings AS (
                 SELECT node_id, timestamp, voltage_a, voltage_b, voltage_c
-                FROM read_parquet('{self.parquet_dir}/*.parquet')
+                FROM read_parquet('{safe_dir}/*.parquet')
                 WHERE node_id IN ({placeholders})
                   AND timestamp >= CAST(? AS TIMESTAMP)
                   AND timestamp <= CAST(? AS TIMESTAMP)
@@ -104,7 +113,7 @@ class CalculateVoltageDistributionUseCase:
             SELECT * FROM (
                 WITH raw_readings AS (
                     SELECT timestamp, node_id, kwh_dlv, voltage_a
-                    FROM read_parquet('{self.parquet_dir}/*.parquet')
+                    FROM read_parquet('{safe_dir}/*.parquet')
                     WHERE node_id IN ({placeholders})
                       AND timestamp >= CAST(? AS TIMESTAMP)
                       AND timestamp <= CAST(? AS TIMESTAMP)
@@ -128,12 +137,12 @@ class CalculateVoltageDistributionUseCase:
         """
         
         timeseries_query = f"""
-            SELECT 
+            SELECT
                 CAST(timestamp AS DATE) as day,
                 MEDIAN(voltage_a) as p50,
                 QUANTILE_CONT(voltage_a, 0.1) as p10,
                 QUANTILE_CONT(voltage_a, 0.9) as p90
-            FROM read_parquet('{self.parquet_dir}/*.parquet')
+            FROM read_parquet('{safe_dir}/*.parquet')
             WHERE node_id IN ({placeholders})
               AND timestamp >= CAST(? AS TIMESTAMP)
               AND timestamp <= CAST(? AS TIMESTAMP)
@@ -144,55 +153,53 @@ class CalculateVoltageDistributionUseCase:
 
         stats_query = f"""
             SELECT AVG(voltage_a), MEDIAN(voltage_a)
-            FROM read_parquet('{self.parquet_dir}/*.parquet')
+            FROM read_parquet('{safe_dir}/*.parquet')
             WHERE node_id IN ({placeholders})
               AND timestamp >= CAST(? AS TIMESTAMP)
               AND timestamp <= CAST(? AS TIMESTAMP)
               AND voltage_a IS NOT NULL
         """
 
-        try:
-            with duckdb.connect(self.db_path, read_only=True) as conn:
-                results = conn.execute(query, query_params).fetchall()
-                heat_results = conn.execute(heatmap_query, query_params).fetchall()
-                ts_results = conn.execute(timeseries_query, query_params).fetchall()
-                overall_stats = conn.execute(stats_query, query_params).fetchone()
-                
-            distribution = []
-            for row in results:
-                distribution.append({
-                    "voltage": float(row[0]),
-                    "phase_a": int(row[1]),
-                    "phase_b": int(row[2]),
-                    "phase_c": int(row[3])
-                })
-                
-            scatter = [
-                {"voltage": float(row[1]), "loading": float(row[0]), "count": int(row[2])}
-                for row in heat_results
-            ]
+        with duckdb.connect(self.db_path, read_only=True) as conn:
+            results = conn.execute(query, query_params).fetchall()
+            heat_results = conn.execute(heatmap_query, query_params).fetchall()
+            ts_results = conn.execute(timeseries_query, query_params).fetchall()
+            overall_stats = conn.execute(stats_query, query_params).fetchone()
 
-            timeseries = [
-                {
-                    "date": row[0].isoformat(),
-                    "p50": float(row[1]),
-                    "p10": float(row[2]),
-                    "p90": float(row[3])
-                }
-                for row in ts_results
-            ]
-                
-            return {
-                "start_node_id": start_node_ids[0] if len(start_node_ids) == 1 else "multiple",
-                "start_node_ids": start_node_ids,
-                "node_count": len(nodes_to_query),
-                "downstream_node_ids": nodes_to_query,
-                "downstream_edge_ids": list(all_downstream_edges),
-                "mean_voltage": float(overall_stats[0]) if overall_stats and overall_stats[0] else 0,
-                "median_voltage": float(overall_stats[1]) if overall_stats and overall_stats[1] else 0,
-                "distribution": distribution,
-                "scatter": scatter,
-                "timeseries": timeseries
+        distribution = [
+            {
+                "voltage": float(row[0]),
+                "phase_a": int(row[1]),
+                "phase_b": int(row[2]),
+                "phase_c": int(row[3])
             }
-        except Exception as e:
-             return {"error": str(e)}
+            for row in results
+        ]
+
+        scatter = [
+            {"voltage": float(row[1]), "loading": float(row[0]), "count": int(row[2])}
+            for row in heat_results
+        ]
+
+        timeseries = [
+            {
+                "date": row[0].isoformat(),
+                "p50": float(row[1]),
+                "p10": float(row[2]),
+                "p90": float(row[3])
+            }
+            for row in ts_results
+        ]
+
+        return {
+            "start_node_id": start_node_ids[0] if len(start_node_ids) == 1 else "multiple",
+            "start_node_ids": start_node_ids,
+            "node_count": len(nodes_to_query),
+            "downstream_node_ids": nodes_to_query,
+            "downstream_edge_ids": list(all_downstream_edges),
+            "mean_voltage": float(overall_stats[0]) if overall_stats and overall_stats[0] else 0,
+            "median_voltage": float(overall_stats[1]) if overall_stats and overall_stats[1] else 0,
+            "distribution": distribution,
+            "scatter": scatter,
+            "timeseries": timeseries
+        }

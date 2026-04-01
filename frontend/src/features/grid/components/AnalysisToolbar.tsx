@@ -1,31 +1,32 @@
 import { Paper, Group, ActionIcon, Tooltip, Badge, Text, Divider, Transition } from '@mantine/core';
-import { BarChart3, Activity, X, Database, Settings } from 'lucide-react';
+import { X, Database, Settings } from 'lucide-react';
 import type { Node } from '../../../shared/types';
+import type { PluginDefinition } from '../../../plugins/types';
 
 interface AnalysisToolbarProps {
     selectedNodes: Node[];
     selectedEdgeCount: number;
     onClearSelection: () => void;
-    onViewConsumption: () => void;
-    onViewVoltage: () => void;
     onViewDiagnostic: (node: Node) => void;
     visible: boolean;
     dateRange: { start: string, end: string };
     configLabel: string;
     onOpenSettings: () => void;
+    plugins?: PluginDefinition[];
+    onRunPlugin?: (plugin: PluginDefinition) => void;
 }
 
 export function AnalysisToolbar({
     selectedNodes,
     selectedEdgeCount,
     onClearSelection,
-    onViewConsumption,
-    onViewVoltage,
     onViewDiagnostic,
     visible,
     dateRange,
     configLabel,
-    onOpenSettings
+    onOpenSettings,
+    plugins = [],
+    onRunPlugin,
 }: AnalysisToolbarProps) {
     const count = selectedNodes.length + selectedEdgeCount;
 
@@ -60,9 +61,9 @@ export function AnalysisToolbar({
                         </Group>
 
                         <Divider orientation="vertical" />
-                        <Tooltip 
-                            label={`${configLabel} • ${new Date(dateRange.start).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} - ${new Date(dateRange.end).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`} 
-                            position="bottom" 
+                        <Tooltip
+                            label={`${configLabel} • ${new Date(dateRange.start).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} - ${new Date(dateRange.end).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`}
+                            position="bottom"
                             color="dark"
                             withArrow
                         >
@@ -82,38 +83,30 @@ export function AnalysisToolbar({
                         </Tooltip>
                         <Divider orientation="vertical" />
 
-                        <Tooltip color="dark" label={(selectedNodes.length === 0 && selectedEdgeCount === 0) ? "Select an asset for analysis" : "Joint Consumption Analysis"} position="bottom" withArrow>
-                            <ActionIcon
-                                variant="light"
-                                color={(selectedNodes.length === 0 && selectedEdgeCount === 0) ? "gray" : "blue"}
-                                size="md"
-                                onClick={onViewConsumption}
-                                disabled={selectedNodes.length === 0 && selectedEdgeCount === 0}
-                                radius="sm"
-                                data-testid="btn-consumption"
-                            >
-                                <BarChart3 size={18} />
-                            </ActionIcon>
-                        </Tooltip>
+                        {plugins.map(plugin => {
+                            const Icon = plugin.icon;
+                            return (
+                                <Tooltip key={plugin.type} color="dark" label={plugin.label} position="bottom" withArrow>
+                                    <ActionIcon
+                                        variant="light"
+                                        color={plugin.color}
+                                        size="md"
+                                        onClick={() => onRunPlugin?.(plugin)}
+                                        radius="sm"
+                                        data-testid={`btn-plugin-${plugin.type}`}
+                                    >
+                                        <Icon size={18} />
+                                    </ActionIcon>
+                                </Tooltip>
+                            );
+                        })}
 
-                        <Tooltip color="dark" label={(selectedNodes.length === 0 && selectedEdgeCount === 0) ? "Select an asset for analysis" : "Joint Voltage Distribution"} position="bottom" withArrow>
-                            <ActionIcon
-                                variant="light"
-                                color={(selectedNodes.length === 0 && selectedEdgeCount === 0) ? "gray" : "cyan"}
-                                size="md"
-                                onClick={onViewVoltage}
-                                disabled={selectedNodes.length === 0 && selectedEdgeCount === 0}
-                                radius="sm"
-                                data-testid="btn-voltage"
-                            >
-                                <Activity size={18} />
-                            </ActionIcon>
-                        </Tooltip>
+                        <Divider orientation="vertical" />
 
-                        <Tooltip color="dark" label={(selectedNodes.length === 0 && selectedEdgeCount === 0) ? "Select an asset for analysis" : "CIM Diagnostic View"} position="bottom" withArrow>
+                        <Tooltip color="dark" label={selectedNodes.length === 0 ? "Select a node for diagnostic" : "CIM Diagnostic View"} position="bottom" withArrow>
                             <ActionIcon
                                 variant="light"
-                                color={(selectedNodes.length === 0 && selectedEdgeCount === 0) ? "gray" : "teal"}
+                                color={selectedNodes.length === 0 ? "gray" : "teal"}
                                 size="md"
                                 onClick={() => selectedNodes[0] && onViewDiagnostic(selectedNodes[0])}
                                 disabled={selectedNodes.length === 0}
