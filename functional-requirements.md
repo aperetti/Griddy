@@ -80,6 +80,17 @@ Users can create conditional formatting rules based on any attribute of a grid e
 * **Rule Toggling**: Users can enable/disable individual display rules via a toggle switch in the Rule Manager to quickly test different visualization configurations without deleting rules.
 * **Rule Duplication**: One-click duplication of existing rules to facilitate creating variants with minor modifications.
 
+## 3.12 Plugin System
+* **Extensible Analysis Screens**: The application must support a plugin architecture that allows new analysis screens to be added without modifying the core codebase.
+* **Toolbar Integration**: Plugins register toolbar buttons that appear only when they apply to the current node/edge selection.
+* **Floating Windows**: Each plugin renders its results in a draggable, minimizable floating analysis window, consistent with existing analysis screens.
+* **Built-in Plugins**: The system ships with three reference plugins:
+  * **Consumption Analysis**: Aggregate energy consumption time-series for downstream nodes over a user-defined date range.
+  * **Voltage Distribution**: Voltage KDE, scatter plot, and time-series for downstream nodes with configurable polynomial degree.
+  * **Transformer Loading**: CIM transformer end data (rated S/kVA, rated U/V) for transformers at or downstream of the selected node.
+* **Capacity Gating**: Consumption and voltage plugins must provide an estimate endpoint to warn users before executing large queries.
+* **Downstream Highlighting**: After an analysis runs, the downstream nodes and edges involved must be additively highlighted on the map.
+
 ## 4. System Administration & DevOps
 ### 4.1 System Management Console
 * **Reactive Configuration**: Ability to persistently override system configuration settings (e.g., API URLs, data paths) via an integrated SQLite-backed key-value store in a shared volume.

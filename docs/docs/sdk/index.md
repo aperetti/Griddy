@@ -74,3 +74,10 @@ A plugin is the right choice when you need to:
 - Package backend + frontend together as a self-contained feature
 
 For simple UI changes that don't require a backend query, use the existing component system instead.
+
+---
+
+## Further reading
+
+- [Creating a Plugin](./installation.md) — step-by-step walkthrough
+- [SDK API Reference](./api-reference.md) — full method signatures for `sdk.cim`, `sdk.topology`, `sdk.analytics`, and the TypeScript contracts
