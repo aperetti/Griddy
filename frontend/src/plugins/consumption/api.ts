@@ -27,16 +27,19 @@ export interface ConsumptionEstimateResponse {
     downstream_edge_ids?: string[];
 }
 
-function buildQuery(start: string, end: string): string {
-    return `start_time=${encodeURIComponent(start)}&end_time=${encodeURIComponent(end)}`;
+function buildQuery(start: string, end: string, force = false): string {
+    const params = new URLSearchParams({ start_time: start, end_time: end });
+    if (force) params.set('force', 'true');
+    return params.toString();
 }
 
 export async function fetchConsumptionPlugin(
     nodeIds: string[],
     start: string,
     end: string,
+    force = false,
 ): Promise<ConsumptionResponse> {
-    const res = await fetch(`${API_BASE}/${nodeIds.join(',')}?${buildQuery(start, end)}`);
+    const res = await fetch(`${API_BASE}/${nodeIds.join(',')}?${buildQuery(start, end, force)}`);
     if (!res.ok) throw new Error(`Consumption fetch failed: ${res.status}`);
     return res.json();
 }

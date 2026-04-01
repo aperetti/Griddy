@@ -64,3 +64,5 @@ export const transformerLoadingPlugin: PluginDefinition = {
         return createElement(TransformerLoadingWindow, { instance, onClose, onMinimize });
     },
 };
+
+export default transformerLoadingPlugin;

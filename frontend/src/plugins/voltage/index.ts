@@ -23,9 +23,9 @@ async function _performFetch(
     try {
         const resp = await fetchVoltagePlugin(nodeIds, start, end, degrees);
         updateWindow(windowId, {
-            data: resp.distribution || [],
-            scatterData: resp.scatter || [],
-            timeSeriesData: resp.timeseries || [],
+            data: resp.distribution ?? [],
+            scatterData: resp.scatter ?? [],
+            timeSeriesData: resp.timeseries ?? [],
             loading: false,
         });
         if (resp.downstream_node_ids?.length) addHighlightedNodes(resp.downstream_node_ids);
@@ -108,7 +108,7 @@ export const voltagePlugin: PluginDefinition = {
         const onConfirm = () => {
             const d = req.degrees ?? DEFAULT_DEGREES;
             callbacks.updateWindow({ loading: true, isPaused: false });
-            fetchVoltagePlugin(req.nodeIds, req.start, req.end, d)
+            fetchVoltagePlugin(req.nodeIds, req.start, req.end, d, true)
                 .then(resp => callbacks.updateWindow({
                     data: resp.distribution || [],
                     scatterData: resp.scatter || [],
@@ -152,3 +152,5 @@ export const voltagePlugin: PluginDefinition = {
         });
     },
 };
+
+export default voltagePlugin;

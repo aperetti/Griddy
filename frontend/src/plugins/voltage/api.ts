@@ -40,12 +40,10 @@ export interface VoltageEstimateResponse {
     downstream_edge_ids?: string[];
 }
 
-function buildQuery(start: string, end: string, degrees?: number | null): string {
-    const params = new URLSearchParams({
-        start_time: start,
-        end_time: end,
-    });
+function buildQuery(start: string, end: string, degrees?: number | null, force = false): string {
+    const params = new URLSearchParams({ start_time: start, end_time: end });
     if (degrees != null) params.set('degrees', String(degrees));
+    if (force) params.set('force', 'true');
     return params.toString();
 }
 
@@ -54,8 +52,9 @@ export async function fetchVoltagePlugin(
     start: string,
     end: string,
     degrees?: number | null,
+    force = false,
 ): Promise<VoltageResponse> {
-    const res = await fetch(`${API_BASE}/${nodeIds.join(',')}?${buildQuery(start, end, degrees)}`);
+    const res = await fetch(`${API_BASE}/${nodeIds.join(',')}?${buildQuery(start, end, degrees, force)}`);
     if (!res.ok) throw new Error(`Voltage fetch failed: ${res.status}`);
     return res.json();
 }

@@ -20,7 +20,7 @@ async function _performFetch(
     updateWindow(windowId, { loading: true, isPaused: false });
     try {
         const resp = await fetchConsumptionPlugin(nodeIds, start, end);
-        updateWindow(windowId, { data: resp.time_series, loading: false });
+        updateWindow(windowId, { data: resp.time_series ?? [], loading: false });
         if (resp.downstream_node_ids?.length) addHighlightedNodes(resp.downstream_node_ids);
         if (resp.downstream_edge_ids?.length) addHighlightedEdges(resp.downstream_edge_ids);
     } catch (e) {
@@ -91,8 +91,8 @@ export const consumptionPlugin: PluginDefinition = {
 
         const onConfirm = () => {
             callbacks.updateWindow({ loading: true, isPaused: false });
-            fetchConsumptionPlugin(req.nodeIds, req.start, req.end)
-                .then(resp => callbacks.updateWindow({ data: resp.time_series, loading: false }))
+            fetchConsumptionPlugin(req.nodeIds, req.start, req.end, true)
+                .then(resp => callbacks.updateWindow({ data: resp.time_series ?? [], loading: false }))
                 .catch(() => callbacks.updateWindow({ loading: false }));
         };
 
@@ -112,3 +112,5 @@ export const consumptionPlugin: PluginDefinition = {
         });
     },
 };
+
+export default consumptionPlugin;
