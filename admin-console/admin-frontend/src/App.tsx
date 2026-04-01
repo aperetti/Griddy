@@ -1,10 +1,11 @@
 import '@mantine/core/styles.css';
 import { MantineProvider, AppShell, Group, Title, Stack, Container, Tabs, Text } from '@mantine/core';
-import { Settings, Database, Map as MapIcon } from 'lucide-react';
+import { Settings, Database, Map as MapIcon, Puzzle } from 'lucide-react';
 import { theme } from './theme';
 import { DataPanel } from './features/data/DataPanel';
 import { ConfigPanel } from './features/config/ConfigPanel';
 import { UserManagementPanel } from './features/users/UserManagementPanel';
+import { PluginsPanel } from './features/plugins/PluginsPanel';
 import { Users } from 'lucide-react';
 
 export default function App() {
@@ -35,6 +36,7 @@ export default function App() {
                 <Tabs.Tab value="data" leftSection={<Database size={16} />}>Data Lifecycle</Tabs.Tab>
                 <Tabs.Tab value="config" leftSection={<Settings size={16} />}>System Config</Tabs.Tab>
                 <Tabs.Tab value="users" leftSection={<Users size={16} />}>Users</Tabs.Tab>
+                <Tabs.Tab value="plugins" leftSection={<Puzzle size={16} />}>Plugins</Tabs.Tab>
                 <Tabs.Tab value="mapping" leftSection={<MapIcon size={16} />}>Schema Mapping</Tabs.Tab>
               </Tabs.List>
 
@@ -50,6 +52,10 @@ export default function App() {
                 <UserManagementPanel />
               </Tabs.Panel>
               
+              <Tabs.Panel value="plugins">
+                <PluginsPanel />
+              </Tabs.Panel>
+
               <Tabs.Panel value="mapping">
                 <Container py="xl">
                   <Text c="dimmed" ta="center">Schema mapping interface coming soon.</Text>
