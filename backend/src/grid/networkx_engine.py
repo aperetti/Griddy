@@ -151,38 +151,62 @@ class NetworkXEngine(GraphEngine):
     def _bfs_traversal(self, start_node_id: str, max_depth: int = None, direction: str = "downstream") -> tuple[List[str], List[str]]:
         """Generic BFS traversal using undirected graph and logical flow depth filtering.
         This approach is robust against incorrectly oriented edges in input data.
+
+        When flow_depth is populated, traversal uses the undirected graph filtered by
+        depth (stitch edges have weight=0 so stitched nodes share the same depth and
+        are always traversable). When flow_depth is empty (no substation source found),
+        fall back to directed graph successors/predecessors so we still enforce direction
+        rather than returning the entire connected component.
         """
         nodes = set()
         edges = set()
-        
+
         queue = [(start_node_id, 0)]
         visited_nodes = {start_node_id}
-        
-        # We use an undirected view of the graph so we can find paths even if 
-        # CIM relationship orientation is inconsistent.
+
+        use_flow_depth = bool(self.flow_depth)
+        start_depth = self.flow_depth.get(start_node_id)
+        logger.info(
+            "[BFS] direction=%s start=%s start_depth=%s use_flow_depth=%s total_graph_nodes=%d",
+            direction, start_node_id, start_depth, use_flow_depth, len(self.graph.nodes)
+        )
         undirected = self.graph.to_undirected(as_view=True)
-        
+
         while queue:
             current_node, depth = queue.pop(0)
             if max_depth is not None and depth >= max_depth:
                 continue
-                
-            # neighbors(node) in undirected graph handles all incident edges
-            for neighbor in undirected.neighbors(current_node):
+
+            if use_flow_depth:
+                # Undirected traversal: flow_depth filter enforces direction.
+                # Stitch edges (weight=0) give stitched nodes the same depth, so
+                # the `< / >` comparison naturally allows traversal through them.
+                candidate_neighbors = list(undirected.neighbors(current_node))
+            else:
+                # No flow depth — use directed edges as a best-effort direction signal.
+                # Stitch edges are added in both directions, so they appear in successors
+                # and predecessors and are traversed correctly here too.
+                if direction == "downstream":
+                    candidate_neighbors = list(self.graph.successors(current_node))
+                else:
+                    candidate_neighbors = list(self.graph.predecessors(current_node))
+
+            for neighbor in candidate_neighbors:
                 if neighbor in visited_nodes:
                     continue
 
                 # Robustness Check: Enforce logical flow direction via pre-calculated depths
-                if self.flow_depth:
+                if use_flow_depth:
                     curr_lvl = self.flow_depth.get(current_node)
                     next_lvl = self.flow_depth.get(neighbor)
-                    
+
                     if curr_lvl is not None and next_lvl is not None:
-                        if direction == "downstream" and next_lvl <= curr_lvl:
-                            # Moving back toward or laterally across source during downstream search
+                        if direction == "downstream" and next_lvl < curr_lvl:
+                            # Moving back toward source — skip.
+                            # `<` (not `<=`) allows same-depth stitch traversal.
                             continue
-                        if direction == "upstream" and next_lvl >= curr_lvl:
-                            # Moving away from or laterally across source during upstream search
+                        if direction == "upstream" and next_lvl > curr_lvl:
+                            # Moving away from source — skip.
                             continue
 
                 # Check edge data (there might be multiple edges between u and v in MultiDiGraph)
@@ -219,6 +243,7 @@ class NetworkXEngine(GraphEngine):
                     nodes.add(neighbor)
                     queue.append((neighbor, depth + 1))
                          
+        logger.info("[BFS] result: %d nodes, %d edges returned", len(nodes), len(edges))
         return list(nodes), list(edges)
 
     def get_node_phases(self, node_ids: List[str]) -> dict[str, List[str]]:
