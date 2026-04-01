@@ -21,3 +21,8 @@
 **Vulnerability:** HIGH: The FastAPI backend had an overly permissive CORS configuration (`allow_origins=["*"]`), which allowed any domain to make cross-origin requests, potentially exposing sensitive grid data and APIs.
 **Learning:** Development defaults often leak into production environments if not explicitly restricted.
 **Prevention:** Always restrict CORS `allow_origins` using environment variables (e.g., `ALLOWED_ORIGINS`) and default to a strict list of internal and trusted local ports (e.g., 3000, 3001, 8000, 8080).
+
+## 2026-03-31 - [Missing Authentication on Admin Endpoint]
+**Vulnerability:** CRITICAL: The `/api/cim/config` endpoint (GET and POST) in `backend/src/discovery/routes.py` allowed anonymous access without authentication to read and write configuration overrides in the admin database.
+**Learning:** Endpoints marked with `tags=["admin"]` do not automatically inherit authentication. Explicit dependency injection (e.g., `Depends(get_current_username)`) is required for each route that handles sensitive administrative actions.
+**Prevention:** Always explicitly define `username: str = Depends(get_current_username)` in the route handler signature for any administrative or configuration-modifying API endpoint.
