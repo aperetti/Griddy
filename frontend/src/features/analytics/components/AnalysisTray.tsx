@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { Paper, Group, Button, Tooltip, Transition, Box } from '@mantine/core';
 import { BarChart3, Activity, Database } from 'lucide-react';
 import type { AnalysisInstance, AnalysisType } from '../../../hooks/useAnalyticsState';
@@ -29,10 +30,10 @@ const getColor = (type: keyof AnalysisType) => {
 export function AnalysisTray({ minimizedWindows, onRestore, onClose }: AnalysisTrayProps) {
   if (minimizedWindows.length === 0) return null;
 
-  return (
+  return createPortal(
     <Box
       style={{
-        position: 'absolute',
+        position: 'fixed',
         bottom: 20,
         left: '50%',
         transform: 'translateX(-50%)',
@@ -101,6 +102,7 @@ export function AnalysisTray({ minimizedWindows, onRestore, onClose }: AnalysisT
           </Paper>
         )}
       </Transition>
-    </Box>
+    </Box>,
+    document.body
   );
 }

@@ -1,9 +1,10 @@
 import { DiagnosticModal } from './DiagnosticModal';
 import { type AnalysisInstance } from '../../../hooks/useAnalyticsState';
-import { pluginRegistry } from '../../../plugins';
+import type { PluginDefinition } from '../../../plugins';
 
 interface AnalysisWindowLayerProps {
   windows: AnalysisInstance[];
+  pluginRegistry: Map<string, PluginDefinition>;
   onClose: (id: string) => void;
   onUpdateWindow: (id: string, updates: Partial<AnalysisInstance>) => void;
   onMinimize: (id: string) => void;
@@ -11,6 +12,7 @@ interface AnalysisWindowLayerProps {
 
 export function AnalysisWindowLayer({
   windows,
+  pluginRegistry,
   onClose,
   onUpdateWindow,
   onMinimize,
@@ -35,18 +37,14 @@ export function AnalysisWindowLayer({
         }
         const pluginDef = pluginRegistry.get(win.type);
         if (pluginDef) {
-          return (
-            <span key={win.id}>
-              {pluginDef.renderWindow(win, {
-                onClose: () => onClose(win.id),
-                onMinimize: () => onMinimize(win.id),
-                updateWindow: (updates) => onUpdateWindow(win.id, updates),
-              })}
-            </span>
-          );
+          return pluginDef.renderWindow(win, {
+            onClose: () => onClose(win.id),
+            onMinimize: () => onMinimize(win.id),
+            updateWindow: (updates) => onUpdateWindow(win.id, updates),
+          });
         }
         return null;
-      }).filter(Boolean)}
+      })}
     </>
   );
 }

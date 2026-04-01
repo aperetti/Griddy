@@ -24,9 +24,9 @@ import { AnalysisTray } from './features/analytics/components/AnalysisTray';
 import { useTopology } from './hooks/useTopology';
 import { useRuleClassification } from './features/grid/hooks/useRuleClassification';
 import { useAnalyticsState, SETTINGS_KEY } from './hooks/useAnalyticsState';
-import { fetchTopology, fetchModels } from './shared/api';
+import { fetchTopology, fetchModels, fetchPluginRegistry } from './shared/api';
 import type { Node, Edge } from './shared/types';
-import { pluginRegistry } from './plugins';
+import { initPluginRegistry } from './plugins';
 import type { PluginDefinition } from './plugins/types';
 
 const calculateRange = (config: any) => {
@@ -76,6 +76,25 @@ export default function App() {
     }
   }, [analytics.globalConfig]);
 
+  const [pluginRegistry, setPluginRegistry] = useState<Map<string, PluginDefinition>>(new Map());
+  const enabledPluginNamesRef = useRef<string>('');
+  useEffect(() => {
+    const syncRegistry = () => {
+      fetchPluginRegistry()
+        .then(entries => {
+          const enabled = entries.filter(e => e.enabled).map(e => e.name).sort();
+          const key = enabled.join(',');
+          if (key === enabledPluginNamesRef.current) return;
+          enabledPluginNamesRef.current = key;
+          return initPluginRegistry(enabled).then(setPluginRegistry);
+        })
+        .catch(err => console.error('[plugins] Failed to initialize plugin registry:', err));
+    };
+    syncRegistry();
+    const interval = setInterval(syncRegistry, 10_000);
+    return () => clearInterval(interval);
+  }, []);
+
   const selectedNodes = topology.nodes.filter(n => topology.highlightedNodes.has(n.id));
   const selectedEdgeIds = Array.from(topology.highlightedEdges);
   const applicablePlugins = Array.from(pluginRegistry.values()).filter(
@@ -109,11 +128,7 @@ export default function App() {
   };
 
   const bringDisplayRulesToFront = useCallback(() => {
-    analytics.setMaxZIndex(prev => {
-      const newZ = prev + 1;
-      setDisplayRulesZIndex(newZ);
-      return newZ;
-    });
+    setDisplayRulesZIndex(analytics.getNextZIndex());
   }, [analytics]);
 
   const lastActiveModelIds = useRef<string[]>([]);
@@ -334,13 +349,6 @@ export default function App() {
             />
           </Box>
 
-          <AnalysisWindowLayer
-            windows={analytics.analysisWindows.filter(win => win.isOpen && !win.isMinimized)}
-            onClose={analytics.removeWindow}
-            onUpdateWindow={analytics.updateWindow}
-            onMinimize={analytics.toggleMinimize}
-          />
-          
           <AnalysisTray 
             minimizedWindows={analytics.analysisWindows.filter(w => w.isOpen && w.isMinimized)}
             onRestore={(id) => {
@@ -352,6 +360,20 @@ export default function App() {
         </Box>
 
       </Box>
+
+      {/* Analysis windows in a fixed viewport-covering layer so react-rnd
+          transforms are relative to (0,0) of the viewport, not the document
+          flow position of a body-appended portal. */}
+      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 1000 }}>
+        <AnalysisWindowLayer
+          windows={analytics.analysisWindows.filter(win => win.isOpen && !win.isMinimized)}
+          pluginRegistry={pluginRegistry}
+          onClose={analytics.removeWindow}
+          onUpdateWindow={analytics.updateWindow}
+          onMinimize={analytics.toggleMinimize}
+        />
+      </div>
+
     </MantineProvider>
   );
 }

@@ -56,10 +56,15 @@ function AnalysisWindowComponent({
         if (saved) {
             try {
                 const parsed = JSON.parse(saved);
-                return clampToViewport(parsed);
+                const clamped = clampToViewport(parsed);
+                // If clamping moved the window significantly, the saved position
+                // was from an old coordinate system — discard it and center.
+                const moved = Math.abs(clamped.x - parsed.x) > 50 || Math.abs(clamped.y - (parsed.y ?? 0)) > 50;
+                if (!moved) return clamped;
             } catch (e) {
                 console.error(`Failed to parse saved ${storageKey}`, e);
             }
+            localStorage.removeItem(storageKey);
         }
         return defaultPosition(initialWidth, initialHeight);
     });
@@ -281,7 +286,7 @@ function AnalysisWindowComponent({
             }}
             minWidth={300}
             minHeight={isMinimized ? 0 : 200}
-            bounds="window"
+            bounds="parent"
             dragHandleClassName="analysis-window-handle"
             enableResizing={isMinimized ? false : {
                 top: true, right: true, bottom: true, left: true,
