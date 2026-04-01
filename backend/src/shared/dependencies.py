@@ -6,7 +6,7 @@ circular dependencies during the refactor into feature slices.
 from typing import Optional, Any, Dict
 from src.shared.cim_registry import CimModelRegistry
 from src.shared.sqlite_repository import SqliteRepository
-from src.grid.networkx_engine import NetworkXEngine
+from src.grid.topology_engine import TopologyEngine
 from src.grid.display_rule_engine import DisplayRuleEngine
 from src.shared.database_setup import DB_PATH, SQLITE_PATH, ADMIN_SQLITE_PATH, PARQUET_DIR
 
@@ -20,8 +20,8 @@ alarm_repo = SqliteRepository(SQLITE_PATH)
 # Display rule engine for node classification
 display_engine = DisplayRuleEngine(ADMIN_SQLITE_PATH)
 
-# NetworkX graph engine
-graph_engine = NetworkXEngine()
+# Topology graph engine (dependency-free BFS over pre-computed CIM edges)
+graph_engine = TopologyEngine()
 
 # Mutable state for graph tracking
 _graph_built_for: set[str] = set()

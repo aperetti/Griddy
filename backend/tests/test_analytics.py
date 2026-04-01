@@ -1,7 +1,7 @@
 """Integration tests for Graph Discovery and Analytics using DuckDB/Parquet."""
 import pytest
 from src.shared.duckdb_repository import DuckDBRepository
-from src.grid.networkx_engine import NetworkXEngine
+from src.grid.topology_engine import TopologyEngine as NetworkXEngine
 from src.discovery.discover_downstream import DiscoverDownstreamUseCase
 from src.analytics.calculate_voltage import CalculateVoltageDistributionUseCase
 from src.analytics.phase_balancing import PhaseBalancingUseCase

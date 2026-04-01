@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Query, HTTPException
 from typing import Optional
-import networkx as nx
 from src.shared.dependencies import registry, graph_engine, ensure_graph_built, get_active_model_ids
 from src.discovery.discover_downstream import DiscoverDownstreamUseCase
 from src.discovery.trace_upstream import TraceUpstreamUseCase
@@ -18,16 +17,15 @@ async def get_topology(
     """Returns the full grid topology with coordinates for UI rendering."""
     model_ids = get_active_model_ids(models)
     ensure_graph_built(model_ids)
-    
+
     nodes, all_edges = registry.get_combined_topology(model_ids)
 
-    # Trace circuits from Substations
+    # Assign circuit IDs via connected components
     substations = [n['node_id'] for n in nodes if n['node_type'] == 'Substation']
     node_to_circuit = {}
 
-    undirected_graph = graph_engine.graph.to_undirected()
-    components = list(nx.connected_components(undirected_graph))
-    
+    components = graph_engine.get_connected_components()
+
     node_to_comp_idx = {}
     for idx, comp in enumerate(components):
         for node in comp:
