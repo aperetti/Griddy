@@ -5,6 +5,22 @@ title: Release Updates
 
 This page tracks the evolution of the Griddy project. We are currently in **Alpha** (v0.2.4-alpha).
 
+## [0.2.5-alpha] - 2026-03-31
+### Added
+- **Plugin System**: Introduced a first-class plugin architecture for analytics. Plugins are auto-discovered at startup, gated behind `plugin.<name>.enabled` config overrides, and lazy-loaded in the frontend — disabled plugin JS chunks are never fetched.
+- **Admin Plugin Management**: Added a Plugins tab to the Admin Console with live enable/disable toggles. Changes propagate to the backend within ~5 seconds via the existing ConfigWatcher polling loop, no server restart required.
+- **Plugin SDK**: Plugins access CIM, topology, and analytics data exclusively through a typed SDK (`PluginCimService`, `PluginTopologyService`, `PluginAnalyticsService`). No direct database connections are permitted in plugin code.
+- **Consumption Analysis Plugin**: Time-series energy consumption aggregation for any selected asset and its downstream network, with phase-split (A/B/C) breakdown and weather correlation.
+- **Voltage Distribution Plugin**: KDE voltage distribution, scatter heatmap, and daily percentile timeseries for downstream nodes with configurable traversal depth.
+- **Transformer Loading Plugin**: On-demand loading detail for selected PowerTransformer nodes.
+- **Live Plugin Registry Polling**: The frontend polls `/api/plugins/registry` every 10 seconds and activates newly enabled plugins without a page reload.
+
+### Fixed
+- **Analysis Window Positioning**: Floating analysis windows were rendering off-screen because `createPortal` into `document.body` placed them after the 100 vh root element — react-rnd transforms were calculated relative to that offset position. Replaced the portal with a `position: fixed; inset: 0` wrapper so transform coordinates map directly to viewport coordinates.
+- **Graph Traversal Lateral Spread**: BFS downstream traversal was permitting movement to nodes at the same flow depth as the current node, causing it to bleed sideways into sibling branches. Fixed by changing the filter from `next_lvl < curr_lvl` to `next_lvl <= curr_lvl`.
+- **Config Watcher DB Path**: The ConfigWatcher was defaulting to `admin.sqlite` relative to the backend working directory, while the admin backend wrote to a different path. Both services now resolve the path through `database_setup.ADMIN_SQLITE_PATH`.
+- **Plugin Graph Initialization**: Plugin analytics routes now call `ensure_graph_built()` before traversal, matching the pattern used by all other analytics endpoints.
+
 ## [0.2.4-alpha] - 2026-03-29 (Commit: ebd567f)
 ### Added
 - **Unified Rule Engine Architecture**: Re-engineered the Cypher query builder to use generic `EXISTS` traversals. This allows for complex property matching across any CIM relationship without requiring pre-defined manual mappings.
