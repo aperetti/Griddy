@@ -178,11 +178,11 @@ class NetworkXEngine(GraphEngine):
                     next_lvl = self.flow_depth.get(neighbor)
                     
                     if curr_lvl is not None and next_lvl is not None:
-                        if direction == "downstream" and next_lvl < curr_lvl:
-                            # Moving back toward source during downstream search
+                        if direction == "downstream" and next_lvl <= curr_lvl:
+                            # Moving back toward or laterally across source during downstream search
                             continue
-                        if direction == "upstream" and next_lvl > curr_lvl:
-                            # Moving away from source during upstream search
+                        if direction == "upstream" and next_lvl >= curr_lvl:
+                            # Moving away from or laterally across source during upstream search
                             continue
 
                 # Check edge data (there might be multiple edges between u and v in MultiDiGraph)
