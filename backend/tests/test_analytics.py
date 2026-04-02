@@ -41,6 +41,9 @@ def test_voltage_distribution(graph_engine):
     assert "error" not in result
     assert result["node_count"] == 2
     assert len(result["distribution"]) > 0
+    assert len(result["scatter"]) > 0, "Scatter/Heatmap data should not be empty"
+    assert len(result["timeseries"]) > 0, "Stability/Timeseries data should not be empty"
+    assert result["mean_voltage"] > 0
 
 def test_phase_balancing(graph_engine):
     """Test phase balancing across the main substation."""
