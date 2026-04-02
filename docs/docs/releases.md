@@ -3,7 +3,15 @@ title: Release Updates
 ---
 # Release Updates
 
-This page tracks the evolution of the Griddy project. We are currently in **Alpha** (v0.2.4-alpha).
+This page tracks the evolution of the Griddy project. We are currently in **Alpha** (v0.2.6-alpha).
+
+## [0.2.6-alpha] - 2026-04-02
+### Added
+- **Display Rules Import/Export**: Introduced the ability to export and import display configuration profiles as JSON files. This allows for easy backup, sharing, and migration of complex map styling rules across different environments.
+- **Improved Profile Management**: Added "Import Profile" and "Export Profile" actions to the Display Rules Manager UI, featuring automatic name collision handling (e.g., appending "(Imported 1)" for existing profile names).
+
+### Changed
+- **UI Refinement**: Replaced the "New Profile" plus icon with a standard "More Options" (triple colon) icon in the Display Rules Manager for better visual hierarchy and to host both import and export actions.
 
 ## [0.2.5-alpha] - 2026-03-31
 ### Added
