@@ -238,6 +238,29 @@ export const duplicateDisplayRule = async (ruleId: number): Promise<{id: number,
     return res.json();
 };
 
+export const exportDisplayConfig = async (configId: number): Promise<any> => {
+    const res = await fetch(`${ADMIN_API_BASE}/display-rules/configs/${configId}/export`, {
+        headers: { ...getAuthHeaders() }
+    });
+    if (res.status === 401) throw new Error('Unauthorized');
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+};
+
+export const importDisplayConfig = async (data: any): Promise<DisplayConfig> => {
+    const res = await fetch(`${ADMIN_API_BASE}/display-rules/configs/import`, {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json',
+            ...getAuthHeaders()
+        },
+        body: JSON.stringify(data)
+    });
+    if (res.status === 401) throw new Error('Unauthorized');
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+};
+
 export interface RuleTestResponse {
     query: string;
     params: Record<string, any>;

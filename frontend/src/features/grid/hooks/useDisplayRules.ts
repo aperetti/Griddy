@@ -9,6 +9,8 @@ import {
     createDisplayConfig as apiCreateDisplayConfig,
     deleteDisplayConfig as apiDeleteDisplayConfig,
     testDisplayRule as apiTestDisplayRule,
+    exportDisplayConfig as apiExportDisplayConfig,
+    importDisplayConfig as apiImportDisplayConfig,
     type DisplayConfig, 
     type DisplayRule,
     type RuleTestResponse
@@ -157,6 +159,36 @@ export const useDisplayRules = (opened: boolean, onRulesChanged?: () => void) =>
         }
     };
 
+    const handleExportConfig = async (configId: number) => {
+        try {
+            const data = await apiExportDisplayConfig(configId);
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `display_profile_${data.metadata?.name || configId}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error('Failed to export config', err);
+            alert('Failed to export profile');
+        }
+    };
+
+    const handleImportConfig = async (data: any) => {
+        try {
+            const newConfig = await apiImportDisplayConfig(data);
+            await loadConfigs();
+            setSelectedConfigId(newConfig.id);
+            onRulesChanged?.();
+        } catch (err) {
+            console.error('Failed to import config', err);
+            alert('Failed to import profile: ' + (err as Error).message);
+        }
+    };
+
     return {
         configs,
         selectedConfigId,
@@ -175,6 +207,8 @@ export const useDisplayRules = (opened: boolean, onRulesChanged?: () => void) =>
         createConfig,
         deleteConfig,
         handleTestRule,
+        handleExportConfig,
+        handleImportConfig,
         refreshRules: () => selectedConfigId && loadRules(selectedConfigId)
     };
 };

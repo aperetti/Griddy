@@ -1,6 +1,6 @@
 import React, { useState, Fragment, useMemo } from 'react';
 import { useMediaQuery } from '@mantine/hooks';
-import { Plus, Trash2, Copy, Lock, Filter, ArrowDownAZ, ListOrdered } from 'lucide-react';
+import { Plus, Trash2, Copy, Lock, Filter, ArrowDownAZ, ListOrdered, FileDown, FileUp, MoreVertical } from 'lucide-react';
 import { 
     Table, Button, Group, ActionIcon, Stack, Text, 
     Badge, Select, TextInput, Paper,
@@ -33,7 +33,8 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
         editingRule, setEditingRule, saveError,
         isAuthenticated, setIsAuthenticated,
         handleSaveRule, handleDeleteRule, handleDuplicateRule,
-        createConfig, deleteConfig, handleTestRule
+        createConfig, deleteConfig, handleTestRule,
+        handleExportConfig, handleImportConfig
     } = useDisplayRules(opened, onRulesChanged);
 
     // Filter/Sort/Group local UI state
@@ -186,18 +187,59 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                 />
                                 <Menu shadow="md" width={180} zIndex={2000} withinPortal>
                                     <Menu.Target>
-                                        <ActionIcon variant="light" size="lg" mt="25px"><Plus size={18} /></ActionIcon>
+                                        <ActionIcon variant="light" size="lg" mt="25px"><MoreVertical size={18} /></ActionIcon>
                                     </Menu.Target>
                                     <Menu.Dropdown>
                                         <Menu.Item leftSection={<Plus size={14} />} onClick={() => {
                                             const name = prompt('New profile name:');
                                             if (name) createConfig(name);
                                         }}>New Profile</Menu.Item>
+                                        <Menu.Item 
+                                            leftSection={<FileUp size={14} />} 
+                                            onClick={() => document.getElementById('import-profile-input')?.click()}
+                                        >
+                                            Import Profile
+                                        </Menu.Item>
+
+                                        {selectedConfigId && (
+                                            <Menu.Item 
+                                                leftSection={<FileDown size={14} />} 
+                                                onClick={() => handleExportConfig(selectedConfigId)}
+                                            >
+                                                Export Profile
+                                            </Menu.Item>
+                                        )}
+
+                                        <Menu.Divider />
+
                                         <Menu.Item color="red" leftSection={<Trash2 size={14} />} onClick={() => selectedConfigId && deleteConfig(selectedConfigId)}>
                                             Delete Current
                                         </Menu.Item>
                                     </Menu.Dropdown>
                                 </Menu>
+
+                                <input 
+                                    type="file" 
+                                    id="import-profile-input" 
+                                    style={{ display: 'none' }} 
+                                    accept=".json"
+                                    onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) {
+                                            const reader = new FileReader();
+                                            reader.onload = (event) => {
+                                                try {
+                                                    const data = JSON.parse(event.target?.result as string);
+                                                    handleImportConfig(data);
+                                                } catch (err) {
+                                                    alert("Invalid JSON file");
+                                                }
+                                            };
+                                            reader.readAsText(file);
+                                            e.target.value = '';
+                                        }
+                                    }}
+                                />
                             </Group>
                             <Group mt="25px">
                                 <Button variant="light" color="blue" leftSection={<Plus size={16} />} onClick={handleAddRule}>

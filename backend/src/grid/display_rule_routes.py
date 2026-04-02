@@ -7,6 +7,7 @@ from typing import Optional, Dict, Any, List
 from src.shared.dependencies import ADMIN_SQLITE_PATH, display_engine
 from src.grid.sprites import generator as sprite_generator
 from src.shared.auth import get_current_username
+from .display_rule_io import DisplayRuleIO
 from fastapi import Depends
 
 router = APIRouter(prefix="/api/display-rules", tags=["display-rules"])
@@ -272,6 +273,29 @@ async def get_active_config():
                 "rules": rule_list
             }
     return await run_in_threadpool(_get)
+
+@router.get("/configs/{config_id}/export")
+async def export_display_config(config_id: int, username: str = Depends(get_current_username)):
+    def _export():
+        io = DisplayRuleIO()
+        try:
+            return io.export_config(config_id)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+    return await run_in_threadpool(_export)
+
+@router.post("/configs/import")
+async def import_display_config(data: Dict[str, Any], username: str = Depends(get_current_username)):
+    def _import():
+        io = DisplayRuleIO()
+        try:
+            config_id = io.import_config(data)
+            with _get_admin_conn() as conn:
+                config = conn.execute("SELECT id, name, description, is_default FROM display_configs WHERE id = ?", (config_id,)).fetchone()
+                return dict(config)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    return await run_in_threadpool(_import)
 
 # ── Sprite Map Routes ──────────────────────────────────────────────
 
