@@ -10,13 +10,15 @@
  *   const registry = await initPluginRegistry(['consumption', 'voltage']);
  */
 import type { PluginDefinition } from './types';
+import type { SdkPluginDefinition } from './sdk';
+import { adaptPlugin } from './adapter';
 
 /**
  * Lazy import map — keys are relative paths, values are async loaders.
  * Vite emits each entry as a separate JS chunk but does NOT fetch them
  * until the loader function is called.
  */
-const _loaders = import.meta.glob<{ default: PluginDefinition }>(
+const _loaders = import.meta.glob<{ default: SdkPluginDefinition }>(
     './*/index.ts',
     { eager: false },
 );
@@ -43,7 +45,7 @@ export async function initPluginRegistry(
                 try {
                     const mod = await load();
                     if (mod.default?.type) {
-                        registry.set(mod.default.type, mod.default);
+                        registry.set(mod.default.type, adaptPlugin(mod.default));
                     }
                 } catch (err) {
                     console.error(`[plugins] Failed to load plugin at ${path}:`, err);

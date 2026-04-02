@@ -1,13 +1,11 @@
 import { memo } from 'react';
-import { Table, Text, Badge, Group, Stack, Center } from '@mantine/core';
+import { Table, Text, Badge, Stack, Center } from '@mantine/core';
 import { Zap } from 'lucide-react';
-import { AnalysisWindow } from '../../features/analytics/components/AnalysisWindow';
-import { ScadaLoadingAnimation } from '../../components/ScadaLoadingAnimation';
-import type { AnalysisInstance } from '../../hooks/useAnalyticsState';
+import { AnalysisWindow, ScadaLoadingAnimation, type SdkAnalysisInstance } from '@plugin-sdk';
 import type { TransformerRecord, TransformerEnd } from './api';
 
 interface Props {
-    instance: AnalysisInstance;
+    instance: SdkAnalysisInstance;
     onClose: () => void;
     onMinimize: () => void;
 }

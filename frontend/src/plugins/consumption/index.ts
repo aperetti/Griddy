@@ -1,10 +1,8 @@
 import { BarChart3 } from 'lucide-react';
 import { createElement } from 'react';
-import type { PluginDefinition } from '../types';
-import type { Node } from '../../shared/types';
-import type { AnalysisInstance } from '../../hooks/useAnalyticsState';
+import type { SdkPluginDefinition, SdkNode, SdkPluginContext } from '@plugin-sdk';
 import { fetchConsumptionPlugin, fetchConsumptionEstimatePlugin } from './api';
-import { ConsumptionTimeSeriesModal } from '../../features/analytics/components/ConsumptionTimeSeriesModal';
+import { ConsumptionTimeSeriesModal } from './ConsumptionTimeSeriesModal';
 
 const DEFAULT_THRESHOLD = 2_000_000;
 
@@ -13,29 +11,29 @@ async function _performFetch(
     nodeIds: string[],
     start: string,
     end: string,
-    updateWindow: (id: string, updates: Partial<AnalysisInstance>) => void,
-    addHighlightedNodes: (ids: string[]) => void,
-    addHighlightedEdges: (ids: string[]) => void,
+    ctx: SdkPluginContext
 ) {
-    updateWindow(windowId, { loading: true, isPaused: false });
+    ctx.updateWindowProps(windowId, { loading: true, isPaused: false } as any);
     try {
         const resp = await fetchConsumptionPlugin(nodeIds, start, end);
-        updateWindow(windowId, { data: resp.time_series ?? [], loading: false });
-        if (resp.downstream_node_ids?.length) addHighlightedNodes(resp.downstream_node_ids);
-        if (resp.downstream_edge_ids?.length) addHighlightedEdges(resp.downstream_edge_ids);
+        ctx.updateAnalysisData(windowId, resp.time_series ?? []);
+        if (resp.downstream_node_ids?.length) ctx.addHighlightedNodes(resp.downstream_node_ids);
+        if (resp.downstream_edge_ids?.length) ctx.addHighlightedEdges(resp.downstream_edge_ids);
     } catch (e) {
         console.error('[consumption] fetch failed', e);
-        updateWindow(windowId, { loading: false });
+        ctx.setAnalysisLoading(windowId, false);
     }
 }
 
-export const consumptionPlugin: PluginDefinition = {
+export const consumptionPlugin: SdkPluginDefinition = {
     type: 'consumption',
     label: 'Consumption Analysis',
+    description: 'Analyze aggregate smart meter consumption data for downstream grid assets.',
+    permissions: ['cim:read', 'topology:read', 'analytics:consumption'],
     icon: BarChart3,
     color: 'blue',
 
-    appliesToNodes: (_nodes: Node[], edgeCount = 0) =>
+    appliesToNodes: (_nodes: SdkNode[], edgeCount = 0) =>
         _nodes.length > 0 || edgeCount > 0,
 
     async handleRun(ctx) {
@@ -49,19 +47,7 @@ export const consumptionPlugin: PluginDefinition = {
             ? (ctx.selectedNodes[0]?.name ?? 'Selected Asset')
             : `${nodeIds.length} Assets`;
 
-        const id = `consumption-${Date.now()}`;
-        ctx.setAnalysisWindows(prev => [...prev, {
-            id,
-            type: 'consumption',
-            nodeIds,
-            nodeName,
-            isOpen: true,
-            isMinimized: false,
-            loading: true,
-            data: [],
-            zIndex: 1000,
-        }]);
-        ctx.bringWindowToFront(id);
+        const windowId = ctx.openAnalysisWindow('consumption', nodeName);
 
         const { start, end } = ctx.dateRange;
         try {
@@ -71,29 +57,31 @@ export const consumptionPlugin: PluginDefinition = {
 
             const threshold = Number(ctx.systemConfig['analytics_threshold'] || DEFAULT_THRESHOLD);
             if (est.estimated_rows > threshold) {
-                ctx.updateWindow(id, {
+                ctx.updateWindowProps(windowId, {
                     loading: false,
                     isPaused: true,
                     estimatedRows: est.estimated_rows,
                     pendingRequest: { nodeIds, start, end },
-                });
+                } as any);
             } else {
-                await _performFetch(id, nodeIds, start, end, ctx.updateWindow, ctx.addHighlightedNodes, ctx.addHighlightedEdges);
+                await _performFetch(windowId, nodeIds, start, end, ctx);
             }
         } catch (err) {
             console.error('[consumption] estimate failed', err);
-            ctx.updateWindow(id, { loading: false });
+            ctx.setAnalysisLoading(windowId, false);
         }
     },
 
-    renderWindow(instance, callbacks) {
+    renderWindow(instance: any, callbacks: any) {
         const req = instance.pendingRequest ?? { nodeIds: instance.nodeIds, start: '', end: '' };
 
         const onConfirm = () => {
-            callbacks.updateWindow({ loading: true, isPaused: false });
-            fetchConsumptionPlugin(req.nodeIds, req.start, req.end, true)
-                .then(resp => callbacks.updateWindow({ data: resp.time_series ?? [], loading: false }))
-                .catch(() => callbacks.updateWindow({ loading: false }));
+            if (callbacks.updateWindow) {
+                callbacks.updateWindow({ loading: true, isPaused: false });
+                fetchConsumptionPlugin(req.nodeIds, req.start, req.end, true)
+                    .then(resp => callbacks.updateWindow({ data: resp.time_series ?? [], loading: false }))
+                    .catch(() => callbacks.updateWindow({ loading: false }));
+            }
         };
 
         return createElement(ConsumptionTimeSeriesModal, {

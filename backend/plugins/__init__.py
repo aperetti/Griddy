@@ -29,14 +29,29 @@ logger = logging.getLogger(__name__)
 # Maps plugin name → its APIRouter
 _discovered: dict[str, object] = {}
 
+# Maps plugin name → its manifest dict
+PLUGIN_MANIFESTS: dict[str, dict] = {}
+
 _plugins_dir = Path(__file__).parent
 for _entry in sorted(_plugins_dir.iterdir()):
     if not _entry.is_dir() or _entry.name.startswith("_"):
         continue
     try:
+        # Read manifest.json BEFORE importing the route module
+        # This is strictly required so that get_sdk() inside routes.py 
+        # has access to its permissions at import time.
+        manifest_path = _entry / "manifest.json"
+        manifest = {}
+        if manifest_path.exists():
+            import json
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+        PLUGIN_MANIFESTS[_entry.name] = manifest
+
         _mod = importlib.import_module(f"plugins.{_entry.name}.routes")
         if hasattr(_mod, "router"):
             _discovered[_entry.name] = _mod.router
+            
             logger.debug("Discovered plugin: %s", _entry.name)
     except ModuleNotFoundError:
         pass  # no routes.py — not a plugin directory

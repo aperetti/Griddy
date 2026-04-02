@@ -30,8 +30,8 @@ ADMIN_SQLITE_PATH = os.getenv("ADMIN_DB_PATH") or os.getenv("CONFIG_DB_PATH") or
 DB_PATH = os.getenv("DB_PATH", str(BASE_DIR / "grid_data_cim.duckdb"))
 
 # ── Parquet directories ───────────────────────────────────────────
-PARQUET_DIR = os.getenv("PARQUET_DIR", str(BASE_DIR / "cim_readings"))
-PARQUET_ALARMS_DIR = os.getenv("PARQUET_ALARMS_DIR", str(BASE_DIR / "cim_alarms"))
+PARQUET_DIR = os.getenv("PARQUET_DIR", str(_PROJECT_ROOT / "cim_readings"))
+PARQUET_ALARMS_DIR = os.getenv("PARQUET_ALARMS_DIR", str(_PROJECT_ROOT / "cim_alarms"))
 
 
 def init_admin_db():

@@ -14,10 +14,11 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
-from plugins.sdk import sdk
+from plugins.sdk import get_sdk
 from src.shared.dependencies import ensure_graph_built
 
 router = APIRouter(prefix="/api/plugins/voltage", tags=["plugins"])
+sdk = get_sdk("voltage")
 logger = logging.getLogger(__name__)
 
 MAX_NODE_IDS = 100

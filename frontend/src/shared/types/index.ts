@@ -1,6 +1,6 @@
 export interface AttachedEquipment {
     mrid: string;
-    type: 'EnergyConsumer' | 'EnergySource' | 'Capacitor';
+    type: 'EnergyConsumer' | 'EnergySource' | 'Capacitor' | 'PowerTransformer';
     name: string;
     phases?: string[];
     // EnergyConsumer

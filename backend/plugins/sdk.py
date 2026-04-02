@@ -27,17 +27,21 @@ logger = logging.getLogger(__name__)
 class PluginCimService:
     """Query CIM data stored in Neo4j via the shared registry."""
 
+    def __init__(self, permissions: list[str]):
+        self.permissions = permissions
+
+    def _check(self, required: str):
+        if required not in self.permissions:
+            raise PermissionError(f"SDK Error: Missing required permission '{required}'")
+
     @property
     def _registry(self):
         from src.shared.dependencies import registry
         return registry
 
     def run_cypher(self, query: str, params: dict | None = None) -> list[dict]:
-        """Execute a read-only Cypher query across all active CIM models.
-
-        Results from all loaded feeders are merged and returned as a flat list.
-        Raises ValueError on write attempts (CREATE/MERGE/SET/DELETE).
-        """
+        """Execute a read-only Cypher query across all active CIM models."""
+        self._check("cim:read")
         import re
         _WRITE = re.compile(
             r"\b(CREATE|MERGE|SET|DELETE|REMOVE|DROP|FOREACH"
@@ -60,6 +64,7 @@ class PluginCimService:
 
     def get_equipment(self, mrid: str) -> dict | None:
         """Return enriched equipment detail for a given CIM mRID, or None."""
+        self._check("cim:read")
         for _, mgr in self._registry.get_managers():
             result = mgr.get_equipment_detail(mrid)
             if result:
@@ -68,6 +73,7 @@ class PluginCimService:
 
     def get_equipment_expanded(self, mrid: str) -> dict | None:
         """Like get_equipment but with connectivity nodes expanded."""
+        self._check("cim:read")
         for _, mgr in self._registry.get_managers():
             result = mgr.get_equipment_detail_expanded(mrid)
             if result:
@@ -76,6 +82,7 @@ class PluginCimService:
 
     def get_node_details(self, node_id: str) -> dict | None:
         """Return CIM details for a connectivity node (bus/junction)."""
+        self._check("cim:read")
         for _, mgr in self._registry.get_managers():
             result = mgr.get_node_cim_details(node_id)
             if result:
@@ -84,6 +91,7 @@ class PluginCimService:
 
     def get_equipment_by_class(self, cim_class: str) -> list[dict]:
         """Return all equipment of the given CIM class across active models."""
+        self._check("cim:read")
         results: list[dict] = []
         for _, mgr in self._registry.get_managers():
             try:
@@ -94,10 +102,12 @@ class PluginCimService:
 
     def get_schema(self) -> dict:
         """Return the aggregated CIM schema: {class_name: {attributes, count}}."""
+        self._check("cim:read")
         return self._registry.get_cim_schema()
 
     def search(self, query: str, cim_class: str | None = None) -> list[dict]:
         """Full-text search across all loaded CIM models."""
+        self._check("cim:read")
         return self._registry.search_all_models(query, class_name=cim_class)
 
 
@@ -107,6 +117,13 @@ class PluginCimService:
 
 class PluginTopologyService:
     """Traverse the grid topology graph via the shared NetworkX engine."""
+
+    def __init__(self, permissions: list[str]):
+        self.permissions = permissions
+
+    def _check(self, required: str):
+        if required not in self.permissions:
+            raise PermissionError(f"SDK Error: Missing required permission '{required}'")
 
     @property
     def _engine(self):
@@ -119,14 +136,17 @@ class PluginTopologyService:
         max_depth: int | None = None,
     ) -> tuple[list[str], list[str]]:
         """Return (node_ids, edge_ids) downstream of the given node."""
+        self._check("topology:read")
         return self._engine.find_downstream(node_id, max_depth=max_depth)
 
     def get_upstream(self, node_id: str) -> tuple[list[str], list[str]]:
         """Return (node_ids, edge_ids) upstream of the given node."""
+        self._check("topology:read")
         return self._engine.find_upstream(node_id)
 
     def get_active_model_ids(self) -> list[str]:
         """Return the IDs of currently loaded CIM models."""
+        self._check("topology:read")
         from src.shared.dependencies import registry
         return registry.get_active_model_ids()
 
@@ -137,6 +157,13 @@ class PluginTopologyService:
 
 class PluginAnalyticsService:
     """Run pre-built analytics queries via the shared use-case layer."""
+
+    def __init__(self, permissions: list[str]):
+        self.permissions = permissions
+
+    def _check(self, required: str):
+        if required not in self.permissions:
+            raise PermissionError(f"SDK Error: Missing required permission '{required}'")
 
     @property
     def _engine(self):
@@ -160,6 +187,7 @@ class PluginAnalyticsService:
         end_time: str,
     ) -> dict[str, Any]:
         """Aggregate consumption time series for the given nodes."""
+        self._check("analytics:consumption")
         from src.analytics.calculate_consumption import CalculateAggregateConsumptionUseCase
         uc = CalculateAggregateConsumptionUseCase(self._engine, self._db_path, self._parquet_dir)
         return uc.execute(node_ids, start_time, end_time)
@@ -172,6 +200,7 @@ class PluginAnalyticsService:
         degrees: int | None = None,
     ) -> dict[str, Any]:
         """Voltage distribution (KDE + timeseries) for the given nodes."""
+        self._check("analytics:voltage")
         from src.analytics.calculate_voltage import CalculateVoltageDistributionUseCase
         uc = CalculateVoltageDistributionUseCase(self._engine, self._db_path, self._parquet_dir)
         return uc.execute(node_ids, start_time, end_time, degrees=degrees)
@@ -183,6 +212,7 @@ class PluginAnalyticsService:
         end_time: str,
     ) -> dict[str, Any]:
         """Estimate row count before running a full consumption query."""
+        self._check("analytics:consumption")
         from src.analytics.calculate_consumption import CalculateAggregateConsumptionUseCase
         uc = CalculateAggregateConsumptionUseCase(self._engine, self._db_path, self._parquet_dir)
         return uc.estimate(node_ids, start_time, end_time)
@@ -195,6 +225,7 @@ class PluginAnalyticsService:
         degrees: int | None = None,
     ) -> dict[str, Any]:
         """Estimate row count before running a full voltage distribution query."""
+        self._check("analytics:voltage")
         from src.analytics.calculate_voltage import CalculateVoltageDistributionUseCase
         uc = CalculateVoltageDistributionUseCase(self._engine, self._db_path, self._parquet_dir)
         return uc.estimate(node_ids, start_time, end_time, degrees=degrees)
@@ -205,13 +236,17 @@ class PluginAnalyticsService:
 # ---------------------------------------------------------------------------
 
 class PluginSDK:
-    """Entry point for all plugin data access.
+    """Entry point for all plugin data access."""
+    def __init__(self, plugin_name: str, permissions: list[str]):
+        self.plugin_name = plugin_name
+        self.permissions = permissions
+        self.cim = PluginCimService(permissions)
+        self.topology = PluginTopologyService(permissions)
+        self.analytics = PluginAnalyticsService(permissions)
 
-    Import the module-level `sdk` instance — do not instantiate this class.
-    """
-    cim: PluginCimService = PluginCimService()
-    topology: PluginTopologyService = PluginTopologyService()
-    analytics: PluginAnalyticsService = PluginAnalyticsService()
-
-
-sdk = PluginSDK()
+def get_sdk(plugin_name: str) -> PluginSDK:
+    """Factory to get an authorized SDK for a specific plugin."""
+    from plugins import PLUGIN_MANIFESTS
+    manifest = PLUGIN_MANIFESTS.get(plugin_name, {})
+    permissions = manifest.get("permissions", [])
+    return PluginSDK(plugin_name, permissions)

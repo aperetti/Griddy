@@ -3,9 +3,8 @@ import { Group, Box, Text, Stack, Select, Slider, SimpleGrid, Button, Paper } fr
 import { AlertTriangle, Clock, Activity } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts';
-import { ScadaLoadingAnimation } from '../../../components/ScadaLoadingAnimation';
-import { AnalysisWindow } from './AnalysisWindow';
-import { autoExport, getDataToCopy } from '../../../shared/utils/exportUtils';
+import { ScadaLoadingAnimation, AnalysisWindow } from '@plugin-sdk';
+import { autoExport, getDataToCopy } from '../../shared/utils/exportUtils';
 
 interface ReadingData {
     timestamp: string;

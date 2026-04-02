@@ -1,10 +1,8 @@
 import { Activity } from 'lucide-react';
 import { createElement } from 'react';
-import type { PluginDefinition } from '../types';
-import type { Node } from '../../shared/types';
-import type { AnalysisInstance } from '../../hooks/useAnalyticsState';
+import type { SdkPluginDefinition, SdkNode, SdkPluginContext } from '@plugin-sdk';
 import { fetchVoltagePlugin, fetchVoltageEstimatePlugin } from './api';
-import { VoltageDistributionModal } from '../../features/analytics/components/VoltageDistributionModal';
+import { VoltageDistributionModal } from './VoltageDistributionModal';
 
 const DEFAULT_THRESHOLD = 2_000_000;
 const DEFAULT_DEGREES = 5;
@@ -15,34 +13,36 @@ async function _performFetch(
     start: string,
     end: string,
     degrees: number | null | undefined,
-    updateWindow: (id: string, updates: Partial<AnalysisInstance>) => void,
-    addHighlightedNodes: (ids: string[]) => void,
-    addHighlightedEdges: (ids: string[]) => void,
+    ctx: SdkPluginContext
 ) {
-    updateWindow(windowId, { loading: true, isPaused: false });
+    ctx.updateWindowProps(windowId, { loading: true, isPaused: false } as any);
     try {
         const resp = await fetchVoltagePlugin(nodeIds, start, end, degrees);
-        updateWindow(windowId, {
+        // Note: SDK requires 'data' but our scatter and timeseries data goes directly
+        // via 'updateWindowProps' to bypass the standard SDK data container for performance.
+        ctx.updateWindowProps(windowId, {
             data: resp.distribution ?? [],
             scatterData: resp.scatter ?? [],
             timeSeriesData: resp.timeseries ?? [],
             loading: false,
-        });
-        if (resp.downstream_node_ids?.length) addHighlightedNodes(resp.downstream_node_ids);
-        if (resp.downstream_edge_ids?.length) addHighlightedEdges(resp.downstream_edge_ids);
+        } as any);
+        if (resp.downstream_node_ids?.length) ctx.addHighlightedNodes(resp.downstream_node_ids);
+        if (resp.downstream_edge_ids?.length) ctx.addHighlightedEdges(resp.downstream_edge_ids);
     } catch (e) {
         console.error('[voltage] fetch failed', e);
-        updateWindow(windowId, { loading: false });
+        ctx.setAnalysisLoading(windowId, false);
     }
 }
 
-export const voltagePlugin: PluginDefinition = {
+export const voltagePlugin: SdkPluginDefinition = {
     type: 'voltage',
     label: 'Voltage Distribution',
+    description: 'Display voltage distributions and timeseries line charts for nodes.',
+    permissions: ['cim:read', 'topology:read', 'analytics:voltage'],
     icon: Activity,
     color: 'cyan',
 
-    appliesToNodes: (_nodes: Node[], edgeCount = 0) =>
+    appliesToNodes: (_nodes: SdkNode[], edgeCount = 0) =>
         _nodes.length > 0 || edgeCount > 0,
 
     async handleRun(ctx) {
@@ -57,22 +57,11 @@ export const voltagePlugin: PluginDefinition = {
             : `${nodeIds.length} Assets`;
 
         const degrees = DEFAULT_DEGREES;
-        const id = `voltage-${Date.now()}`;
-        ctx.setAnalysisWindows(prev => [...prev, {
-            id,
-            type: 'voltage',
-            nodeIds,
-            nodeName,
-            isOpen: true,
-            isMinimized: false,
-            loading: true,
-            data: [],
-            degrees,
-            zIndex: 1000,
-        }]);
-        ctx.bringWindowToFront(id);
-
+        
+        // Use SDK to open window
         const { start, end } = ctx.dateRange;
+        const windowId = ctx.openAnalysisWindow('voltage', nodeName);
+        ctx.updateWindowProps(windowId, { degrees, nodeIds, start, end } as any);
         try {
             const est = await fetchVoltageEstimatePlugin(nodeIds, start, end, degrees);
             if (est.downstream_node_ids?.length) ctx.addHighlightedNodes(est.downstream_node_ids);
@@ -80,56 +69,63 @@ export const voltagePlugin: PluginDefinition = {
 
             const threshold = Number(ctx.systemConfig['analytics_threshold'] || DEFAULT_THRESHOLD);
             if (est.estimated_rows > threshold) {
-                ctx.updateWindow(id, {
+                ctx.updateWindowProps(windowId, {
                     loading: false,
                     isPaused: true,
                     estimatedRows: est.estimated_rows,
                     pendingRequest: { nodeIds, start, end, degrees },
-                });
+                } as any);
             } else {
-                await _performFetch(id, nodeIds, start, end, degrees, ctx.updateWindow, ctx.addHighlightedNodes, ctx.addHighlightedEdges);
+                await _performFetch(windowId, nodeIds, start, end, degrees, ctx);
             }
         } catch (err) {
             console.error('[voltage] estimate failed', err);
-            ctx.updateWindow(id, { loading: false });
+            ctx.setAnalysisLoading(windowId, false);
         }
     },
 
-    renderWindow(instance, callbacks) {
-        // pendingRequest is always set by handleRun and preserved so renderWindow
-        // can always read start/end for degree changes.
-        const req = instance.pendingRequest ?? {
-            nodeIds: instance.nodeIds,
-            start: '',
-            end: '',
-            degrees: instance.degrees ?? DEFAULT_DEGREES,
-        };
+    renderWindow(instance: any, callbacks: any) {
+        // We cast parameters and state locally to handle custom plugin data struct 
+        // without polluting the strict base SDK interface.
 
         const onConfirm = () => {
-            const d = req.degrees ?? DEFAULT_DEGREES;
-            callbacks.updateWindow({ loading: true, isPaused: false });
-            fetchVoltagePlugin(req.nodeIds, req.start, req.end, d, true)
-                .then(resp => callbacks.updateWindow({
-                    data: resp.distribution || [],
-                    scatterData: resp.scatter || [],
-                    timeSeriesData: resp.timeseries || [],
-                    loading: false,
-                }))
-                .catch(() => callbacks.updateWindow({ loading: false }));
+            const d = instance.degrees ?? DEFAULT_DEGREES;
+            const nodeIds = instance.nodeIds || [];
+            const start = instance.start || '';
+            const end = instance.end || '';
+
+            if (callbacks.updateWindow) {
+                callbacks.updateWindow({ loading: true, isPaused: false });
+                fetchVoltagePlugin(nodeIds, start, end, d, true)
+                    .then(resp => callbacks.updateWindow({
+                        data: resp.distribution || [],
+                        scatterData: resp.scatter || [],
+                        timeSeriesData: resp.timeseries || [],
+                        loading: false,
+                        pendingRequest: { nodeIds, start, end, degrees: d }
+                    }))
+                    .catch(() => callbacks.updateWindow({ loading: false }));
+            }
         };
 
         const onDegreesChange = (newDegrees: number | null) => {
             const d = newDegrees ?? DEFAULT_DEGREES;
-            callbacks.updateWindow({ loading: true, degrees: d });
-            fetchVoltagePlugin(req.nodeIds, req.start, req.end, d)
-                .then(resp => callbacks.updateWindow({
-                    data: resp.distribution || [],
-                    scatterData: resp.scatter || [],
-                    timeSeriesData: resp.timeseries || [],
-                    loading: false,
-                    pendingRequest: { ...req, degrees: d },
-                }))
-                .catch(() => callbacks.updateWindow({ loading: false }));
+            const nodeIds = instance.nodeIds || [];
+            const start = instance.start || '';
+            const end = instance.end || '';
+
+            if (callbacks.updateWindow) {
+                callbacks.updateWindow({ loading: true, degrees: d });
+                fetchVoltagePlugin(nodeIds, start, end, d)
+                    .then(resp => callbacks.updateWindow({
+                        data: resp.distribution || [],
+                        scatterData: resp.scatter || [],
+                        timeSeriesData: resp.timeseries || [],
+                        loading: false,
+                        pendingRequest: { nodeIds, start, end, degrees: d },
+                    }))
+                    .catch(() => callbacks.updateWindow({ loading: false }));
+            }
         };
 
         return createElement(VoltageDistributionModal, {

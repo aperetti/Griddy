@@ -12,10 +12,11 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
-from plugins.sdk import sdk
+from plugins.sdk import get_sdk
 
 router = APIRouter(prefix="/api/plugins/transformer-loading", tags=["plugins"])
 logger = logging.getLogger(__name__)
+sdk = get_sdk("transformer_loading")
 
 MAX_NODE_IDS = 100
 

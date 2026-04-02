@@ -6,6 +6,8 @@ import { pluginsApi } from '../../api';
 interface PluginEntry {
   name: string;
   enabled: boolean;
+  description?: string;
+  permissions?: string[];
 }
 
 export function PluginsPanel() {
@@ -59,20 +61,38 @@ export function PluginsPanel() {
         )}
         <Stack gap="xs">
           {plugins.map(plugin => (
-            <Group key={plugin.name} justify="space-between" py="xs" style={{ borderBottom: '1px solid var(--mantine-color-dark-5)' }}>
-              <Group gap="sm">
-                <Text size="sm" fw={500} style={{ textTransform: 'capitalize' }}>
-                  {plugin.name.replace(/_/g, ' ')}
-                </Text>
-                <Badge
-                  size="xs"
-                  variant="dot"
-                  color={plugin.enabled ? 'green' : 'gray'}
-                >
-                  {plugin.enabled ? 'enabled' : 'disabled'}
-                </Badge>
-              </Group>
+            <Group key={plugin.name} justify="space-between" py="xs" style={{ borderBottom: '1px solid var(--mantine-color-dark-5)', alignItems: 'flex-start' }}>
+              <div style={{ flex: 1 }}>
+                <Group gap="sm" mb={4}>
+                  <Text size="sm" fw={500} style={{ textTransform: 'capitalize' }}>
+                    {plugin.name.replace(/_/g, ' ')}
+                  </Text>
+                  <Badge
+                    size="xs"
+                    variant="dot"
+                    color={plugin.enabled ? 'green' : 'gray'}
+                  >
+                    {plugin.enabled ? 'enabled' : 'disabled'}
+                  </Badge>
+                </Group>
+                
+                {plugin.description && (
+                  <Text size="xs" c="dimmed" mb={4}>
+                    {plugin.description}
+                  </Text>
+                )}
+                
+                {plugin.permissions && plugin.permissions.length > 0 && (
+                  <Group gap={4} mt={6}>
+                    <Text size="xs" c="dimmed" fw={500}>Permissions:</Text>
+                    {plugin.permissions.map(perm => (
+                      <Badge key={perm} size="xs" variant="outline" color="violet">{perm}</Badge>
+                    ))}
+                  </Group>
+                )}
+              </div>
               <Switch
+                mt={2}
                 checked={plugin.enabled}
                 disabled={toggling.has(plugin.name)}
                 onChange={e => handleToggle(plugin.name, e.currentTarget.checked)}
@@ -82,6 +102,7 @@ export function PluginsPanel() {
           ))}
         </Stack>
       </Paper>
+
 
       <Text size="xs" c="dimmed">
         Changes take effect within ~5 seconds. No server restart required.

@@ -13,10 +13,11 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
-from plugins.sdk import sdk
+from plugins.sdk import get_sdk
 from src.shared.dependencies import ensure_graph_built
 
 router = APIRouter(prefix="/api/plugins/consumption", tags=["plugins"])
+sdk = get_sdk("consumption")
 logger = logging.getLogger(__name__)
 
 MAX_NODE_IDS = 100
@@ -60,7 +61,7 @@ async def estimate_consumption(
         return await run_in_threadpool(sdk.analytics.estimate_consumption, ids, start_time, end_time)
     except Exception as exc:
         logger.error("estimate_consumption failed: %s", exc)
-        raise HTTPException(status_code=500, detail="Analytics estimate failed")
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.get("/{node_ids}")

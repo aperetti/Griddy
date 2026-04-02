@@ -1,4 +1,4 @@
-"""Use Case: Voltage Distribution."""
+import datetime
 import duckdb
 import logging
 from typing import Dict, Any, List
@@ -109,55 +109,72 @@ class CalculateVoltageDistributionUseCase:
             LEFT JOIN c_bins ON all_bins.v_bin = c_bins.v_bin
             ORDER BY voltage ASC
         """
+        # 2. Correlation Query (Heatmap)
+        # We use COALESCE to support meters on any phase.
         heatmap_query = f"""
             SELECT * FROM (
                 WITH raw_readings AS (
-                    SELECT timestamp, node_id, kwh_dlv, voltage_a
+                    SELECT 
+                        time_bucket(INTERVAL '5 minutes', timestamp) as bucket,
+                        node_id, 
+                        kwh_dlv, 
+                        COALESCE(voltage_a, voltage_b, voltage_c) as voltage
                     FROM read_parquet('{safe_dir}/*.parquet')
                     WHERE node_id IN ({placeholders})
                       AND timestamp >= CAST(? AS TIMESTAMP)
                       AND timestamp <= CAST(? AS TIMESTAMP)
                 ),
                 total_loading AS (
-                    SELECT timestamp, SUM(kwh_dlv) as total_kwh
+                    SELECT bucket, SUM(kwh_dlv) as total_kwh
                     FROM raw_readings
                     WHERE kwh_dlv IS NOT NULL
-                    GROUP BY timestamp
+                    GROUP BY 1
                 )
                 SELECT 
                     t.total_kwh as loading,
-                    r.voltage_a as voltage,
+                    r.voltage as voltage,
                     CAST(COUNT(*) AS INTEGER) as cnt
                 FROM raw_readings r
-                JOIN total_loading t ON r.timestamp = t.timestamp
-                WHERE r.voltage_a IS NOT NULL
+                JOIN total_loading t ON r.bucket = t.bucket
+                WHERE r.voltage IS NOT NULL
                   AND t.total_kwh IS NOT NULL
                 GROUP BY 1, 2
             ) USING SAMPLE reservoir(10000)
         """
         
+        # 3. Stability Query (Timeseries)
+        # We adjust granularity based on range: Hourly for short intervals, Daily for long.
+        try:
+            start_dt = datetime.datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+            end_dt = datetime.datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+            delta = end_dt - start_dt
+            # If range is less than 5 days, use hourly resolution
+            granularity = "date_trunc('hour', timestamp)" if delta.days < 5 else "CAST(timestamp AS DATE)"
+        except Exception:
+            granularity = "CAST(timestamp AS DATE)"
+
         timeseries_query = f"""
             SELECT
-                CAST(timestamp AS DATE) as day,
-                MEDIAN(voltage_a) as p50,
-                QUANTILE_CONT(voltage_a, 0.1) as p10,
-                QUANTILE_CONT(voltage_a, 0.9) as p90
+                {granularity} as day,
+                MEDIAN(COALESCE(voltage_a, voltage_b, voltage_c)) as p50,
+                QUANTILE_CONT(COALESCE(voltage_a, voltage_b, voltage_c), 0.1) as p10,
+                QUANTILE_CONT(COALESCE(voltage_a, voltage_b, voltage_c), 0.9) as p90
             FROM read_parquet('{safe_dir}/*.parquet')
             WHERE node_id IN ({placeholders})
               AND timestamp >= CAST(? AS TIMESTAMP)
               AND timestamp <= CAST(? AS TIMESTAMP)
-              AND voltage_a IS NOT NULL
+              AND (voltage_a IS NOT NULL OR voltage_b IS NOT NULL OR voltage_c IS NOT NULL)
             GROUP BY 1
             ORDER BY 1
         """
 
         stats_query = f"""
-            SELECT AVG(voltage_a), MEDIAN(voltage_a)
+            SELECT AVG(COALESCE(voltage_a, voltage_b, voltage_c)), MEDIAN(COALESCE(voltage_a, voltage_b, voltage_c))
             FROM read_parquet('{safe_dir}/*.parquet')
             WHERE node_id IN ({placeholders})
               AND timestamp >= CAST(? AS TIMESTAMP)
               AND timestamp <= CAST(? AS TIMESTAMP)
-              AND voltage_a IS NOT NULL
+              AND (voltage_a IS NOT NULL OR voltage_b IS NOT NULL OR voltage_c IS NOT NULL)
         """
 
         with duckdb.connect(self.db_path, read_only=True) as conn:

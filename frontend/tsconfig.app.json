@@ -26,9 +26,12 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true
+    "noUncheckedSideEffectImports": true,
+    "baseUrl": ".",
+    "paths": {
+      "@plugin-sdk/*": ["src/plugins/sdk/*"],
+      "@plugin-sdk": ["src/plugins/sdk/index.ts"]
+    }
   },
   "include": [
     "src"

@@ -1,13 +1,12 @@
 import { Zap } from 'lucide-react';
 import { createElement } from 'react';
-import type { PluginDefinition } from '../types';
-import type { Node } from '../../shared/types';
+import type { SdkPluginDefinition, SdkNode } from '@plugin-sdk';
 import { fetchTransformerLoading } from './api';
 import { TransformerLoadingWindow } from './TransformerLoadingWindow';
 
-function isTransformerNode(node: Node): boolean {
+function isTransformerNode(node: SdkNode): boolean {
     // Nodes can carry attached_equipment with PowerTransformer entries
-    if ((node.attached_equipment || []).some(eq => eq.type === 'PowerTransformer')) return true;
+    if ((node.equipments || []).some(eq => eq.type === 'PowerTransformer')) return true;
     // display_type is set by the display rule engine when rules match
     if (node.display_type === 'PowerTransformer') return true;
     // Fallback: node type directly named
@@ -15,53 +14,39 @@ function isTransformerNode(node: Node): boolean {
     return false;
 }
 
-export const transformerLoadingPlugin: PluginDefinition = {
+export const transformerLoadingPlugin: SdkPluginDefinition = {
     type: 'transformer_loading',
     label: 'Transformer Loading',
+    description: 'Calculate average and peak loads specifically for Distribution transformers.',
+    permissions: ['cim:read', 'transformer:loading'],
     icon: Zap,
     color: 'yellow',
 
-    appliesToNodes: (nodes: Node[]) => nodes.some(isTransformerNode),
+    appliesToNodes: (nodes: SdkNode[]) => nodes.some(isTransformerNode),
 
-    handleRun({ selectedNodes, setAnalysisWindows, bringWindowToFront }) {
-        const nodeIds = selectedNodes.map(n => n.id);
-        const nodeName =
-            nodeIds.length === 1
-                ? (selectedNodes[0].name ?? 'Transformer')
-                : `${nodeIds.length} Transformers`;
+    handleRun(ctx) {
+        const nodeIds = ctx.selectedNodes.map(n => n.id);
+        const nodeName = nodeIds.length === 1
+            ? (ctx.selectedNodes[0].name ?? 'Transformer')
+            : `${nodeIds.length} Transformers`;
 
-        const id = `transformer_loading-${Date.now()}`;
+        // 1. Open the window and capture its ID (status is implicitly loading via SDK)
+        const windowId = ctx.openAnalysisWindow('transformer_loading', nodeName);
 
-        setAnalysisWindows(prev => [...prev, {
-            id,
-            type: 'transformer_loading',
-            nodeIds,
-            nodeName,
-            isOpen: true,
-            isMinimized: false,
-            loading: true,
-            data: [],
-            zIndex: 1000,
-        }]);
-
-        bringWindowToFront(id);
-
+        // 2. Fetch the data remotely
         fetchTransformerLoading(nodeIds)
-            .then(resp =>
-                setAnalysisWindows(prev =>
-                    prev.map(w => w.id === id ? { ...w, loading: false, data: resp.transformers } : w)
-                )
-            )
+            .then(resp => {
+                // 3. Update the analysis window with the fetched data
+                ctx.updateAnalysisData(windowId, resp.transformers);
+            })
             .catch(err => {
                 console.error('[transformer_loading] fetch failed', err);
-                setAnalysisWindows(prev =>
-                    prev.map(w => w.id === id ? { ...w, loading: false } : w)
-                );
+                ctx.setAnalysisLoading(windowId, false);
             });
     },
 
-    renderWindow(instance, { onClose, onMinimize }) {
-        return createElement(TransformerLoadingWindow, { instance, onClose, onMinimize });
+    renderWindow(instance, callbacks) {
+        return createElement(TransformerLoadingWindow, { instance, ...callbacks });
     },
 };
 

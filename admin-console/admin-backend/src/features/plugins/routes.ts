@@ -10,7 +10,7 @@ export async function pluginsRoutes(fastify: FastifyInstance) {
       if (!response.ok) {
         return reply.status(502).send({ error: 'Failed to reach main backend' });
       }
-      const registry = await response.json() as { name: string; enabled: boolean }[];
+      const registry = await response.json() as { name: string; enabled: boolean; description?: string; permissions?: string[] }[];
 
       const db = await getDb();
       const configs: { key: string; value: string }[] = await db.all(
@@ -20,6 +20,8 @@ export async function pluginsRoutes(fastify: FastifyInstance) {
 
       return registry.map(plugin => ({
         name: plugin.name,
+        description: plugin.description || '',
+        permissions: plugin.permissions || [],
         enabled: (overrides.get(`plugin.${plugin.name}.enabled`) ?? String(plugin.enabled)) === 'true',
       }));
     } catch {

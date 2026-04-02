@@ -1,0 +1,5 @@
+{
+    "name": "transformer_loading",
+    "description": "Analyzes transformer loading via cypher queries to find overloaded transformers.",
+    "permissions": ["cim:read", "topology:read"]
+}

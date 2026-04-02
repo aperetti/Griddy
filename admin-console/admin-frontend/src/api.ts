@@ -22,7 +22,7 @@ export const configApi = {
 };
 
 export const pluginsApi = {
-  getRegistry: (): Promise<{ name: string; enabled: boolean }[]> =>
+  getRegistry: (): Promise<{ name: string; enabled: boolean; description?: string; permissions?: string[] }[]> =>
     api.get('/plugins').then(res => res.data),
   setEnabled: (name: string, enabled: boolean) =>
     api.put(`/plugins/${name}/enabled`, { enabled }).then(res => res.data),

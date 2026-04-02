@@ -1,0 +1,5 @@
+{
+    "name": "voltage",
+    "description": "Calculates downstream voltage distribution for selected nodes.",
+    "permissions": ["analytics:voltage", "topology:read"]
+}

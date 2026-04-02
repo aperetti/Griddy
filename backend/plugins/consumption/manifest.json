@@ -1,0 +1,5 @@
+{
+    "name": "consumption",
+    "description": "Aggregates energy consumption time-series for downstream meters of the selected nodes.",
+    "permissions": ["analytics:consumption", "topology:read"]
+}
