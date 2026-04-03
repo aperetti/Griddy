@@ -24,17 +24,24 @@ export const transformerLoadingPlugin: SdkPluginDefinition = {
             : (nodeIds.length === 1 ? (ctx.selectedNodes[0].name ?? 'Transformer') : `${nodeIds.length} Transformers`);
 
         const windowId = ctx.openAnalysisWindow('transformer_loading', reportName);
+        
+        // Store the nodeIds for later pagination refreshes
+        ctx.updateWindowProps(windowId, { nodeIds });
 
-        fetchTransformerLoading(nodeIds)
+        fetchTransformerLoading(nodeIds, 100, 0)
             .then(resp => {
-                ctx.updateAnalysisData(windowId, resp.transformers);
+                ctx.updateWindowProps(windowId, {
+                    data: resp.transformers,
+                    totalCount: resp.total_count,
+                    limit: resp.limit,
+                    offset: resp.offset,
+                    loading: false
+                });
                 
                 // Color code the map based on loading percentage
                 const averages: Record<string, number> = {};
                 resp.transformers.forEach(t => {
                     if (t.loading_percent != null) {
-                        // Normalize to 0-1 scale for the visualization engine
-                        // 1.0 = 100% load
                         averages[t.mrid] = t.loading_percent / 100;
                     }
                 });
