@@ -1,0 +1,8 @@
+{
+  "name": "load_heatmap",
+  "title": "Network Load Heatmap",
+  "description": "Visualizes average load across the network edges.",
+  "version": "1.0.0",
+  "author": "Antigravity",
+  "permissions": ["analytics:load", "topology:read"]
+}
