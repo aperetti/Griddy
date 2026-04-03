@@ -230,6 +230,33 @@ class PluginAnalyticsService:
         uc = CalculateVoltageDistributionUseCase(self._engine, self._db_path, self._parquet_dir)
         return uc.estimate(node_ids, start_time, end_time, degrees=degrees)
 
+    def get_voltage_map(
+        self,
+        agg: str,
+        start_time: str,
+        end_time: str,
+        start_node_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Calculate aggregated voltage values for map-wide visualization."""
+        self._check("analytics:voltage")
+        from src.analytics.map_voltage import MapVoltageUseCase
+        uc = MapVoltageUseCase(self._engine, self._db_path, self._parquet_dir)
+        return uc.execute(start_time, end_time, agg, start_node_id=start_node_id)
+
+    def estimate_voltage_map(
+        self,
+        agg: str,
+        start_time: str,
+        end_time: str,
+        start_node_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Estimate row count before running a full voltage map query."""
+        self._check("analytics:voltage")
+        from src.analytics.map_voltage import MapVoltageUseCase
+        uc = MapVoltageUseCase(self._engine, self._db_path, self._parquet_dir)
+        return uc.estimate(start_time, end_time, agg, start_node_id=start_node_id)
+
+
 
 # ---------------------------------------------------------------------------
 # Top-level SDK singleton

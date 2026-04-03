@@ -2,6 +2,7 @@ import { Box, Group, Tooltip, ActionIcon, Menu } from '@mantine/core';
 import { Menu as MenuIcon, Settings, Activity, Zap, Search } from 'lucide-react';
 import { GlobalSearch } from '../grid/components/GlobalSearch';
 import { ModelSwitcher } from '../grid/components/ModelSwitcher';
+import type { PluginDefinition } from '../../plugins/types';
 
 interface OverlayControlsProps {
   activeModelIds: string[];
@@ -12,6 +13,8 @@ interface OverlayControlsProps {
   onRefreshTopology: () => void;
   onClearSelection: () => void;
   isMobile?: boolean;
+  plugins?: PluginDefinition[];
+  onRunPlugin?: (plugin: PluginDefinition) => void;
 }
 
 export function OverlayControls({
@@ -22,8 +25,12 @@ export function OverlayControls({
   onDisplayRulesClick,
   onRefreshTopology,
   onClearSelection,
-  isMobile
+  isMobile,
+  plugins = [],
+  onRunPlugin
 }: OverlayControlsProps) {
+  const systemPlugins = plugins.filter(p => p.category === 'system');
+
   return (
     <>
       <Box style={{
@@ -83,6 +90,26 @@ export function OverlayControls({
                   Refresh Map Views
                 </Menu.Item>
 
+                {systemPlugins.length > 0 && (
+                  <>
+                    <Menu.Divider />
+                    <Menu.Label>System Analysis</Menu.Label>
+                    {systemPlugins.map(plugin => {
+                      const Icon = plugin.icon;
+                      return (
+                        <Menu.Item
+                          key={plugin.type}
+                          leftSection={<Icon size={14} />}
+                          onClick={() => onRunPlugin?.(plugin)}
+                        >
+                          {plugin.label}
+                        </Menu.Item>
+                      );
+                    })}
+                  </>
+                )}
+
+                <Menu.Divider />
                 <Menu.Label>System</Menu.Label>
                 <Menu.Item leftSection={<Settings size={14} />} onClick={onSettingsClick}>
                   Global Settings

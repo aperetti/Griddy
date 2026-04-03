@@ -82,8 +82,7 @@ export function AnalysisToolbar({
                             </ActionIcon>
                         </Tooltip>
                         <Divider orientation="vertical" />
-
-                        {plugins.map(plugin => {
+                        {plugins.filter(p => p.category === 'node').map(plugin => {
                             const Icon = plugin.icon;
                             return (
                                 <Tooltip key={plugin.type} color="dark" label={plugin.label} position="bottom" withArrow>

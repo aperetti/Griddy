@@ -8,7 +8,10 @@ interface AnalysisWindowLayerProps {
   onClose: (id: string) => void;
   onUpdateWindow: (id: string, updates: Partial<AnalysisInstance>) => void;
   onMinimize: (id: string) => void;
+  onSetNodeAverages?: (averages: Record<string, number> | null) => void;
+  onSetVoltageScale?: (scale: any) => void;
 }
+
 
 export function AnalysisWindowLayer({
   windows,
@@ -16,6 +19,8 @@ export function AnalysisWindowLayer({
   onClose,
   onUpdateWindow,
   onMinimize,
+  onSetNodeAverages,
+  onSetVoltageScale,
 }: AnalysisWindowLayerProps) {
   return (
     <>
@@ -33,6 +38,7 @@ export function AnalysisWindowLayer({
               onMinimize={() => onMinimize(win.id)}
               isMinimized={win.isMinimized}
             />
+
           );
         }
         const pluginDef = pluginRegistry.get(win.type);
@@ -41,7 +47,10 @@ export function AnalysisWindowLayer({
             onClose: () => onClose(win.id),
             onMinimize: () => onMinimize(win.id),
             updateWindow: (updates) => onUpdateWindow(win.id, updates),
+            setNodeAverages: onSetNodeAverages,
+            setVoltageScale: onSetVoltageScale,
           });
+
         }
         return null;
       })}

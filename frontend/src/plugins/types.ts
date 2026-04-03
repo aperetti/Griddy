@@ -20,7 +20,12 @@ export interface PluginWindowCallbacks {
     onMinimize: () => void;
     /** Pre-bound to the instance ID — update the window without knowing its ID. */
     updateWindow: (updates: Partial<AnalysisInstance>) => void;
+    /** Update map-wide node colors/averages */
+    setNodeAverages?: (averages: Record<string, number> | null) => void;
+    /** Update global voltage scale */
+    setVoltageScale?: (scale: any) => void;
 }
+
 
 export interface PluginExecutionContext {
     /** Currently selected nodes. */
@@ -46,11 +51,26 @@ export interface PluginExecutionContext {
     addHighlightedNodes: (ids: string[]) => void;
     /** Additively highlight edges on the map after an analysis runs. */
     addHighlightedEdges: (ids: string[]) => void;
+
+    /** Update the map-wide node averages (for heatmap visualization). */
+    setNodeAverages: (averages: Record<string, number> | null) => void;
+    /** Update the voltage scale ranges used for coloring and tooltips. */
+    setVoltageScale: (scale: {
+        criticalHigh: number;
+        highWarning: number;
+        lowWarning: number;
+        criticalLow: number;
+        baseVoltage: number;
+    }) => void;
 }
+
 
 export interface PluginDefinition {
     /** Unique slug — becomes AnalysisInstance.type for windows this plugin owns. */
     type: string;
+
+    /** Categorization for UI placement. */
+    category: 'node' | 'system';
 
     /** Human-readable label shown in toolbar tooltip and minimized tray. */
     label: string;

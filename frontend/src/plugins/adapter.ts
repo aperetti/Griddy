@@ -56,9 +56,13 @@ function adaptContext(ctx: PluginExecutionContext): SdkPluginContext {
         
         addHighlightedNodes: ctx.addHighlightedNodes,
         addHighlightedEdges: ctx.addHighlightedEdges,
-        resolveEdgeNodesToNodeIds: ctx.resolveEdgeNodesToNodeIds
+        resolveEdgeNodesToNodeIds: ctx.resolveEdgeNodesToNodeIds,
+        
+        setNodeAverages: ctx.setNodeAverages,
+        setVoltageScale: ctx.setVoltageScale
     };
 }
+
 
 function adaptInstance(instance: AnalysisInstance): SdkAnalysisInstance {
     // Spread all properties to ensure custom plugin data (like scatterData) is preserved
@@ -74,6 +78,7 @@ function adaptInstance(instance: AnalysisInstance): SdkAnalysisInstance {
 export function adaptPlugin(sdkPlugin: SdkPluginDefinition): PluginDefinition {
     return {
         type: sdkPlugin.type,
+        category: sdkPlugin.category,
         label: sdkPlugin.label,
         icon: sdkPlugin.icon,
         color: sdkPlugin.color,

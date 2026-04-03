@@ -25,16 +25,26 @@ function formatOhm(val: number | null): string {
     return `${val} Ω`;
 }
 
-function EndRow({ end, mrid, name, rowSpan }: { end: TransformerEnd; mrid: string; name: string | null; rowSpan: number }) {
+function EndRow({ end, mrid, name, loading_percent, rowSpan }: { end: TransformerEnd; mrid: string; name: string | null; loading_percent: number | null; rowSpan: number }) {
     return (
         <Table.Tr>
             {rowSpan > 0 && (
-                <Table.Td rowSpan={rowSpan}>
-                    <Stack gap={2}>
-                        <Text size="sm" fw={600}>{name || '—'}</Text>
-                        <Text size="xs" c="dimmed" ff="monospace">{mrid.slice(0, 14)}…</Text>
-                    </Stack>
-                </Table.Td>
+                <>
+                    <Table.Td rowSpan={rowSpan}>
+                        <Stack gap={2}>
+                            <Text size="sm" fw={600}>{name || '—'}</Text>
+                            <Text size="xs" c="dimmed" ff="monospace">{mrid.slice(0, 14)}…</Text>
+                        </Stack>
+                    </Table.Td>
+                    <Table.Td rowSpan={rowSpan}>
+                        <Badge 
+                            color={loading_percent != null && loading_percent > 100 ? 'red' : 'green'} 
+                            variant="filled"
+                        >
+                            {loading_percent?.toFixed(1) ?? '—'}%
+                        </Badge>
+                    </Table.Td>
+                </>
             )}
             <Table.Td ta="center">
                 <Badge size="xs" variant="outline" color="gray">{end.end_number ?? '—'}</Badge>
@@ -66,6 +76,7 @@ export const TransformerLoadingWindow = memo(function TransformerLoadingWindow({
                     end={end}
                     mrid={t.mrid}
                     name={t.name}
+                    loading_percent={t.loading_percent}
                     rowSpan={i === 0 ? t.ends.length : 0}
                 />
             ))
@@ -113,6 +124,7 @@ export const TransformerLoadingWindow = memo(function TransformerLoadingWindow({
                     <Table.Thead>
                         <Table.Tr>
                             <Table.Th>Transformer</Table.Th>
+                            <Table.Th>Load (%)</Table.Th>
                             <Table.Th ta="center">End</Table.Th>
                             <Table.Th>Rated S</Table.Th>
                             <Table.Th>Rated U</Table.Th>

@@ -13,6 +13,7 @@ export interface TransformerEnd {
 export interface TransformerRecord {
     mrid: string;
     name: string | null;
+    loading_percent: number | null;
     ends: TransformerEnd[];
 }
 
@@ -24,7 +25,8 @@ export interface TransformerLoadingResponse {
 export async function fetchTransformerLoading(
     nodeIds: string[],
 ): Promise<TransformerLoadingResponse> {
-    const res = await fetch(`${API_BASE}/${nodeIds.join(',')}`);
+    const selector = nodeIds.length > 0 ? nodeIds.join(',') : 'all';
+    const res = await fetch(`${API_BASE}/${selector}`);
     if (!res.ok) throw new Error(`Transformer loading fetch failed: ${res.status}`);
     return res.json();
 }

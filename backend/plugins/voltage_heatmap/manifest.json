@@ -1,0 +1,5 @@
+{
+    "name": "voltage_heatmap",
+    "description": "Generates a voltage heat map for the grid by aggregating measurement data across all nodes.",
+    "permissions": ["analytics:voltage", "topology:read"]
+}

@@ -17,6 +17,7 @@ import { VoltageScalePanel } from './features/analytics/components/VoltageScaleP
 import { GlobalSettingsModal } from './features/analytics/components/GlobalSettingsModal';
 import { DisplayRulesManager } from './features/grid/components/DisplayRulesManager';
 import { OverlayControls } from './features/ui/OverlayControls';
+import { SystemSidebar } from './features/ui/SystemSidebar';
 import { AnalysisWindowLayer } from './features/analytics/components/AnalysisWindowLayer';
 import { AnalysisToolbar } from './features/grid/components/AnalysisToolbar';
 import { AnalysisTray } from './features/analytics/components/AnalysisTray';
@@ -55,7 +56,13 @@ export default function App() {
   const [displayRulesZIndex, setDisplayRulesZIndex] = useState(1005);
   const [voltageScale, setVoltageScale] = useState(() => {
     const saved = localStorage.getItem('voltageScale');
-    return saved ? JSON.parse(saved) : { min: 0.9, max: 1.1, low: 0.95, high: 1.05 };
+    return saved ? JSON.parse(saved) : {
+      criticalHigh: 253.0,
+      highWarning: 243.8,
+      lowWarning: 216.2,
+      criticalLow: 207.0,
+      baseVoltage: 230.0,
+    };
   });
   const [viewState, setViewState] = useState<any>(null);
   const [targetLocation, setTargetLocation] = useState<{ longitude: number; latitude: number } | null>(null);
@@ -97,7 +104,8 @@ export default function App() {
 
   const selectedNodes = topology.nodes.filter(n => topology.highlightedNodes.has(n.id));
   const selectedEdgeIds = Array.from(topology.highlightedEdges);
-  const applicablePlugins = Array.from(pluginRegistry.values()).filter(
+  const allPlugins = Array.from(pluginRegistry.values());
+  const applicablePlugins = allPlugins.filter(
     p => p.appliesToNodes(selectedNodes, topology.highlightedEdges.size)
   );
 
@@ -125,7 +133,19 @@ export default function App() {
       ids.forEach(id => next.add(id));
       return next;
     }),
+    setNodeAverages: topology.setNodeAverages,
+    setVoltageScale: setVoltageScale,
   };
+
+  // Cleanup effect for heatmap averages when windows close
+  useEffect(() => {
+    const isHeatmapActive = analytics.analysisWindows.some(w => 
+      (w.type === 'voltage' || w.type === 'voltage_heatmap') && w.isOpen
+    );
+    if (!isHeatmapActive && topology.nodeAverages !== null) {
+      topology.setNodeAverages(null);
+    }
+  }, [analytics.analysisWindows, topology.nodeAverages]);
 
   const bringDisplayRulesToFront = useCallback(() => {
     setDisplayRulesZIndex(analytics.getNextZIndex());
@@ -276,7 +296,9 @@ export default function App() {
           <VoltageScalePanel
             voltageScale={voltageScale}
             setVoltageScale={setVoltageScale}
-            visible={analytics.analysisWindows.some(w => w.type === 'voltage' && w.isOpen)}
+            visible={analytics.analysisWindows.some(w => 
+              (w.type === 'voltage' || w.type === 'voltage_heatmap') && w.isOpen
+            )}
           />
 
           {rulesLoading && (
@@ -312,6 +334,12 @@ export default function App() {
             onRefreshTopology={topology.refreshTopology}
             onClearSelection={topology.handleClearSelection}
             isMobile={isMobile}
+            plugins={allPlugins}
+            onRunPlugin={(plugin: PluginDefinition) => plugin.handleRun(pluginCtx)}
+          />
+          <SystemSidebar
+            plugins={allPlugins}
+            onRunPlugin={(plugin: PluginDefinition) => plugin.handleRun(pluginCtx)}
           />
           {/* Selection HUD - positioned under search */}
           <Box style={{
@@ -371,6 +399,8 @@ export default function App() {
           onClose={analytics.removeWindow}
           onUpdateWindow={analytics.updateWindow}
           onMinimize={analytics.toggleMinimize}
+          onSetNodeAverages={topology.setNodeAverages}
+          onSetVoltageScale={setVoltageScale}
         />
       </div>
 

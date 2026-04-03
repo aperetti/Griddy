@@ -50,18 +50,39 @@ export interface SdkPluginContext {
     addHighlightedNodes: (ids: string[]) => void;
     addHighlightedEdges: (ids: string[]) => void;
     resolveEdgeNodesToNodeIds: (edgeIds: string[]) => string[];
+
+    /** Map-wide node averages (for heatmap visualization) */
+    setNodeAverages: (averages: Record<string, number> | null) => void;
+    /** Voltage scale ranges for coloring and UI widgets */
+    setVoltageScale: (scale: {
+        criticalHigh: number;
+        highWarning: number;
+        lowWarning: number;
+        criticalLow: number;
+        baseVoltage: number;
+    }) => void;
 }
+
 
 export interface SdkPluginCallbacks {
     onClose: () => void;
     onMinimize: () => void;
+    /** Update map-wide node colors/averages */
+    setNodeAverages?: (averages: Record<string, number> | null) => void;
+    /** Update global voltage scale */
+    setVoltageScale?: (scale: any) => void;
+    /** For standard plugins to update their own data */
+    updateWindow?: (updates: Partial<SdkAnalysisInstance>) => void;
 }
+
 
 /**
  * The formal contract every plugin must implement and export as default.
  */
 export interface SdkPluginDefinition {
     type: string;
+    /** Categorization: 'node' (contextual) or 'system' (global) */
+    category: 'node' | 'system';
     label: string;
     description?: string;
     permissions?: string[];

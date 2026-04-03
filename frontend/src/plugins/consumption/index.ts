@@ -27,7 +27,8 @@ async function _performFetch(
 
 export const consumptionPlugin: SdkPluginDefinition = {
     type: 'consumption',
-    label: 'Consumption Analysis',
+    category: 'node',
+    label: 'Consumption History',
     description: 'Analyze aggregate smart meter consumption data for downstream grid assets.',
     permissions: ['cim:read', 'topology:read', 'analytics:consumption'],
     icon: BarChart3,

@@ -36,6 +36,7 @@ async function _performFetch(
 
 export const voltagePlugin: SdkPluginDefinition = {
     type: 'voltage',
+    category: 'node',
     label: 'Voltage Distribution',
     description: 'Display voltage distributions and timeseries line charts for nodes.',
     permissions: ['cim:read', 'topology:read', 'analytics:voltage'],
