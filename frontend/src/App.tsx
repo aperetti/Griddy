@@ -28,7 +28,7 @@ import { useAnalyticsState, SETTINGS_KEY } from './hooks/useAnalyticsState';
 import { fetchTopology, fetchModels, fetchPluginRegistry } from './shared/api';
 import type { Node, Edge } from './shared/types';
 import { initPluginRegistry } from './plugins';
-import type { PluginDefinition } from './plugins/types';
+import type { PluginDefinition, PluginExecutionContext } from './plugins/types';
 
 const calculateRange = (config: any) => {
   const end = config.endDateType === 'now' ? new Date() : new Date(config.fixedEndDate);
@@ -57,10 +57,10 @@ export default function App() {
   const [voltageScale, setVoltageScale] = useState(() => {
     const saved = localStorage.getItem('voltageScale');
     return saved ? JSON.parse(saved) : {
-      criticalHigh: 253.0,
-      highWarning: 243.8,
-      lowWarning: 216.2,
-      criticalLow: 207.0,
+      criticalHigh: 1.1,
+      highWarning: 1.06,
+      lowWarning: 0.94,
+      criticalLow: 0.9,
       baseVoltage: 230.0,
     };
   });
@@ -109,7 +109,16 @@ export default function App() {
     p => p.appliesToNodes(selectedNodes, topology.highlightedEdges.size)
   );
 
-  const pluginCtx = {
+  const selectAndNavigateToNode = useCallback((nodeId: string) => {
+    const node = topology.nodes.find(n => n.id === nodeId);
+    if (node) {
+      topology.setHighlightedNodes(new Set([node.id]));
+      topology.setHighlightedEdges(new Set());
+      setTargetLocation({ longitude: node.position[0], latitude: node.position[1] });
+    }
+  }, [topology.nodes]);
+
+  const pluginCtx: PluginExecutionContext = {
     selectedNodes,
     selectedEdgeIds,
     resolveEdgeNodesToNodeIds: (edgeIds: string[]) =>
@@ -133,8 +142,10 @@ export default function App() {
       ids.forEach(id => next.add(id));
       return next;
     }),
-    setNodeAverages: topology.setNodeAverages,
+    setNodeAverages: (averages: Record<string, number> | null) => topology.setNodeAverages(averages),
+    setEdgeAverages: (averages: Record<string, number> | null) => topology.setEdgeAverages(averages),
     setVoltageScale: setVoltageScale,
+    selectAndNavigateToNode: selectAndNavigateToNode,
   };
 
   // Cleanup effect for heatmap averages when windows close
@@ -142,10 +153,11 @@ export default function App() {
     const isHeatmapActive = analytics.analysisWindows.some(w => 
       (w.type === 'voltage' || w.type === 'voltage_heatmap') && w.isOpen
     );
-    if (!isHeatmapActive && topology.nodeAverages !== null) {
-      topology.setNodeAverages(null);
+    if (!isHeatmapActive) {
+      if (topology.nodeAverages !== null) topology.setNodeAverages(null);
+      if (topology.edgeAverages !== null) topology.setEdgeAverages(null);
     }
-  }, [analytics.analysisWindows, topology.nodeAverages]);
+  }, [analytics.analysisWindows, topology.nodeAverages, topology.edgeAverages]);
 
   const bringDisplayRulesToFront = useCallback(() => {
     setDisplayRulesZIndex(analytics.getNextZIndex());
@@ -275,6 +287,7 @@ export default function App() {
             highlightedNodes={topology.highlightedNodes}
             highlightedEdges={topology.highlightedEdges}
             nodeAverages={topology.nodeAverages}
+            edgeAverages={topology.edgeAverages}
             nodeCurrents={topology.nodeCurrents}
             onMapClick={topology.handleClearSelection}
             voltageScale={voltageScale}
@@ -400,7 +413,9 @@ export default function App() {
           onUpdateWindow={analytics.updateWindow}
           onMinimize={analytics.toggleMinimize}
           onSetNodeAverages={topology.setNodeAverages}
+          onSetEdgeAverages={topology.setEdgeAverages}
           onSetVoltageScale={setVoltageScale}
+          onSelectAndNavigateToNode={selectAndNavigateToNode}
         />
       </div>
 

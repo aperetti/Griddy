@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom';
 import { Paper, Group, Button, Tooltip, Transition, Box } from '@mantine/core';
 import { BarChart3, Activity, Database } from 'lucide-react';
-import type { AnalysisInstance, AnalysisType } from '../../../hooks/useAnalyticsState';
+import type { AnalysisInstance } from '../../../hooks/useAnalyticsState';
 
 interface AnalysisTrayProps {
   minimizedWindows: AnalysisInstance[];
@@ -9,7 +9,7 @@ interface AnalysisTrayProps {
   onClose: (id: string) => void;
 }
 
-const getIcon = (type: keyof AnalysisType) => {
+const getIcon = (type: string) => {
   switch (type) {
     case 'consumption': return <BarChart3 size={16} />;
     case 'voltage': return <Activity size={16} />;
@@ -18,7 +18,7 @@ const getIcon = (type: keyof AnalysisType) => {
   }
 };
 
-const getColor = (type: keyof AnalysisType) => {
+const getColor = (type: string) => {
   switch (type) {
     case 'consumption': return 'blue';
     case 'voltage': return 'cyan';
