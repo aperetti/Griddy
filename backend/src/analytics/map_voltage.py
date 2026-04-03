@@ -30,7 +30,7 @@ class MapVoltageUseCase:
             FROM read_parquet('{self.parquet_dir}/*.parquet')
             WHERE timestamp >= CAST(? AS TIMESTAMP)
               AND timestamp <= CAST(? AS TIMESTAMP)
-              AND voltage_a IS NOT NULL
+              AND (voltage_a IS NOT NULL OR voltage_b IS NOT NULL OR voltage_c IS NOT NULL)
               {nodes_list_filter}
         """
         
@@ -82,14 +82,14 @@ class MapVoltageUseCase:
         node_avg_query = f"""
             SELECT 
                 node_id, 
-                {agg_func}(voltage_a) as v,
+                {agg_func}(list_avg([voltage_a, voltage_b, voltage_c])) as v,
                 AVG(current_a) as ia,
                 AVG(current_b) as ib,
                 AVG(current_c) as ic
             FROM read_parquet('{self.parquet_dir}/*.parquet')
             WHERE timestamp >= CAST(? AS TIMESTAMP)
               AND timestamp <= CAST(? AS TIMESTAMP)
-              AND voltage_a IS NOT NULL
+              AND (voltage_a IS NOT NULL OR voltage_b IS NOT NULL OR voltage_c IS NOT NULL)
               {nodes_list_filter}
             GROUP BY node_id
         """
@@ -99,7 +99,7 @@ class MapVoltageUseCase:
             FROM read_parquet('{self.parquet_dir}/*.parquet')
             WHERE timestamp >= CAST(? AS TIMESTAMP)
               AND timestamp <= CAST(? AS TIMESTAMP)
-              AND voltage_a IS NOT NULL
+              AND (voltage_a IS NOT NULL OR voltage_b IS NOT NULL OR voltage_c IS NOT NULL)
               {nodes_list_filter}
         """
         

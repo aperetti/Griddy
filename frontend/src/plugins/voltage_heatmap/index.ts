@@ -23,10 +23,10 @@ async function _performFetch(
 
         // Ensure the map is aware of our base voltage
         ctx.setVoltageScale({
-            criticalHigh: 253.0,
-            highWarning: 243.8,
-            lowWarning: 216.2,
-            criticalLow: 207.0,
+            criticalHigh: 1.1,
+            highWarning: 1.06,
+            lowWarning: 0.94,
+            criticalLow: 0.9,
             baseVoltage: 230.0,
         });
 
@@ -90,13 +90,14 @@ export const voltageHeatMapPlugin: SdkPluginDefinition = {
              fetchVoltageMap(req.nodeId, req.start, req.end, 'avg', true)
                 .then(resp => {
                     callbacks.updateWindow?.({ data: resp, loading: false });
-                    // We need a way to tell the core app to update the map again.
-                    // This is why we added setNodeAverages to the context, but 
-                    // callbacks here are limited. We'll rely on handleRun's initial
-                    // run and the user can just re-open/refresh if they want to.
-                    // Actually, the handleRun is only called once.
-                    // Let's improve the SDK or just use the ctx.setNodeAverages 
-                    // inside the performFetch.
+                    callbacks.setNodeAverages?.(resp.node_voltages);
+                    callbacks.setVoltageScale?.({
+                        criticalHigh: 1.1,
+                        highWarning: 1.06,
+                        lowWarning: 0.94,
+                        criticalLow: 0.9,
+                        baseVoltage: 230.0,
+                    });
                 });
         };
 
