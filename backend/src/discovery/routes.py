@@ -21,15 +21,15 @@ def _find_manager_for_mrid(mrid: str):
             if detail is not None:
                 detail["model_id"] = model_id
                 return detail
-    
+
     # Fallback: Search all active managers (robustness for GUIDs not in index)
     for mid, mgr in registry.get_managers():
         detail = mgr.get_equipment_detail(mrid)
         if detail is not None:
             detail["model_id"] = mid
-            registry._mrid_to_model[mrid] = mid # Self-heal index
+            registry._mrid_to_model[mrid] = mid  # Self-heal index
             return detail
-            
+
     return None
 
 
@@ -49,9 +49,9 @@ def _find_manager_for_node(node_id: str):
         detail = mgr.get_node_cim_details(node_id)
         if detail is not None:
             detail["model_id"] = mid
-            registry._node_to_model[node_id] = mid # Self-heal index
+            registry._node_to_model[node_id] = mid  # Self-heal index
             return detail
-            
+
     # Additional Fallback: Check if this was an equipment/edge ID (for Rule Assistant robustness)
     return _find_manager_for_mrid(node_id)
 
@@ -93,6 +93,7 @@ async def get_equipment_detail(mrid: str):
 @router.get("/equipment/{mrid}/expanded")
 async def get_equipment_detail_expanded(mrid: str):
     """Equipment detail with terminal connectivity nodes expanded to full objects for tooltip resolution."""
+
     def _get():
         model_id = registry._mrid_to_model.get(mrid)
         if model_id:
@@ -108,6 +109,7 @@ async def get_equipment_detail_expanded(mrid: str):
                 detail["model_id"] = mid
                 return detail
         raise HTTPException(status_code=404, detail=f"Equipment not found: {mrid}")
+
     return await run_in_threadpool(_get)
 
 
@@ -166,7 +168,7 @@ async def get_class_connections(class_name: str):
     """List all CIM classes that can be directly attached to the given class."""
     return {
         "class": class_name,
-        "connected_classes": registry.get_class_connections(class_name)
+        "connected_classes": registry.get_class_connections(class_name),
     }
 
 
@@ -175,7 +177,7 @@ async def get_class_connections(class_name: str):
 # Pattern of write keywords that must not appear in read-only queries.
 # Checked against the full query string (case-insensitive, word boundaries).
 _WRITE_KEYWORDS = re.compile(
-    r'\b(CREATE|MERGE|SET|DELETE|DETACH|REMOVE|DROP|CALL\s+db\.)\b',
+    r"\b(CREATE|MERGE|SET|DELETE|DETACH|REMOVE|DROP|CALL\s+db\.)\b",
     re.IGNORECASE,
 )
 
@@ -203,9 +205,12 @@ async def execute_cim_query(request: CypherQueryRequest):
     def _run() -> Dict[str, Any]:
         neo4j_url = os.getenv("CIMG_URL")
         if not neo4j_url:
-            raise HTTPException(status_code=503, detail="Neo4j URL (CIMG_URL) is not configured.")
+            raise HTTPException(
+                status_code=503, detail="Neo4j URL (CIMG_URL) is not configured."
+            )
 
         from neo4j import GraphDatabase
+
         neo4j_user = os.getenv("CIMG_USERNAME", "neo4j")
         neo4j_password = os.getenv("CIMG_PASSWORD", "")
         neo4j_database = os.getenv("CIMG_DATABASE", "neo4j")
@@ -215,7 +220,11 @@ async def execute_cim_query(request: CypherQueryRequest):
             with driver.session(database=neo4j_database) as session:
                 result = session.run(request.cypher, **request.params)
                 records = result.data()
-                keys: List[str] = result.keys() if hasattr(result, 'keys') else (list(records[0].keys()) if records else [])
+                keys: List[str] = (
+                    result.keys()
+                    if hasattr(result, "keys")
+                    else (list(records[0].keys()) if records else [])
+                )
             driver.close()
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Neo4j query error: {exc}")
@@ -238,7 +247,7 @@ def _get_admin_conn():
 
 
 @router.get("/config", tags=["admin"])
-async def get_config_overrides():
+async def get_config_overrides(username: str = Depends(get_current_username)):
     """Read all configuration overrides from the admin database."""
 
     def _get():
@@ -252,7 +261,9 @@ async def get_config_overrides():
 
 
 @router.post("/config", tags=["admin"])
-async def set_config_override(config: ConfigUpdate, username: str = Depends(get_current_username)):
+async def set_config_override(
+    config: ConfigUpdate, username: str = Depends(get_current_username)
+):
     """Set or update a configuration override."""
 
     def _set():
