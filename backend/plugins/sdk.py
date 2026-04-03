@@ -256,6 +256,32 @@ class PluginAnalyticsService:
         uc = MapVoltageUseCase(self._engine, self._db_path, self._parquet_dir)
         return uc.estimate(start_time, end_time, agg, start_node_id=start_node_id)
 
+    def get_edge_load_map(
+        self,
+        agg: str,
+        start_time: str,
+        end_time: str,
+        start_node_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Calculate aggregated edge load for map-wide visualization."""
+        self._check("analytics:load")
+        from src.analytics.map_edge_load import MapEdgeLoadUseCase
+        uc = MapEdgeLoadUseCase(self._engine, self._db_path)
+        return uc.execute(start_time, end_time, agg, start_node_id=start_node_id)
+
+    def estimate_edge_load_map(
+        self,
+        agg: str,
+        start_time: str,
+        end_time: str,
+        start_node_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Estimate row count before running a full edge load query."""
+        self._check("analytics:load")
+        from src.analytics.map_edge_load import MapEdgeLoadUseCase
+        uc = MapEdgeLoadUseCase(self._engine, self._db_path)
+        return uc.estimate(start_time, end_time, agg, start_node_id=start_node_id)
+
 
 
 # ---------------------------------------------------------------------------

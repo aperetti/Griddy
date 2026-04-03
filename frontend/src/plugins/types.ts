@@ -21,9 +21,11 @@ export interface PluginWindowCallbacks {
     /** Pre-bound to the instance ID — update the window without knowing its ID. */
     updateWindow: (updates: Partial<AnalysisInstance>) => void;
     /** Update map-wide node colors/averages */
-    setNodeAverages?: (averages: Record<string, number> | null) => void;
-    /** Update global voltage scale */
-    setVoltageScale?: (scale: any) => void;
+    setNodeAverages: (averages: Record<string, number> | null) => void;
+    setEdgeAverages: (averages: Record<string, number> | null) => void;
+    setVoltageScale: (scale: any) => void;
+    /** Center the map on a specific node and select it */
+    selectAndNavigateToNode?: (nodeId: string) => void;
 }
 
 
@@ -54,6 +56,8 @@ export interface PluginExecutionContext {
 
     /** Update the map-wide node averages (for heatmap visualization). */
     setNodeAverages: (averages: Record<string, number> | null) => void;
+    /** Update the map-wide edge load averages (for load heatmap). */
+    setEdgeAverages: (averages: Record<string, number> | null) => void;
     /** Update the voltage scale ranges used for coloring and tooltips. */
     setVoltageScale: (scale: {
         criticalHigh: number;
@@ -62,6 +66,8 @@ export interface PluginExecutionContext {
         criticalLow: number;
         baseVoltage: number;
     }) => void;
+    /** Center the map on a specific node and select it */
+    selectAndNavigateToNode: (nodeId: string) => void;
 }
 
 
