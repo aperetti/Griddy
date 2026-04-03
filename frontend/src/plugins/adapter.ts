@@ -59,7 +59,9 @@ function adaptContext(ctx: PluginExecutionContext): SdkPluginContext {
         resolveEdgeNodesToNodeIds: ctx.resolveEdgeNodesToNodeIds,
         
         setNodeAverages: ctx.setNodeAverages,
-        setVoltageScale: ctx.setVoltageScale
+        setEdgeAverages: ctx.setEdgeAverages,
+        setVoltageScale: ctx.setVoltageScale,
+        selectAndNavigateToNode: ctx.selectAndNavigateToNode
     };
 }
 

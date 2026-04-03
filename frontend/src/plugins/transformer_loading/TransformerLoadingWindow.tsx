@@ -1,13 +1,12 @@
-import { memo } from 'react';
-import { Table, Text, Badge, Stack, Center } from '@mantine/core';
-import { Zap } from 'lucide-react';
-import { AnalysisWindow, ScadaLoadingAnimation, type SdkAnalysisInstance } from '@plugin-sdk';
-import type { TransformerRecord, TransformerEnd } from './api';
+import { memo, useMemo, useCallback, useState, useEffect } from 'react';
+import { Table, Text, Badge, Stack, Center, Group, Pagination, Select, Box, TextInput, UnstyledButton } from '@mantine/core';
+import { Zap, Search, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { AnalysisWindow, ScadaLoadingAnimation, type SdkAnalysisInstance, type SdkPluginCallbacks } from '@plugin-sdk';
+import { type TransformerRecord, type TransformerEnd, fetchTransformerLoading } from './api';
+import { useDebouncedValue } from '@mantine/hooks';
 
-interface Props {
+interface Props extends SdkPluginCallbacks {
     instance: SdkAnalysisInstance;
-    onClose: () => void;
-    onMinimize: () => void;
 }
 
 function formatKva(val: number | null): string {
@@ -25,14 +24,56 @@ function formatOhm(val: number | null): string {
     return `${val} Ω`;
 }
 
-function EndRow({ end, mrid, name, loading_percent, rowSpan }: { end: TransformerEnd; mrid: string; name: string | null; loading_percent: number | null; rowSpan: number }) {
+function SortHeader({ label, sortField, activeField, direction, onSort }: {
+    label: string;
+    sortField: string;
+    activeField: string;
+    direction: 'asc' | 'desc';
+    onSort: (field: string) => void;
+}) {
+    const active = activeField === sortField;
+    return (
+        <Table.Th>
+            <UnstyledButton onClick={() => onSort(sortField)} style={{ width: '100%' }}>
+                <Group justify="space-between" wrap="nowrap" gap="xs">
+                    <Text size="xs" fw={700}>{label}</Text>
+                    {active ? (
+                        direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />
+                    ) : (
+                        <ArrowUpDown size={12} style={{ opacity: 0.3 }} />
+                    )}
+                </Group>
+            </UnstyledButton>
+        </Table.Th>
+    );
+}
+
+function EndRow({ end, mrid, name, loading_percent, rowSpan, onSelect }: { 
+    end: TransformerEnd; 
+    mrid: string; 
+    name: string | null; 
+    loading_percent: number | null; 
+    rowSpan: number;
+    onSelect?: (id: string) => void;
+}) {
     return (
         <Table.Tr>
             {rowSpan > 0 && (
                 <>
                     <Table.Td rowSpan={rowSpan}>
-                        <Stack gap={2}>
-                            <Text size="sm" fw={600}>{name || '—'}</Text>
+                        <Stack 
+                            gap={2} 
+                            onClick={() => onSelect?.(mrid)}
+                            style={{ cursor: onSelect ? 'pointer' : 'default' }}
+                        >
+                            <Text 
+                                size="sm" 
+                                fw={600} 
+                                c={onSelect ? 'blue.4' : undefined}
+                                style={{ textDecoration: onSelect ? 'underline' : 'none' }}
+                            >
+                                {name || '—'}
+                            </Text>
                             <Text size="xs" c="dimmed" ff="monospace">{mrid.slice(0, 14)}…</Text>
                         </Stack>
                     </Table.Td>
@@ -65,10 +106,85 @@ export const TransformerLoadingWindow = memo(function TransformerLoadingWindow({
     instance,
     onClose,
     onMinimize,
+    updateWindow,
+    setNodeAverages,
+    selectAndNavigateToNode,
 }: Props) {
     const records = (instance.data ?? []) as TransformerRecord[];
+    const totalCount = (instance.totalCount ?? 0) as number;
+    const limit = (instance.limit ?? 100) as number;
+    const offset = (instance.offset ?? 0) as number;
+    const nodeIds = useMemo(() => (instance.nodeIds ?? []) as string[], [instance.nodeIds]);
+    const loading = instance.loading as boolean;
+    const currentSearch = (instance.search ?? "") as string;
+    const currentSortField = (instance.sortField ?? "name") as string;
+    const currentSortDir = (instance.sortDirection ?? "asc") as 'asc' | 'desc';
 
-    const rows = records.flatMap((t) =>
+    const [searchTerm, setSearchTerm] = useState(currentSearch);
+    const [debouncedSearch] = useDebouncedValue(searchTerm, 400);
+
+    const totalPages = Math.ceil(totalCount / limit);
+    const activePage = Math.floor(offset / limit) + 1;
+
+    const handleFetch = useCallback(async (
+        newLimit: number, 
+        newOffset: number, 
+        search: string,
+        sortField: string,
+        sortDir: 'asc' | 'desc'
+    ) => {
+        updateWindow?.({ loading: true });
+        try {
+            const resp = await fetchTransformerLoading(nodeIds, newLimit, newOffset, search, sortField, sortDir);
+            updateWindow?.({
+                data: resp.transformers,
+                totalCount: resp.total_count,
+                limit: resp.limit,
+                offset: resp.offset,
+                search: resp.search,
+                sortField: resp.sort_field,
+                sortDirection: resp.sort_direction,
+                loading: false,
+            });
+
+            const averages: Record<string, number> = {};
+            resp.transformers.forEach(t => {
+                if (t.loading_percent != null) {
+                    averages[t.mrid] = t.loading_percent / 100;
+                }
+            });
+            setNodeAverages?.(averages);
+        } catch (err) {
+            console.error('Refetch failed', err);
+            updateWindow?.({ loading: false });
+        }
+    }, [nodeIds, updateWindow, setNodeAverages]);
+
+    // Handle search changes
+    useEffect(() => {
+        if (debouncedSearch !== currentSearch && !loading) {
+            handleFetch(limit, 0, debouncedSearch, currentSortField, currentSortDir);
+        }
+    }, [debouncedSearch, currentSearch, handleFetch, limit, loading]); 
+
+    const onPageChange = (page: number) => {
+        const newOffset = (page - 1) * limit;
+        handleFetch(limit, newOffset, debouncedSearch, currentSortField, currentSortDir);
+    };
+
+    const onLimitChange = (val: string | null) => {
+        if (!val) return;
+        const newLimit = parseInt(val, 10);
+        handleFetch(newLimit, 0, debouncedSearch, currentSortField, currentSortDir); 
+    };
+
+    const onSort = (field: string) => {
+        const isSame = field === currentSortField;
+        const newDir = isSame && currentSortDir === 'asc' ? 'desc' : 'asc';
+        handleFetch(limit, 0, debouncedSearch, field, newDir);
+    };
+
+    const rows = useMemo(() => records.flatMap((t) =>
         t.ends.length > 0
             ? t.ends.map((end, i) => (
                 <EndRow
@@ -78,13 +194,25 @@ export const TransformerLoadingWindow = memo(function TransformerLoadingWindow({
                     name={t.name}
                     loading_percent={t.loading_percent}
                     rowSpan={i === 0 ? t.ends.length : 0}
+                    onSelect={selectAndNavigateToNode}
                 />
             ))
             : [
                 <Table.Tr key={t.mrid}>
                     <Table.Td>
-                        <Stack gap={2}>
-                            <Text size="sm" fw={600}>{t.name || '—'}</Text>
+                        <Stack 
+                            gap={2}
+                            onClick={() => selectAndNavigateToNode?.(t.mrid)}
+                            style={{ cursor: selectAndNavigateToNode ? 'pointer' : 'default' }}
+                        >
+                            <Text 
+                                size="sm" 
+                                fw={600}
+                                c={selectAndNavigateToNode ? 'blue.4' : undefined}
+                                style={{ textDecoration: selectAndNavigateToNode ? 'underline' : 'none' }}
+                            >
+                                {t.name || '—'}
+                            </Text>
                             <Text size="xs" c="dimmed" ff="monospace">{t.mrid.slice(0, 14)}…</Text>
                         </Stack>
                     </Table.Td>
@@ -93,7 +221,7 @@ export const TransformerLoadingWindow = memo(function TransformerLoadingWindow({
                     </Table.Td>
                 </Table.Tr>,
             ]
-    );
+    ), [records, selectAndNavigateToNode]);
 
     return (
         <AnalysisWindow
@@ -101,42 +229,99 @@ export const TransformerLoadingWindow = memo(function TransformerLoadingWindow({
             onClose={onClose}
             onMinimize={onMinimize}
             isMinimized={instance.isMinimized}
-            title={`Transformer Loading — ${instance.nodeName}`}
+            title={`Transformer Overload — ${instance.nodeName}`}
             storageKey={`plugin_transformer_loading_${instance.id}`}
             zIndex={instance.zIndex ?? 1000}
-            loading={instance.loading}
+            loading={loading}
             layoutMode="floating"
-            initialWidth={820}
-            initialHeight={440}
+            initialWidth={900}
+            initialHeight={550}
         >
-            {instance.loading ? (
-                <ScadaLoadingAnimation />
-            ) : records.length === 0 ? (
-                <Center py="xl">
-                    <Stack align="center" gap="xs">
-                        <Zap size={28} color="var(--mantine-color-yellow-5)" />
-                        <Text c="dimmed" size="sm">No transformer data found for selection.</Text>
-                        <Text c="dimmed" size="xs">Select a node with attached PowerTransformer equipment.</Text>
-                    </Stack>
-                </Center>
-            ) : (
-                <Table striped highlightOnHover withTableBorder withColumnBorders fz="xs">
-                    <Table.Thead>
-                        <Table.Tr>
-                            <Table.Th>Transformer</Table.Th>
-                            <Table.Th>Load (%)</Table.Th>
-                            <Table.Th ta="center">End</Table.Th>
-                            <Table.Th>Rated S</Table.Th>
-                            <Table.Th>Rated U</Table.Th>
-                            <Table.Th>R (Ω)</Table.Th>
-                            <Table.Th>X (Ω)</Table.Th>
-                            <Table.Th>Short-term S</Table.Th>
-                            <Table.Th>Emergency S</Table.Th>
-                        </Table.Tr>
-                    </Table.Thead>
-                    <Table.Tbody>{rows}</Table.Tbody>
-                </Table>
-            )}
+            <Stack gap="xs" style={{ height: '100%', position: 'relative' }}>
+                <Group px="md" pt="xs" justify="space-between">
+                    <TextInput
+                        placeholder="Search by name or mRID..."
+                        size="xs"
+                        leftSection={<Search size={14} />}
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.currentTarget.value)}
+                        style={{ width: 250 }}
+                    />
+                </Group>
+
+                {loading && records.length === 0 ? (
+                    <ScadaLoadingAnimation />
+                ) : records.length === 0 ? (
+                    <Center py="xl">
+                        <Stack align="center" gap="xs">
+                            <Zap size={28} color="var(--mantine-color-yellow-5)" />
+                            <Text c="dimmed" size="sm">
+                                {searchTerm ? `No results for "${searchTerm}"` : 'No transformer data found for selection.'}
+                            </Text>
+                        </Stack>
+                    </Center>
+                ) : (
+                    <>
+                        <Box style={{ flex: 1, overflowY: 'auto' }}>
+                            <Table striped highlightOnHover withTableBorder withColumnBorders fz="xs" stickyHeader>
+                                <Table.Thead>
+                                    <Table.Tr>
+                                        <SortHeader 
+                                            label="Transformer" 
+                                            sortField="name" 
+                                            activeField={currentSortField} 
+                                            direction={currentSortDir} 
+                                            onSort={onSort} 
+                                        />
+                                        <SortHeader 
+                                            label="Load (%)" 
+                                            sortField="load" 
+                                            activeField={currentSortField} 
+                                            direction={currentSortDir} 
+                                            onSort={onSort} 
+                                        />
+                                        <Table.Th ta="center">End</Table.Th>
+                                        <Table.Th>Rated S</Table.Th>
+                                        <Table.Th>Rated U</Table.Th>
+                                        <Table.Th>R (Ω)</Table.Th>
+                                        <Table.Th>X (Ω)</Table.Th>
+                                        <Table.Th>ShortTermS</Table.Th>
+                                        <Table.Th>EmergencyS</Table.Th>
+                                    </Table.Tr>
+                                </Table.Thead>
+                                <Table.Tbody>{rows}</Table.Tbody>
+                            </Table>
+                        </Box>
+
+                        <Group justify="space-between" px="md" py={10} style={{ borderTop: '1px solid var(--mantine-color-dark-4)' }}>
+                            <Group gap="xs">
+                                <Text size="xs" c="dimmed">Show</Text>
+                                <Select
+                                    size="xs"
+                                    value={limit.toString()}
+                                    onChange={onLimitChange}
+                                    data={[
+                                        { value: '10', label: '10' },
+                                        { value: '50', label: '50' },
+                                        { value: '100', label: '100' },
+                                        { value: '250', label: '250' },
+                                    ]}
+                                    style={{ width: 80 }}
+                                />
+                                <Text size="xs" c="dimmed">per page (Total: {totalCount})</Text>
+                            </Group>
+
+                            <Pagination 
+                                size="sm" 
+                                total={totalPages} 
+                                value={activePage} 
+                                onChange={onPageChange}
+                                withEdges
+                            />
+                        </Group>
+                    </>
+                )}
+            </Stack>
         </AnalysisWindow>
     );
 });

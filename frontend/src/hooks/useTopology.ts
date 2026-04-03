@@ -5,6 +5,7 @@ export function useTopology() {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [nodeAverages, setNodeAverages] = useState<Record<string, number> | null>(null);
+  const [edgeAverages, setEdgeAverages] = useState<Record<string, number> | null>(null);
   const [nodeCurrents, setNodeCurrents] = useState<Record<string, { a: number, b: number, c: number }> | null>(null);
   const [topologyLoading, setTopologyLoading] = useState(false);
   const [topologyVersion, setTopologyVersion] = useState(0);
@@ -31,6 +32,8 @@ export function useTopology() {
     setEdges,
     nodeAverages,
     setNodeAverages,
+    edgeAverages,
+    setEdgeAverages,
     nodeCurrents,
     setNodeCurrents,
     topologyLoading,

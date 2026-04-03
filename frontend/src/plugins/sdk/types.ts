@@ -53,6 +53,7 @@ export interface SdkPluginContext {
 
     /** Map-wide node averages (for heatmap visualization) */
     setNodeAverages: (averages: Record<string, number> | null) => void;
+    setEdgeAverages: (averages: Record<string, number> | null) => void;
     /** Voltage scale ranges for coloring and UI widgets */
     setVoltageScale: (scale: {
         criticalHigh: number;
@@ -61,6 +62,8 @@ export interface SdkPluginContext {
         criticalLow: number;
         baseVoltage: number;
     }) => void;
+    /** Center the map on a specific node and select it */
+    selectAndNavigateToNode: (nodeId: string) => void;
 }
 
 
@@ -73,6 +76,8 @@ export interface SdkPluginCallbacks {
     setVoltageScale?: (scale: any) => void;
     /** For standard plugins to update their own data */
     updateWindow?: (updates: Partial<SdkAnalysisInstance>) => void;
+    /** Center the map on a specific node and select it */
+    selectAndNavigateToNode?: (nodeId: string) => void;
 }
 
 

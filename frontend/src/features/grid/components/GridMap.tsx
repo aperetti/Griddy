@@ -18,6 +18,7 @@ interface GridMapProps {
     highlightedEdges?: Set<string>;
     selectedNodeIds?: string[];
     nodeAverages?: Record<string, number> | null;
+    edgeAverages?: Record<string, number> | null;
     nodeCurrents?: Record<string, { a: number, b: number, c: number }> | null;
     onMapClick?: () => void;
     voltageScale?: {
@@ -44,6 +45,7 @@ export const GridMap = React.memo((props: GridMapProps) => {
         highlightedEdges = new Set(),
         selectedNodeIds = [],
         nodeAverages = null,
+        edgeAverages = null,
         nodeCurrents = null,
         onMapClick,
         voltageScale,
@@ -76,7 +78,7 @@ export const GridMap = React.memo((props: GridMapProps) => {
     const layers = useLayers({
         clusteredData, visualEdgePaths, nodes, edges, nodePositions, spriteMap, viewState,
         hoveredNodeId, hoveredEdgeId, highlightedNodes, highlightedEdges, selectedNodeIdsSet,
-        nodeAverages, voltageScale, isDraggingRef,
+        nodeAverages, edgeAverages, voltageScale, isDraggingRef,
         onNodeClick, onEdgeClick, setHoveredNodeId, setHoveredEdgeId, onTooltipHover, setViewState,
     });
 
