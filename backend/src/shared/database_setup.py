@@ -89,7 +89,7 @@ def init_admin_db():
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    
+    cursor = conn.cursor()
     cursor.execute("SELECT COUNT(*) FROM users")
     if cursor.fetchone()[0] == 0:
         salt = os.urandom(16)
