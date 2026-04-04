@@ -37,9 +37,6 @@ for _entry in sorted(_plugins_dir.iterdir()):
     if not _entry.is_dir() or _entry.name.startswith("_"):
         continue
     try:
-        # Read manifest.json BEFORE importing the route module
-        # This is strictly required so that get_sdk() inside routes.py 
-        # has access to its permissions at import time.
         manifest_path = _entry / "manifest.json"
         manifest = {}
         if manifest_path.exists():
@@ -48,13 +45,14 @@ for _entry in sorted(_plugins_dir.iterdir()):
                 manifest = json.load(f)
         PLUGIN_MANIFESTS[_entry.name] = manifest
 
-        _mod = importlib.import_module(f"plugins.{_entry.name}.routes")
-        if hasattr(_mod, "router"):
-            _discovered[_entry.name] = _mod.router
+        # Attempt to load backend routes
+        try:
+            _mod = importlib.import_module(f"plugins.{_entry.name}.routes")
+            if hasattr(_mod, "router"):
+                _discovered[_entry.name] = _mod.router
+        except (ModuleNotFoundError, ImportError):
+            pass  # Frontend-only plugin or no routes defined
             
-            logger.debug("Discovered plugin: %s", _entry.name)
-    except ModuleNotFoundError:
-        pass  # no routes.py — not a plugin directory
     except Exception as exc:
         logger.error("Failed to load plugin '%s': %s", _entry.name, exc)
 
@@ -94,4 +92,4 @@ def include_plugin_routers(app: FastAPI) -> None:
 # Public surface for the registry endpoint
 # ------------------------------------------------------------------
 
-DISCOVERED_PLUGIN_NAMES: list[str] = list(_discovered.keys())
+DISCOVERED_PLUGIN_NAMES: list[str] = sorted(list(PLUGIN_MANIFESTS.keys()))

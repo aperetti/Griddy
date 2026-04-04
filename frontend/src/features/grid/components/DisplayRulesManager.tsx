@@ -11,7 +11,6 @@ import { type DisplayRule } from '../../../shared/api';
 import { useDisplayRules } from '../hooks/useDisplayRules';
 import { RuleEditor } from './display-rules/RuleEditor';
 import { SvgLiveEditor } from './display-rules/SvgLiveEditor';
-import { SchemaProvider } from '../context/SchemaContext';
 
 interface DisplayRulesManagerProps {
     opened: boolean;
@@ -159,7 +158,6 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
             initialWidth={isMobile ? 380 : 850}
             initialHeight={isMobile ? 600 : 700}
         >
-            <SchemaProvider>
                 <Box p="md">
                     {editingRule ? (
                     <RuleEditor 
@@ -351,7 +349,6 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                     setLiveEditorData(prev => ({ ...prev, opened: false }));
                 }}
             />
-            </SchemaProvider>
         </AnalysisWindow>
     );
 };

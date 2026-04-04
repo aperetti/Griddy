@@ -21,6 +21,7 @@ import { SystemSidebar } from './features/ui/SystemSidebar';
 import { AnalysisWindowLayer } from './features/analytics/components/AnalysisWindowLayer';
 import { AnalysisToolbar } from './features/grid/components/AnalysisToolbar';
 import { AnalysisTray } from './features/analytics/components/AnalysisTray';
+import { SchemaProvider } from './features/grid/context/SchemaContext';
 
 import { useTopology } from './hooks/useTopology';
 import { useRuleClassification } from './features/grid/hooks/useRuleClassification';
@@ -367,7 +368,8 @@ export default function App() {
 
   return (
     <MantineProvider defaultColorScheme="dark">
-      <GlobalSettingsModal
+      <SchemaProvider>
+        <GlobalSettingsModal
         opened={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         config={analytics.globalConfig}
@@ -529,7 +531,7 @@ export default function App() {
           onSelectAndNavigateToNode={selectAndNavigateToNode}
         />
       </div>
-
+      </SchemaProvider>
     </MantineProvider>
   );
 }

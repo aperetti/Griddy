@@ -1,0 +1,5 @@
+{
+  "name": "Diagnostic Explorer",
+  "description": "Explore CIM relationships and attributes in an interactive graph.",
+  "permissions": ["cim:read", "topology:read"]
+}

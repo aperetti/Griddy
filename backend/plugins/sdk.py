@@ -299,7 +299,19 @@ class PluginSDK:
 
 def get_sdk(plugin_name: str) -> PluginSDK:
     """Factory to get an authorized SDK for a specific plugin."""
-    from plugins import PLUGIN_MANIFESTS
-    manifest = PLUGIN_MANIFESTS.get(plugin_name, {})
-    permissions = manifest.get("permissions", [])
+    import json
+    from pathlib import Path
+    
+    # Path to the plugin's directory relative to this file
+    manifest_path = Path(__file__).parent / plugin_name / "manifest.json"
+    permissions = []
+    
+    if manifest_path.exists():
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+                permissions = manifest.get("permissions", [])
+        except Exception as exc:
+            logger.warning("SDK Warning: Failed to read manifest for '%s': %s", plugin_name, exc)
+            
     return PluginSDK(plugin_name, permissions)
