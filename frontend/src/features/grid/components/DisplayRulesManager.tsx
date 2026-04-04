@@ -1,6 +1,6 @@
 import React, { useState, Fragment, useMemo } from 'react';
 import { useMediaQuery } from '@mantine/hooks';
-import { Plus, Trash2, Copy, Lock, Filter, ArrowDownAZ, ListOrdered, FileDown, FileUp, MoreVertical, CheckCircle2 } from 'lucide-react';
+import { Plus, Trash2, Copy, Lock, Filter, ArrowDownAZ, ListOrdered, FileDown, FileUp, MoreVertical, CheckCircle2, Pencil } from 'lucide-react';
 import { 
     Table, Button, Group, ActionIcon, Stack, Text, 
     Badge, Select, TextInput, Paper,
@@ -11,6 +11,8 @@ import { type DisplayRule } from '../../../shared/api';
 import { useDisplayRules } from '../hooks/useDisplayRules';
 import { RuleEditor } from './display-rules/RuleEditor';
 import { SvgLiveEditor } from './display-rules/SvgLiveEditor';
+import { ConfirmationModal } from './display-rules/ConfirmationModal';
+import { InputModal } from './display-rules/InputModal';
 
 interface DisplayRulesManagerProps {
     opened: boolean;
@@ -33,7 +35,7 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
         isAuthenticated, setIsAuthenticated,
         handleSetDefault,
         handleSaveRule, handleDeleteRule, handleDuplicateRule,
-        createConfig, deleteConfig, handleTestRule,
+        createConfig, deleteConfig, renameConfig, handleTestRule,
         handleExportConfig, handleImportConfig
     } = useDisplayRules(opened, onRulesChanged);
 
@@ -54,6 +56,26 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
         value: string;
         onSave: (val: string) => void;
     }>({ opened: false, value: '', onSave: () => {} });
+
+    // Custom Modal State
+    const [confirmModal, setConfirmModal] = useState<{
+        opened: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        color?: string;
+    }>({ opened: false, title: '', message: '', onConfirm: () => {} });
+
+    const [inputModal, setInputModal] = useState<{
+        opened: boolean;
+        title: string;
+        label: string;
+        placeholder: string;
+        initialValue?: string;
+        onSubmit: (val: string) => void;
+    }>({ opened: false, title: '', label: '', placeholder: '', initialValue: '', onSubmit: () => {} });
+
+    const [generalError, setGeneralError] = useState<string | null>(null);
 
     const isMobile = useMediaQuery('(max-width: 768px)');
 
@@ -149,221 +171,277 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
     }
 
     return (
-        <AnalysisWindow 
-            isOpen={true}
-            storageKey="display-rules-manager"
-            title={editingRule ? `Edit Rule: ${editingRule.name}` : "Display Rules Manager"} 
-            onClose={onClose}
-            onFocus={onFocus}
-            zIndex={zIndex}
-            initialWidth={isMobile ? 380 : 850}
-            initialHeight={isMobile ? 600 : 700}
-        >
+        <>
+            <AnalysisWindow 
+                isOpen={true}
+                storageKey="display-rules-manager"
+                title={editingRule ? `Edit Rule: ${editingRule.name}` : "Display Rules Manager"} 
+                onClose={onClose}
+                onFocus={onFocus}
+                zIndex={zIndex}
+                initialWidth={isMobile ? 380 : 850}
+                initialHeight={isMobile ? 600 : 700}
+            >
                 <Box p="md">
                     {editingRule ? (
-                    <RuleEditor 
-                        rule={editingRule} 
-                        onChange={setEditingRule}
-                        onSave={handleSaveRule}
-                        onCancel={() => setEditingRule(null)}
-                        onTest={handleTestRule}
-                        onOpenLiveEditor={(init, save) => setLiveEditorData({ opened: true, value: init, onSave: save })}
-                        error={saveError}
-                    />
-                ) : (
-                    <Stack gap="md">
-                        {/* Profile Selection & Management */}
-                        <Group justify="space-between">
-                            <Group gap="xs">
-                                <Select 
-                                    label="Display Profile"
-                                    placeholder="Select profile"
-                                    value={selectedConfigId?.toString()}
-                                    onChange={(v) => setSelectedConfigId(v ? parseInt(v) : null)}
-                                    data={configs.map(c => ({ value: c.id.toString(), label: `${c.name}${c.is_default ? ' (Default)' : ''}` }))}
-                                    style={{ width: rem(250) }}
-                                    comboboxProps={{ zIndex: 2000, withinPortal: true }}
-                                />
-                                
-                                {selectedConfigId && (
-                                    <>
-                                        <Tooltip label={configs.find(c => c.id === selectedConfigId)?.is_default ? "Profile is Already Default" : "Set as Default Profile"}>
-                                            <ActionIcon 
-                                                variant="light" 
-                                                color="green" 
-                                                size="lg" 
-                                                mt="25px"
-                                                disabled={!!configs.find(c => c.id === selectedConfigId)?.is_default}
-                                                onClick={() => handleSetDefault(selectedConfigId)}
-                                            >
-                                                <CheckCircle2 size={18} />
-                                            </ActionIcon>
-                                        </Tooltip>
-
-                                        <Tooltip label="Delete Current Profile">
-                                            <ActionIcon 
-                                                variant="light" 
-                                                color="red" 
-                                                size="lg" 
-                                                mt="25px"
-                                                disabled={!!configs.find(c => c.id === selectedConfigId)?.is_default}
-                                                onClick={() => deleteConfig(selectedConfigId)}
-                                            >
-                                                <Trash2 size={18} />
-                                            </ActionIcon>
-                                        </Tooltip>
-                                    </>
-                                )}
-
-                                <Menu shadow="md" width={180} zIndex={2000} withinPortal>
-                                    <Menu.Target>
-                                        <ActionIcon variant="light" size="lg" mt="25px"><MoreVertical size={18} /></ActionIcon>
-                                    </Menu.Target>
-                                    <Menu.Dropdown>
-                                        <Menu.Item leftSection={<Plus size={14} />} onClick={() => {
-                                            const name = prompt('New profile name:');
-                                            if (name) createConfig(name);
-                                        }}>New Profile</Menu.Item>
-                                        <Menu.Item 
-                                            leftSection={<FileUp size={14} />} 
-                                            onClick={() => document.getElementById('import-profile-input')?.click()}
-                                        >
-                                            Import Profile
-                                        </Menu.Item>
-
-                                        {selectedConfigId && (
-                                            <Menu.Item 
-                                                leftSection={<FileDown size={14} />} 
-                                                onClick={() => handleExportConfig(selectedConfigId)}
-                                            >
-                                                Export Profile
-                                            </Menu.Item>
-                                        )}
-                                    </Menu.Dropdown>
-                                </Menu>
-
-                                <input 
-                                    type="file" 
-                                    id="import-profile-input" 
-                                    style={{ display: 'none' }} 
-                                    accept=".json"
-                                    onChange={(e) => {
-                                        const file = e.target.files?.[0];
-                                        if (file) {
-                                            const reader = new FileReader();
-                                            reader.onload = (event) => {
-                                                try {
-                                                    const data = JSON.parse(event.target?.result as string);
-                                                    handleImportConfig(data);
-                                                } catch (err) {
-                                                    alert("Invalid JSON file");
-                                                }
-                                            };
-                                            reader.readAsText(file);
-                                            e.target.value = '';
-                                        }
-                                    }}
-                                />
-                            </Group>
-                            <Group mt="25px">
-                                <Button variant="light" color="blue" leftSection={<Plus size={16} />} onClick={handleAddRule}>
-                                    Add Rule
-                                </Button>
-                            </Group>
-                        </Group>
-
-                        {/* List Filters/Controls */}
-                        <Paper withBorder p="xs" bg="rgba(255, 255, 255, 0.03)" style={{ borderColor: 'rgba(255, 255, 255, 0.1)' }}>
+                        <RuleEditor 
+                            rule={editingRule} 
+                            onChange={setEditingRule}
+                            onSave={handleSaveRule}
+                            onCancel={() => setEditingRule(null)}
+                            onTest={handleTestRule}
+                            onOpenLiveEditor={(init, save) => setLiveEditorData({ opened: true, value: init, onSave: save })}
+                            error={saveError}
+                        />
+                    ) : (
+                        <Stack gap="md">
+                            {/* Profile Selection & Management */}
                             <Group justify="space-between">
                                 <Group gap="xs">
-                                    <Tooltip label="Group by">
-                                        <Menu shadow="md" width={150} zIndex={2000} withinPortal>
-                                            <Menu.Target><Button variant="subtle" size="xs" leftSection={<Filter size={14} />}>Grouping</Button></Menu.Target>
-                                            <Menu.Dropdown>
-                                                <Menu.Item onClick={() => setGroupBy('none')}>None</Menu.Item>
-                                                <Menu.Item onClick={() => setGroupBy('cim_class')}>By CIM Class</Menu.Item>
-                                            </Menu.Dropdown>
-                                        </Menu>
-                                    </Tooltip>
-                                    <Tooltip label="Sort order">
-                                        <Menu shadow="md" width={150} zIndex={2000} withinPortal>
-                                            <Menu.Target><Button variant="subtle" size="xs" leftSection={<ArrowDownAZ size={14} />}>Sorting</Button></Menu.Target>
-                                            <Menu.Dropdown>
-                                                <Menu.Item onClick={() => setSortBy('priority')}>Priority</Menu.Item>
-                                                <Menu.Item onClick={() => setSortBy('name')}>Name</Menu.Item>
-                                                <Menu.Divider />
-                                                <Menu.Item onClick={() => setSortOrder('asc')}>Ascending</Menu.Item>
-                                                <Menu.Item onClick={() => setSortOrder('desc')}>Descending</Menu.Item>
-                                            </Menu.Dropdown>
-                                        </Menu>
-                                    </Tooltip>
+                                    <Select 
+                                        label="Display Profile"
+                                        placeholder="Select profile"
+                                        value={selectedConfigId?.toString()}
+                                        onChange={(v) => setSelectedConfigId(v ? parseInt(v) : null)}
+                                        data={configs.map(c => ({ value: c.id.toString(), label: `${c.name}${c.is_default ? ' (Default)' : ''}` }))}
+                                        style={{ width: rem(250) }}
+                                        comboboxProps={{ zIndex: 2000, withinPortal: true }}
+                                    />
+                                    
+                                    {selectedConfigId && (
+                                        <>
+                                            <Tooltip label={configs.find(c => c.id === selectedConfigId)?.is_default ? "Profile is Already Default" : "Set as Default Profile"}>
+                                                <ActionIcon 
+                                                    variant="light" 
+                                                    color="green" 
+                                                    size="lg" 
+                                                    mt="25px"
+                                                    disabled={!!configs.find(c => c.id === selectedConfigId)?.is_default}
+                                                    onClick={() => handleSetDefault(selectedConfigId)}
+                                                >
+                                                    <CheckCircle2 size={18} />
+                                                </ActionIcon>
+                                            </Tooltip>
+
+                                            <Tooltip label="Delete Current Profile">
+                                                <ActionIcon 
+                                                    variant="light" 
+                                                    color="red" 
+                                                    size="lg" 
+                                                    mt="25px"
+                                                    disabled={!!configs.find(c => c.id === selectedConfigId)?.is_default}
+                                                    onClick={() => {
+                                                        const config = configs.find(c => c.id === selectedConfigId);
+                                                        if (config) {
+                                                            setConfirmModal({
+                                                                opened: true,
+                                                                title: 'Delete Profile',
+                                                                message: `Are you sure you want to delete the profile "${config.name}" and all its rules? This action cannot be undone.`,
+                                                                onConfirm: () => deleteConfig(config.id),
+                                                                color: 'red'
+                                                            });
+                                                        }
+                                                    }}
+                                                >
+                                                    <Trash2 size={18} />
+                                                </ActionIcon>
+                                            </Tooltip>
+                                        </>
+                                    )}
+
+                                    <Menu shadow="md" width={180} zIndex={2000} withinPortal>
+                                        <Menu.Target>
+                                            <ActionIcon variant="light" size="lg" mt="25px"><MoreVertical size={18} /></ActionIcon>
+                                        </Menu.Target>
+                                        <Menu.Dropdown>
+                                            <Menu.Item leftSection={<Plus size={14} />} onClick={() => {
+                                                setInputModal({
+                                                    opened: true,
+                                                    title: 'New Profile',
+                                                    label: 'Profile Name',
+                                                    placeholder: 'e.g. Planning Scenarios',
+                                                    onSubmit: (name) => createConfig(name)
+                                                });
+                                            }}>New Profile</Menu.Item>
+                                            <Menu.Item 
+                                                leftSection={<FileUp size={14} />} 
+                                                onClick={() => document.getElementById('import-profile-input')?.click()}
+                                            >
+                                                Import Profile
+                                            </Menu.Item>
+
+                                            {selectedConfigId && (
+                                                <>
+                                                    <Menu.Item 
+                                                        leftSection={<Pencil size={14} />}
+                                                        onClick={() => {
+                                                            const config = configs.find(c => c.id === selectedConfigId);
+                                                            if (config) {
+                                                                setInputModal({
+                                                                    opened: true,
+                                                                    title: 'Rename Profile',
+                                                                    label: 'New Name',
+                                                                    initialValue: config.name,
+                                                                    placeholder: 'e.g. New Profile Name',
+                                                                    onSubmit: (name) => renameConfig(config.id, name)
+                                                                });
+                                                            }
+                                                        }}
+                                                    >
+                                                        Rename Profile
+                                                    </Menu.Item>
+                                                    <Menu.Item 
+                                                        leftSection={<FileDown size={14} />} 
+                                                        onClick={() => handleExportConfig(selectedConfigId)}
+                                                    >
+                                                        Export Profile
+                                                    </Menu.Item>
+                                                </>
+                                            )}
+                                        </Menu.Dropdown>
+                                    </Menu>
+
+                                    <input 
+                                        type="file" 
+                                        id="import-profile-input" 
+                                        style={{ display: 'none' }} 
+                                        accept=".json"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                                const reader = new FileReader();
+                                                reader.onload = (event) => {
+                                                    try {
+                                                        const data = JSON.parse(event.target?.result as string);
+                                                        handleImportConfig(data);
+                                                        setGeneralError(null);
+                                                    } catch (err) {
+                                                        setGeneralError("Invalid JSON file provided for import.");
+                                                    }
+                                                };
+                                                reader.readAsText(file);
+                                                e.target.value = '';
+                                            }
+                                        }}
+                                    />
+                                </Group>
+                                <Group mt="25px">
+                                    {generalError && <Text c="red" size="xs" mr="md" fw={500}>{generalError}</Text>}
+                                    <Button variant="light" color="blue" leftSection={<Plus size={16} />} onClick={handleAddRule}>
+                                        Add Rule
+                                    </Button>
                                 </Group>
                             </Group>
-                        </Paper>
 
-                        {/* Rules Table */}
-                        <Box style={{ overflowX: 'auto' }}>
-                            <Table verticalSpacing="xs">
-                                <thead>
-                                    <tr>
-                                        <th>Name</th>
-                                        <th>Priority</th>
-                                        <th>Type</th>
-                                        <th>Status</th>
-                                        <th style={{ width: rem(120) }}>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {processedRules.map((group, gIdx) => (
-                                        <Fragment key={gIdx}>
-                                            {group.groupName && (
-                                                <Table.Tr bg="rgba(255, 255, 255, 0.05)">
-                                                    <Table.Td colSpan={5} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                                                        <Text size="xs" fw={700} c="blue" tt="uppercase" lts="1px">{group.groupName}</Text>
-                                                    </Table.Td>
-                                                </Table.Tr>
-                                            )}
-                                            {group.rules.map((rule) => (
-                                                <Table.Tr 
-                                                    key={rule.id}
-                                                    onClick={() => setEditingRule(rule)}
-                                                    style={{ cursor: 'pointer', transition: 'background-color 0.15s ease' }}
-                                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'}
-                                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                                                >
-                                                    <Table.Td>
-                                                        <Group gap="xs">
-                                                            <Box style={{ 
-                                                                width: 14, height: 14, borderRadius: '50%', 
-                                                                backgroundColor: rule.config?.color_hex || '#ccc' 
-                                                            }} />
-                                                            <Text size="sm" fw={500}>{rule.name}</Text>
-                                                        </Group>
-                                                    </Table.Td>
-                                                    <Table.Td><Text size="xs">{rule.priority}</Text></Table.Td>
-                                                    <Table.Td><Badge size="xs" variant="light">{rule.config?.visual_type || 'Custom'}</Badge></Table.Td>
-                                                    <Table.Td>
-                                                        <Badge color={rule.enabled ? 'green' : 'gray'} size="xs" variant="dot">
-                                                            {rule.enabled ? 'Active' : 'Disabled'}
-                                                        </Badge>
-                                                    </Table.Td>
-                                                    <Table.Td>
-                                                        <Group gap={8}>
-                                                            <ActionIcon variant="subtle" color="blue" size="sm" onClick={() => setEditingRule(rule)}><ListOrdered size={14} /></ActionIcon>
-                                                            <ActionIcon variant="subtle" color="blue" size="sm" onClick={() => handleDuplicateRule(rule.id)}><Copy size={14} /></ActionIcon>
-                                                            <ActionIcon variant="subtle" color="red" size="sm" onClick={() => handleDeleteRule(rule.id)}><Trash2 size={14} /></ActionIcon>
-                                                        </Group>
-                                                    </Table.Td>
-                                                </Table.Tr>
-                                            ))}
-                                        </Fragment>
-                                    ))}
-                                </tbody>
-                            </Table>
-                        </Box>
-                    </Stack>
-                )}
-            </Box>
+                            {/* List Filters/Controls */}
+                            <Paper withBorder p="xs" bg="rgba(255, 255, 255, 0.03)" style={{ borderColor: 'rgba(255, 255, 255, 0.1)' }}>
+                                <Group justify="space-between">
+                                    <Group gap="xs">
+                                        <Tooltip label="Group by">
+                                            <Menu shadow="md" width={150} zIndex={2000} withinPortal>
+                                                <Menu.Target><Button variant="subtle" size="xs" leftSection={<Filter size={14} />}>Grouping</Button></Menu.Target>
+                                                <Menu.Dropdown>
+                                                    <Menu.Item onClick={() => setGroupBy('none')}>None</Menu.Item>
+                                                    <Menu.Item onClick={() => setGroupBy('cim_class')}>By CIM Class</Menu.Item>
+                                                </Menu.Dropdown>
+                                            </Menu>
+                                        </Tooltip>
+                                        <Tooltip label="Sort order">
+                                            <Menu shadow="md" width={150} zIndex={2000} withinPortal>
+                                                <Menu.Target><Button variant="subtle" size="xs" leftSection={<ArrowDownAZ size={14} />}>Sorting</Button></Menu.Target>
+                                                <Menu.Dropdown>
+                                                    <Menu.Item onClick={() => setSortBy('priority')}>Priority</Menu.Item>
+                                                    <Menu.Item onClick={() => setSortBy('name')}>Name</Menu.Item>
+                                                    <Menu.Divider />
+                                                    <Menu.Item onClick={() => setSortOrder('asc')}>Ascending</Menu.Item>
+                                                    <Menu.Item onClick={() => setSortOrder('desc')}>Descending</Menu.Item>
+                                                </Menu.Dropdown>
+                                            </Menu>
+                                        </Tooltip>
+                                    </Group>
+                                </Group>
+                            </Paper>
+
+                            {/* Rules Table */}
+                            <Box style={{ overflowX: 'auto' }}>
+                                <Table verticalSpacing="xs">
+                                    <Table.Thead>
+                                        <Table.Tr>
+                                            <Table.Th>Name</Table.Th>
+                                            <Table.Th>Priority</Table.Th>
+                                            <Table.Th>Type</Table.Th>
+                                            <Table.Th>Status</Table.Th>
+                                            <Table.Th style={{ width: rem(120) }}>Actions</Table.Th>
+                                        </Table.Tr>
+                                    </Table.Thead>
+                                    <Table.Tbody>
+                                        {processedRules.map((group, gIdx) => (
+                                            <Fragment key={gIdx}>
+                                                {group.groupName && (
+                                                    <Table.Tr bg="rgba(255, 255, 255, 0.05)">
+                                                        <Table.Td colSpan={5} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                                                            <Text size="xs" fw={700} c="blue" tt="uppercase" lts="1px">{group.groupName}</Text>
+                                                        </Table.Td>
+                                                    </Table.Tr>
+                                                )}
+                                                {group.rules.map((rule) => (
+                                                    <Table.Tr 
+                                                        key={rule.id}
+                                                        onClick={() => setEditingRule(rule)}
+                                                        style={{ cursor: 'pointer', transition: 'background-color 0.15s ease' }}
+                                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'}
+                                                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                                    >
+                                                        <Table.Td>
+                                                            <Group gap="xs">
+                                                                <Box style={{ 
+                                                                    width: 14, height: 14, borderRadius: '50%', 
+                                                                    backgroundColor: rule.config?.color_hex || '#ccc' 
+                                                                }} />
+                                                                <Text size="sm" fw={500}>{rule.name}</Text>
+                                                            </Group>
+                                                        </Table.Td>
+                                                        <Table.Td><Text size="xs">{rule.priority}</Text></Table.Td>
+                                                        <Table.Td><Badge size="xs" variant="light">{rule.config?.visual_type || 'Custom'}</Badge></Table.Td>
+                                                        <Table.Td>
+                                                            <Badge color={rule.enabled ? 'green' : 'gray'} size="xs" variant="dot">
+                                                                {rule.enabled ? 'Active' : 'Disabled'}
+                                                            </Badge>
+                                                        </Table.Td>
+                                                        <Table.Td>
+                                                            <Group gap={8}>
+                                                                <ActionIcon variant="subtle" color="blue" size="sm" onClick={(e) => { e.stopPropagation(); setEditingRule(rule); }}><ListOrdered size={14} /></ActionIcon>
+                                                                <ActionIcon variant="subtle" color="blue" size="sm" onClick={(e) => { e.stopPropagation(); handleDuplicateRule(rule.id); }}><Copy size={14} /></ActionIcon>
+                                                                <ActionIcon 
+                                                                    variant="subtle" 
+                                                                    color="red" 
+                                                                    size="sm" 
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setConfirmModal({
+                                                                            opened: true,
+                                                                            title: 'Delete Rule',
+                                                                            message: `Are you sure you want to delete the rule "${rule.name}"?`,
+                                                                            onConfirm: () => handleDeleteRule(rule.id),
+                                                                            color: 'red'
+                                                                        });
+                                                                    }}
+                                                                >
+                                                                    <Trash2 size={14} />
+                                                                </ActionIcon>
+                                                            </Group>
+                                                        </Table.Td>
+                                                    </Table.Tr>
+                                                ))}
+                                            </Fragment>
+                                        ))}
+                                    </Table.Tbody>
+                                </Table>
+                            </Box>
+                        </Stack>
+                    )}
+                </Box>
+            </AnalysisWindow>
 
             <SvgLiveEditor 
                 opened={liveEditorData.opened}
@@ -375,6 +453,25 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                     setLiveEditorData(prev => ({ ...prev, opened: false }));
                 }}
             />
-        </AnalysisWindow>
+
+            <ConfirmationModal 
+                opened={confirmModal.opened}
+                onClose={() => setConfirmModal(prev => ({ ...prev, opened: false }))}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                confirmColor={confirmModal.color}
+            />
+
+            <InputModal 
+                opened={inputModal.opened}
+                onClose={() => setInputModal({ ...inputModal, opened: false })}
+                title={inputModal.title}
+                label={inputModal.label}
+                placeholder={inputModal.placeholder}
+                initialValue={inputModal.initialValue}
+                onSubmit={inputModal.onSubmit}
+            />
+        </>
     );
 };

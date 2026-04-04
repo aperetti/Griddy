@@ -37,7 +37,7 @@ function AnalysisWindowComponent({
     isMinimized,
     title,
     storageKey,
-    zIndex = 1000,
+    zIndex = 2500, // Higher default to stay above overlays
     filterContent,
     onExport,
     onCopy,
@@ -57,10 +57,12 @@ function AnalysisWindowComponent({
             try {
                 const parsed = JSON.parse(saved);
                 const clamped = clampToViewport(parsed);
-                // If clamping moved the window significantly, the saved position
-                // was from an old coordinate system — discard it and center.
-                const moved = Math.abs(clamped.x - parsed.x) > 50 || Math.abs(clamped.y - (parsed.y ?? 0)) > 50;
-                if (!moved) return clamped;
+                // IF CLAMPING MOVED IT, or if dimensions are suspicious (too small), reset to default center
+                const significantlyMoved = Math.abs(clamped.x - parsed.x) > 50 || Math.abs(clamped.y - (parsed.y ?? 0)) > 50;
+                const tooSmall = (typeof clamped.width === 'number' && clamped.width < 100) || 
+                               (typeof clamped.height === 'number' && clamped.height < 100);
+                
+                if (!significantlyMoved && !tooSmall) return clamped;
             } catch (e) {
                 console.error(`Failed to parse saved ${storageKey}`, e);
             }
@@ -130,8 +132,9 @@ function AnalysisWindowComponent({
             style={{
                 width: '100%',
                 height: layoutMode === 'grid' ? '450px' : '100%',
-                background: 'rgba(26, 27, 30, 0.95)',
-                backdropFilter: 'blur(10px)',
+                background: 'rgba(28, 29, 33, 0.99)', // More opaque to look like a solid box
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                boxShadow: '0 12px 40px rgba(0, 0, 0, 0.6)',
                 display: 'flex',
                 flexDirection: 'column',
                 overflow: 'hidden',
@@ -252,7 +255,7 @@ function AnalysisWindowComponent({
                             width: '100%',
                             overflow: 'auto',
                             padding: '10px',
-                            minHeight: loading ? 300 : undefined,
+                            minHeight: loading ? 200 : 100,
                         }}
                     >
                         {children}

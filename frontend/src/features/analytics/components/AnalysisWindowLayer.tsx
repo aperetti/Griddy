@@ -80,7 +80,7 @@ export const AnalysisWindowLayer = React.memo(function AnalysisWindowLayer({
               key={win.id}
               isOpen={win.isOpen}
               onClose={() => onClose(win.id)}
-              zIndex={win.zIndex || 0}
+              zIndex={win.zIndex}
               id={win.nodeIds?.[0] || ''}
               type="Node"
               title={win.nodeName || 'Diagnostic'}

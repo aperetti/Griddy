@@ -42,6 +42,9 @@
     *   **Display Rule Management API**:
         *   **Duplicate Rule**: `POST /api/display-rules/rules/{rule_id}/duplicate` duplicates a rule and its configuration.
         *   **Enable/Disable**: Rules carry an `enabled` flag (Boolean) to control their application at runtime.
+        *   **Display Profiles**: `GET /api/display-rules/configs` returns all profiles; `POST /api/display-rules/configs` creates new.
+        *   **Import/Export**: `POST /api/display-rules/configs/import` and `GET /api/display-rules/configs/{id}/export` endpoints.
+        *   **SVG Overrides**: Rule configuration objects support an `svg_overrides` array of `{ id: string, visibility: 'visible'|'hidden', color?: string, transform?: string }`.
     *   **Phase Aggregation Logic**: Multi-phase loads are assumed to be balanced. Aggregation must use a weight-based join: `SUM(kwh_dlv * weight_p)` where `weight_p` is `1.0 / count(display_phases)` for each phase present on the node (where display_phases are A, B, or C). If no A, B, or C phases are present, split equally across all three.
     *   **Imbalance Calculation**: Calculate the Negative Sequence Component magnitude ($|S_2|$) using: $|S_2| = \frac{1}{3} \sqrt{(kwh_a - 0.5 \cdot kwh_b - 0.5 \cdot kwh_c)^2 + (0.866 \cdot (kwh_b - kwh_c))^2}$.
     *   **Nested Rule Evaluation**:
@@ -107,6 +110,7 @@
 
 ## 11. Grid Diagnostic Explorer
 * **Force-Directed Graph Rendering**: Use `reagraph` for high-performance 2D/3D graph visualization in the frontend.
+* **TR-API-16: Display Rule Config Mutation** - Backend must support `PUT /api/display-rules/configs/{id}` to update profile metadata (name, description, default status).
 * **Non-Directional Traversal**: The backend must support fetching all immediate neighbors (incoming and outgoing edges) for any given CIM mRID to support open-ended exploration.
 * **Lazy Detail Loading**: Node attributes must be fetched on-demand (on click) to minimize payload size during large graph expansions.
 * **Traversal Context**: The explorer must track the path taken from the root node to provide semantic context for attribute inspection.

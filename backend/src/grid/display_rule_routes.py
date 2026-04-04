@@ -126,6 +126,22 @@ async def set_default_config(config_id: int, username: str = Depends(get_current
             return {"success": True}
     return await run_in_threadpool(_set)
 
+@router.put("/configs/{config_id}")
+async def update_display_config(config_id: int, config: DisplayConfigUpdate, username: str = Depends(get_current_username)):
+    def _update():
+        with _get_admin_conn() as conn:
+            # Check existence
+            row = conn.execute("SELECT id FROM display_configs WHERE id = ?", (config_id,)).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Config not found")
+            
+            conn.execute(
+                "UPDATE display_configs SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (config.name, config.description, config_id)
+            )
+            return {"id": config_id, **config.dict()}
+    return await run_in_threadpool(_update)
+
 @router.delete("/configs/{config_id}")
 async def delete_display_config(config_id: int, username: str = Depends(get_current_username)):
     def _delete():

@@ -8,6 +8,7 @@ import {
     setDefaultDisplayConfig as apiSetDefaultDisplayConfig,
     createDisplayConfig as apiCreateDisplayConfig,
     deleteDisplayConfig as apiDeleteDisplayConfig,
+    updateDisplayConfig as apiUpdateDisplayConfig,
     testDisplayRule as apiTestDisplayRule,
     exportDisplayConfig as apiExportDisplayConfig,
     importDisplayConfig as apiImportDisplayConfig,
@@ -95,7 +96,6 @@ export const useDisplayRules = (opened: boolean, onRulesChanged?: () => void) =>
     };
 
     const handleDeleteRule = async (ruleId: number) => {
-        if (!confirm('Are you sure you want to delete this rule?')) return;
         try {
             await apiDeleteDisplayRule(ruleId);
             if (selectedConfigId) {
@@ -104,6 +104,18 @@ export const useDisplayRules = (opened: boolean, onRulesChanged?: () => void) =>
             }
         } catch (err) {
             console.error('Failed to delete rule', err);
+        }
+    };
+
+    const handleToggleRule = async (ruleId: number, enabled: boolean) => {
+        const rule = rules.find(r => r.id === ruleId);
+        if (!rule || !selectedConfigId) return;
+        try {
+            await apiSaveDisplayRule({ ...rule, enabled: !enabled });
+            await loadRules(selectedConfigId);
+            onRulesChanged?.();
+        } catch (err) {
+            console.error('Failed to toggle rule', err);
         }
     };
 
@@ -119,30 +131,36 @@ export const useDisplayRules = (opened: boolean, onRulesChanged?: () => void) =>
         }
     };
 
-    const createConfig = async (name: string, description: string = "") => {
+    const createConfig = async (name: string) => {
         try {
-            const newConfig = await apiCreateDisplayConfig(name, description);
+            const newConfig = await apiCreateDisplayConfig(name);
             await loadConfigs();
             setSelectedConfigId(newConfig.id);
         } catch (err) {
             console.error('Failed to create config', err);
-            throw err;
         }
     };
 
     const deleteConfig = async (configId: number) => {
-        if (!confirm('Are you sure you want to delete this profile and all its rules?')) return;
         try {
             await apiDeleteDisplayConfig(configId);
             const data = await fetchDisplayConfigs();
             setConfigs(data);
-            if (data.length > 0) {
-                setSelectedConfigId(data[0].id);
-            } else {
-                setSelectedConfigId(null);
+            if (selectedConfigId === configId) {
+                const def = data.find(c => c.is_default) || data[0];
+                setSelectedConfigId(def?.id || null);
             }
         } catch (err) {
             console.error('Failed to delete config', err);
+        }
+    };
+
+    const renameConfig = async (configId: number, newName: string) => {
+        try {
+            await apiUpdateDisplayConfig(configId, newName);
+            await loadConfigs();
+        } catch (err) {
+            console.error('Failed to rename config', err);
         }
     };
 
@@ -160,6 +178,7 @@ export const useDisplayRules = (opened: boolean, onRulesChanged?: () => void) =>
     };
 
     const handleExportConfig = async (configId: number) => {
+        setSaveError(null);
         try {
             const data = await apiExportDisplayConfig(configId);
             const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -173,11 +192,12 @@ export const useDisplayRules = (opened: boolean, onRulesChanged?: () => void) =>
             URL.revokeObjectURL(url);
         } catch (err) {
             console.error('Failed to export config', err);
-            alert('Failed to export profile');
+            setSaveError('Failed to export profile');
         }
     };
 
     const handleImportConfig = async (data: any) => {
+        setSaveError(null);
         try {
             const newConfig = await apiImportDisplayConfig(data);
             await loadConfigs();
@@ -185,7 +205,7 @@ export const useDisplayRules = (opened: boolean, onRulesChanged?: () => void) =>
             onRulesChanged?.();
         } catch (err) {
             console.error('Failed to import config', err);
-            alert('Failed to import profile: ' + (err as Error).message);
+            setSaveError('Failed to import profile: ' + (err as Error).message);
         }
     };
 
@@ -203,9 +223,11 @@ export const useDisplayRules = (opened: boolean, onRulesChanged?: () => void) =>
         handleSetDefault,
         handleSaveRule,
         handleDeleteRule,
+        handleToggleRule,
         handleDuplicateRule,
         createConfig,
         deleteConfig,
+        renameConfig,
         handleTestRule,
         handleExportConfig,
         handleImportConfig,

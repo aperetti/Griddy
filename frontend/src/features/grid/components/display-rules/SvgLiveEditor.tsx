@@ -1,10 +1,11 @@
 import React from 'react';
 import { 
     Stack, Group, Text, Button, 
-    Textarea, Paper, Divider, rem, Modal,
+    Textarea, Paper, Divider, rem,
     Grid, Box
 } from '@mantine/core';
 import { Save, Eye, Code } from 'lucide-react';
+import { GridModal } from '../../../../features/ui/GridModal';
 
 interface SvgLiveEditorProps {
     opened: boolean;
@@ -22,7 +23,7 @@ export const SvgLiveEditor: React.FC<SvgLiveEditorProps> = ({
     onSave 
 }) => {
     return (
-        <Modal 
+        <GridModal 
             opened={opened} 
             onClose={onClose} 
             title={
@@ -32,8 +33,7 @@ export const SvgLiveEditor: React.FC<SvgLiveEditorProps> = ({
                 </Group>
             }
             size="xl"
-            zIndex={9999}
-            withinPortal
+            zIndex={4000}
         >
             <Stack gap="md">
                 <Grid gutter="md">
@@ -98,6 +98,6 @@ export const SvgLiveEditor: React.FC<SvgLiveEditorProps> = ({
                     </Button>
                 </Group>
             </Stack>
-        </Modal>
+        </GridModal>
     );
 };

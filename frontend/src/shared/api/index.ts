@@ -165,6 +165,20 @@ export const createDisplayConfig = async (name: string, description: string = ""
     return res.json();
 };
 
+export const updateDisplayConfig = async (configId: number, name: string, description: string = ""): Promise<DisplayConfig> => {
+    const res = await fetch(`${ADMIN_API_BASE}/display-rules/configs/${configId}`, {
+        method: 'PUT',
+        headers: { 
+            'Content-Type': 'application/json',
+            ...getAuthHeaders()
+        },
+        body: JSON.stringify({ name, description })
+    });
+    if (res.status === 401) throw new Error('Unauthorized');
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+};
+
 export const deleteDisplayConfig = async (configId: number): Promise<void> => {
     const res = await fetch(`${ADMIN_API_BASE}/display-rules/configs/${configId}`, {
         method: 'DELETE',

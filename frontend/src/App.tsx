@@ -518,7 +518,7 @@ export default function App() {
       {/* Analysis windows in a fixed viewport-covering layer so react-rnd
           transforms are relative to (0,0) of the viewport, not the document
           flow position of a body-appended portal. */}
-      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 1000 }}>
+      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 5000 }}>
         <AnalysisWindowLayer
           windows={activeWindows}
           pluginRegistry={pluginRegistry}
