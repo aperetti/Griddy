@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Table, TextInput, Button, Paper, Title, Stack, ActionIcon, Text } from '@mantine/core';
 import { Plus, Trash } from 'lucide-react';
 import { configApi } from '../../api';
+import { DisplayProfilesPanel } from './DisplayProfilesPanel';
 
 interface ConfigItem {
   key: string;
@@ -100,6 +101,8 @@ export function ConfigPanel() {
           </Table.Tbody>
         </Table>
       </Paper>
+
+      <DisplayProfilesPanel />
     </Stack>
   );
 }

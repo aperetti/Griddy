@@ -19,6 +19,16 @@ export const dataApi = {
 export const configApi = {
   get: () => api.get('/config').then(res => res.data),
   set: (key: string, value: string) => api.post('/config', { key, value }).then(res => res.data),
+  
+  // ── Display Profiles ───────────────────────────────────────────
+  getDisplayProfiles: (): Promise<any[]> => 
+    api.get('/config/display-profiles').then(res => res.data),
+    
+  activateDisplayProfile: (id: number) => 
+    api.post(`/config/display-profiles/${id}/activate`).then(res => res.data),
+    
+  deleteDisplayProfile: (id: number) => 
+    api.delete(`/config/display-profiles/${id}`).then(res => res.data),
 };
 
 export const pluginsApi = {
