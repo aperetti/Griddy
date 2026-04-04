@@ -34,9 +34,10 @@ function adaptContext(ctx: PluginExecutionContext): SdkPluginContext {
             const id = `${type}-${Date.now()}`;
             // Extract IDs to populate the mandatory nodeIds field
             const nodeIds = ctx.selectedNodes.map(n => n.id);
+            const edgeIds = ctx.selectedEdgeIds;
             ctx.setAnalysisWindows(prev => [
                 ...prev,
-                { id, type, nodeIds, nodeName, loading: true, data: [], isOpen: true, isMinimized: false }
+                { id, type, nodeIds, edgeIds, nodeName, loading: true, data: [], isOpen: true, isMinimized: false }
             ]);
             ctx.bringWindowToFront(id);
             return id;
