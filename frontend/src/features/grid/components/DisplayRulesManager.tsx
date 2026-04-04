@@ -1,6 +1,6 @@
 import React, { useState, Fragment, useMemo } from 'react';
 import { useMediaQuery } from '@mantine/hooks';
-import { Plus, Trash2, Copy, Lock, Filter, ArrowDownAZ, ListOrdered, FileDown, FileUp, MoreVertical } from 'lucide-react';
+import { Plus, Trash2, Copy, Lock, Filter, ArrowDownAZ, ListOrdered, FileDown, FileUp, MoreVertical, CheckCircle2 } from 'lucide-react';
 import { 
     Table, Button, Group, ActionIcon, Stack, Text, 
     Badge, Select, TextInput, Paper,
@@ -183,6 +183,37 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                     style={{ width: rem(250) }}
                                     comboboxProps={{ zIndex: 2000, withinPortal: true }}
                                 />
+                                
+                                {selectedConfigId && (
+                                    <>
+                                        <Tooltip label={configs.find(c => c.id === selectedConfigId)?.is_default ? "Profile is Already Default" : "Set as Default Profile"}>
+                                            <ActionIcon 
+                                                variant="light" 
+                                                color="green" 
+                                                size="lg" 
+                                                mt="25px"
+                                                disabled={!!configs.find(c => c.id === selectedConfigId)?.is_default}
+                                                onClick={() => handleSetDefault(selectedConfigId)}
+                                            >
+                                                <CheckCircle2 size={18} />
+                                            </ActionIcon>
+                                        </Tooltip>
+
+                                        <Tooltip label="Delete Current Profile">
+                                            <ActionIcon 
+                                                variant="light" 
+                                                color="red" 
+                                                size="lg" 
+                                                mt="25px"
+                                                disabled={!!configs.find(c => c.id === selectedConfigId)?.is_default}
+                                                onClick={() => deleteConfig(selectedConfigId)}
+                                            >
+                                                <Trash2 size={18} />
+                                            </ActionIcon>
+                                        </Tooltip>
+                                    </>
+                                )}
+
                                 <Menu shadow="md" width={180} zIndex={2000} withinPortal>
                                     <Menu.Target>
                                         <ActionIcon variant="light" size="lg" mt="25px"><MoreVertical size={18} /></ActionIcon>
@@ -207,12 +238,6 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                                 Export Profile
                                             </Menu.Item>
                                         )}
-
-                                        <Menu.Divider />
-
-                                        <Menu.Item color="red" leftSection={<Trash2 size={14} />} onClick={() => selectedConfigId && deleteConfig(selectedConfigId)}>
-                                            Delete Current
-                                        </Menu.Item>
                                     </Menu.Dropdown>
                                 </Menu>
 
