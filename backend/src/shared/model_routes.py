@@ -14,13 +14,13 @@ async def list_feeders():
 @router.get("/resolve-node/{node_id}")
 async def resolve_node(node_id: str):
     """Resolve a node ID to its containing feeder ID."""
-    feeder_id = registry.resolve_node_to_model(node_id)
-    if not feeder_id:
+    res = registry.resolve_node_to_model(node_id)
+    if not res or not res.get("feeder_id"):
         raise HTTPException(
             status_code=404, 
             detail=f"Node '{node_id}' could not be resolved to a feeder"
         )
-    return {"node_id": node_id, "feeder_id": feeder_id}
+    return res
 
 
 @router.post("/{feeder_id}/load")

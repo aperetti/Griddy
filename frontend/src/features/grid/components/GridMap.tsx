@@ -31,7 +31,7 @@ interface GridMapProps {
     fitHighlightedNodesTrigger?: number;
     skipGlobalFit?: boolean;
     onViewStateChange?: (viewState: any) => void;
-    goToLocation?: { longitude: number; latitude: number } | null;
+    goToLocation?: { longitude: number; latitude: number; zoom?: number } | null;
     spriteVersion?: number;
 }
 

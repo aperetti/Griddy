@@ -1,6 +1,6 @@
 import '@mantine/core/styles.css';
 import '@mantine/dates/styles.css';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   MantineProvider,
   Box,
@@ -25,7 +25,7 @@ import { AnalysisTray } from './features/analytics/components/AnalysisTray';
 import { useTopology } from './hooks/useTopology';
 import { useRuleClassification } from './features/grid/hooks/useRuleClassification';
 import { useAnalyticsState, SETTINGS_KEY } from './hooks/useAnalyticsState';
-import { fetchTopology, fetchModels, fetchPluginRegistry, resolveNodeModel } from './shared/api';
+import { fetchTopology, fetchModels, fetchPluginRegistry, resolveNodeModel, loadModel } from './shared/api';
 import type { Node, Edge } from './shared/types';
 import { initPluginRegistry } from './plugins';
 import type { PluginDefinition, PluginExecutionContext } from './plugins/types';
@@ -65,7 +65,7 @@ export default function App() {
     };
   });
   const [viewState, setViewState] = useState<any>(null);
-  const [targetLocation, setTargetLocation] = useState<{ longitude: number; latitude: number } | null>(null);
+  const [targetLocation, setTargetLocation] = useState<{ longitude: number, latitude: number, zoom?: number } | null>(null);
 
   // Hooks
   const topology = useTopology();
@@ -75,23 +75,45 @@ export default function App() {
     topology.edges,
   );
   const analytics = useAnalyticsState();
+  const activeWindows = useMemo(() => 
+    analytics.analysisWindows.filter(win => win.isOpen && !win.isMinimized),
+    [analytics.analysisWindows]
+  );
 
   const [dateRange, setDateRange] = useState(() => calculateRange(analytics.globalConfig));
   
-  const pendingNavigationRef = useRef<string | null>(null);
+  const pendingNavigationRef = useRef<{ id: string, name?: string, zoom?: number } | null>(null);
+  const [navTrigger, setNavTrigger] = useState(0);
 
-  // Fulfill pending navigation once nodes are loaded
+  // Fulfill pending navigation once topology is loaded
   useEffect(() => {
     if (pendingNavigationRef.current && !topology.topologyLoading) {
-      const node = topology.nodes.find(n => n.id === pendingNavigationRef.current);
+      const { id, zoom } = pendingNavigationRef.current;
+      
+      // Try Node
+      const node = topology.nodes.find(n => 
+        n.id === id || n.name === id || n.attached_equipment?.some(eq => eq.mrid === id || eq.name === id)
+      );
       if (node) {
         topology.setHighlightedNodes(new Set([node.id]));
         topology.setHighlightedEdges(new Set());
-        setTargetLocation({ longitude: node.position[0], latitude: node.position[1] });
+        setTargetLocation({ longitude: node.position[0], latitude: node.position[1], zoom });
+        pendingNavigationRef.current = null;
+        return;
+      }
+
+      // Try Edge
+      const edge = topology.edges.find(e => e.id === id || e.name === id || `${e.source}-${e.target}` === id);
+      if (edge) {
+        topology.setHighlightedNodes(new Set());
+        topology.setHighlightedEdges(new Set([edge.id || `${edge.source}-${edge.target}`]));
+        const midLon = (edge.sourcePosition[0] + edge.targetPosition[0]) / 2;
+        const midLat = (edge.sourcePosition[1] + edge.targetPosition[1]) / 2;
+        setTargetLocation({ longitude: midLon, latitude: midLat, zoom });
         pendingNavigationRef.current = null;
       }
     }
-  }, [topology.nodes, topology.topologyLoading]);
+  }, [topology.nodes, topology.edges, topology.topologyLoading, navTrigger]);
 
   useEffect(() => {
     if (analytics.globalConfig.endDateType === 'now') {
@@ -127,30 +149,55 @@ export default function App() {
     p => p.appliesToNodes(selectedNodes, topology.highlightedEdges.size)
   );
 
-  const selectAndNavigateToNode = useCallback(async (nodeId: string | string[]) => {
-    const ids = Array.isArray(nodeId) ? nodeId : [nodeId];
+  const selectAndNavigateToNode = useCallback(async (targetId: string | string[]) => {
+    const ids = Array.isArray(targetId) ? targetId : [targetId];
     
     if (ids.length === 1) {
       const id = ids[0];
-      const node = topology.nodes.find(n => n.id === id);
+      
+      // 1. Try finding as a Node (or attached equipment on a node)
+      const node = topology.nodes.find(n => 
+        n.id === id || 
+        n.name === id ||
+        n.attached_equipment?.some(eq => eq.mrid === id || eq.name === id)
+      );
+      
       if (node) {
-        topology.setHighlightedNodes(new Set([id]));
+        topology.setHighlightedNodes(new Set([node.id]));
         topology.setHighlightedEdges(new Set());
-        setTargetLocation({ longitude: node.position[0], latitude: node.position[1] });
-      } else {
-        // Node not found in currently loaded models - try to resolve and load
-        try {
-          const { feeder_id } = await resolveNodeModel(id);
-          if (!topology.activeModelIds.includes(feeder_id)) {
-            pendingNavigationRef.current = id;
-            topology.setActiveModelIds(prev => [...prev, feeder_id]);
-          } else {
-            // Already includes feeder but node not in list? Possibly still loading.
-            pendingNavigationRef.current = id;
-          }
-        } catch (err) {
-          console.error('[App] Failed to resolve node for navigation:', err);
+        setTargetLocation({ longitude: node.position[0], latitude: node.position[1], zoom: 18 });
+        return;
+      }
+
+      // 2. Try finding as an Edge (e.g. PowerTransformer edge)
+      const edge = topology.edges.find(e => e.id === id || e.name === id || `${e.source}-${e.target}` === id);
+      if (edge) {
+        topology.setHighlightedNodes(new Set());
+        topology.setHighlightedEdges(new Set([edge.id || `${edge.source}-${edge.target}`]));
+        
+        // Center on edge midpoint
+        const midLon = (edge.sourcePosition[0] + edge.targetPosition[0]) / 2;
+        const midLat = (edge.sourcePosition[1] + edge.targetPosition[1]) / 2;
+        setTargetLocation({ longitude: midLon, latitude: midLat, zoom: 18 });
+        return;
+      }
+
+      // 3. Not found in currently loaded models - try to resolve and load
+      try {
+        const res = await resolveNodeModel(id);
+        const actualId = res.mrid || res.name || id;
+        const feeder_id = res.feeder_id;
+        
+        pendingNavigationRef.current = { id: actualId, zoom: 18 };
+        
+        if (!topology.activeModelIds.includes(feeder_id)) {
+          topology.setActiveModelIds(prev => [...new Set([...prev, feeder_id])]);
+        } else {
+          // Trigger the effect to check again, as it might have just finished loading
+          setNavTrigger(prev => prev + 1);
         }
+      } catch (err) {
+        console.error('[App] Failed to resolve target for navigation:', err);
       }
     } else if (ids.length > 1) {
       topology.setHighlightedNodes(new Set(ids));
@@ -158,7 +205,7 @@ export default function App() {
       setFitTrigger(prev => prev + 1);
       setTargetLocation(null);
     }
-  }, [topology.nodes, topology.activeModelIds]);
+  }, [topology.nodes, topology.edges, topology.activeModelIds]);
 
   const pluginCtx: PluginExecutionContext = {
     selectedNodes,
@@ -233,8 +280,12 @@ export default function App() {
       const isRefresh = topology.topologyVersion > 0 && added.length === 0 && removed.length === 0;
 
       if (isRefresh) {
-        topology.setTopologyLoading(true);
         try {
+          // Ensure all active models are loaded in backend memory before fetching
+          // We load them individually so one failure doesn't block the refresh
+          await Promise.all(current.map(id => 
+            loadModel(id).catch(err => console.error(`[App] Failed to load model ${id}:`, err))
+          ));
           const data = await fetchTopology(current);
           topology.setNodes(data.nodes);
           topology.setEdges(data.edges);
@@ -259,9 +310,25 @@ export default function App() {
 
           // Fetch and add nodes/edges for new models
           if (added.length > 0) {
-            const data = await fetchTopology(added);
-            topology.setNodes(nodes => [...nodes, ...data.nodes]);
-            topology.setEdges(edges => [...edges, ...data.edges]);
+            // Ensure new models are loaded in backend memory first
+            // We track which ones actually succeeded to avoid fetching empty data
+            const loadResults = await Promise.all(added.map(async id => {
+              try {
+                await loadModel(id);
+                return id;
+              } catch (err) {
+                console.error(`[App] Failed to load model ${id}:`, err);
+                return null;
+              }
+            }));
+
+            const successfulIds = loadResults.filter((id): id is string => id !== null);
+            
+            if (successfulIds.length > 0) {
+              const data = await fetchTopology(successfulIds);
+              topology.setNodes(nodes => [...nodes, ...data.nodes]);
+              topology.setEdges(edges => [...edges, ...data.edges]);
+            }
           }
 
           lastActiveModelIds.current = current;
@@ -392,6 +459,7 @@ export default function App() {
             isMobile={isMobile}
             plugins={allPlugins}
             onRunPlugin={(plugin: PluginDefinition) => plugin.handleRun(pluginCtx)}
+            loading={topology.topologyLoading}
           />
           <SystemSidebar
             plugins={allPlugins}
@@ -450,7 +518,7 @@ export default function App() {
           flow position of a body-appended portal. */}
       <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 1000 }}>
         <AnalysisWindowLayer
-          windows={analytics.analysisWindows.filter(win => win.isOpen && !win.isMinimized)}
+          windows={activeWindows}
           pluginRegistry={pluginRegistry}
           onClose={analytics.removeWindow}
           onUpdateWindow={analytics.updateWindow}

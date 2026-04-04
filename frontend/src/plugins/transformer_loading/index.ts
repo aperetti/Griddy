@@ -28,7 +28,7 @@ export const transformerLoadingPlugin: SdkPluginDefinition = {
         // Store the nodeIds for later pagination refreshes
         ctx.updateWindowProps(windowId, { nodeIds });
 
-        fetchTransformerLoading(nodeIds, 100, 0)
+        fetchTransformerLoading(nodeIds, 25, 0)
             .then(resp => {
                 ctx.updateWindowProps(windowId, {
                     data: resp.transformers,

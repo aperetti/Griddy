@@ -156,7 +156,8 @@ export function useLayers(p: UseLayersParams) {
                 }
 
                 // 3. Status/Highlight colors
-                if (p.highlightedEdges.has(d.id || '') || p.highlightedEdges.has(`${d.source}-${d.target}`)) return [60, 160, 240, 200];
+                const isHighlighted = p.highlightedEdges.has(d.id || '') || p.highlightedEdges.has(`${d.source}-${d.target}`);
+                if (isHighlighted) return [255, 200, 50, 255]; // Amber/Yellow selection color
                 if (p.hoveredEdgeId === (d.id || `${d.source}-${d.target}`)) return [255, 255, 255, 255];
 
                 // 4. Default Circuit Colors
@@ -165,13 +166,16 @@ export function useLayers(p: UseLayersParams) {
                     : [150, 150, 150, 150];
             },
             getWidth: (d: Edge) => {
-                const isHovered = (d.id && p.hoveredEdgeId === d.id) || p.hoveredEdgeId === `${d.source}-${d.target}`;
+                const edgeKey = d.id || `${d.source}-${d.target}`;
+                const isHovered = p.hoveredEdgeId === edgeKey;
+                const isHighlighted = p.highlightedEdges.has(d.id || '') || p.highlightedEdges.has(edgeKey);
+
                 if (isHovered) return 4;
                 const realPhases = d.phases ? d.phases.filter(ph => !['N', 'Neutral'].includes(ph)) : ['A', 'B', 'C'];
                 let width = 1 + (Math.max(1, realPhases.length) - 1) * 0.75;
                 if (p.nodeAverages && p.nodeAverages[d.target] !== undefined) width += 1;
-                if (p.edgeAverages && p.edgeAverages[d.id || `${d.source}-${d.target}`] !== undefined) width += 2;
-                if (p.highlightedEdges.has(d.id || '') || p.highlightedEdges.has(`${d.source}-${d.target}`)) width += 1;
+                if (p.edgeAverages && p.edgeAverages[edgeKey] !== undefined) width += 2;
+                if (isHighlighted) width += 3;
                 return width;
             },
             widthUnits: 'pixels',

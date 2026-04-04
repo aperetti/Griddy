@@ -433,7 +433,7 @@ export const unloadModel = async (feederId: string): Promise<{ status: string }>
     return res.json();
 };
 
-export const resolveNodeModel = async (nodeId: string): Promise<{ node_id: string, feeder_id: string }> => {
+export const resolveNodeModel = async (nodeId: string): Promise<{ mrid: string, name: string, feeder_id: string }> => {
     const res = await fetch(`${API_BASE}/feeders/resolve-node/${nodeId}`);
     if (!res.ok) {
         throw new Error(`Failed to resolve node ${nodeId}`);

@@ -11,7 +11,8 @@ interface Props extends SdkPluginCallbacks {
 
 function formatKva(val: number | null): string {
     if (val == null) return '—';
-    return val >= 1000 ? `${(val / 1000).toFixed(2)} MVA` : `${val} kVA`;
+    const kva = val / 1000;
+    return kva >= 1000 ? `${(kva / 1000).toFixed(2)} MVA` : `${kva.toFixed(1)} kVA`;
 }
 
 function formatKv(volts: number | null): string {
@@ -22,6 +23,13 @@ function formatKv(volts: number | null): string {
 function formatOhm(val: number | null): string {
     if (val == null) return '—';
     return `${val} Ω`;
+}
+
+function getLoadingColor(percent: number | null): string {
+    if (percent == null) return 'gray';
+    if (percent > 100) return 'red';
+    if (percent > 80) return 'orange';
+    return 'green';
 }
 
 function SortHeader({ label, sortField, activeField, direction, onSort }: {
@@ -48,44 +56,42 @@ function SortHeader({ label, sortField, activeField, direction, onSort }: {
     );
 }
 
-function EndRow({ end, mrid, name, loading_percent, rowSpan, onSelect }: { 
+const EndRow = memo(function EndRow({ transformer, end, isFirst, rowCount, onSelect }: { 
+    transformer: TransformerRecord;
     end: TransformerEnd; 
-    mrid: string; 
-    name: string | null; 
-    loading_percent: number | null; 
-    rowSpan: number;
+    isFirst: boolean;
+    rowCount: number;
     onSelect?: (id: string) => void;
 }) {
     return (
-        <Table.Tr>
-            {rowSpan > 0 && (
-                <>
-                    <Table.Td rowSpan={rowSpan}>
-                        <Stack 
-                            gap={2} 
-                            onClick={() => onSelect?.(mrid)}
-                            style={{ cursor: onSelect ? 'pointer' : 'default' }}
-                        >
-                            <Text 
-                                size="sm" 
-                                fw={600} 
-                                c={onSelect ? 'blue.4' : undefined}
-                                style={{ textDecoration: onSelect ? 'underline' : 'none' }}
-                            >
-                                {name || '—'}
-                            </Text>
-                            <Text size="xs" c="dimmed" ff="monospace">{mrid.slice(0, 14)}…</Text>
-                        </Stack>
-                    </Table.Td>
-                    <Table.Td rowSpan={rowSpan}>
-                        <Badge 
-                            color={loading_percent != null && loading_percent > 100 ? 'red' : 'green'} 
-                            variant="filled"
-                        >
-                            {loading_percent?.toFixed(1) ?? '—'}%
-                        </Badge>
-                    </Table.Td>
-                </>
+        <Table.Tr 
+            onClick={() => onSelect?.(transformer.mrid)}
+            style={{ 
+                cursor: onSelect ? 'pointer' : 'default',
+                contentVisibility: 'auto',
+                containIntrinsicSize: '1px 50px'
+            }}
+        >
+            {isFirst && (
+                <Table.Td rowSpan={rowCount}>
+                    <Stack gap={2}>
+                        <Text size="sm" fw={500}>{transformer.name || 'Unknown'}</Text>
+                        <Text size="xs" c="dimmed" style={{ fontFamily: 'monospace' }}>
+                            {transformer.mrid.split('_').pop()}
+                        </Text>
+                    </Stack>
+                </Table.Td>
+            )}
+            {isFirst && (
+                <Table.Td rowSpan={rowCount}>
+                    <Badge 
+                        color={getLoadingColor(transformer.loading_percent)} 
+                        variant="filled"
+                        size="sm"
+                    >
+                        {transformer.loading_percent?.toFixed(1) ?? '—'}%
+                    </Badge>
+                </Table.Td>
             )}
             <Table.Td ta="center">
                 <Badge size="xs" variant="outline" color="gray">{end.end_number ?? '—'}</Badge>
@@ -100,7 +106,7 @@ function EndRow({ end, mrid, name, loading_percent, rowSpan, onSelect }: {
             <Table.Td c="dimmed">{formatKva(end.emergency_s_kva)}</Table.Td>
         </Table.Tr>
     );
-}
+});
 
 export const TransformerLoadingWindow = memo(function TransformerLoadingWindow({
     instance,
@@ -112,7 +118,7 @@ export const TransformerLoadingWindow = memo(function TransformerLoadingWindow({
 }: Props) {
     const records = (instance.data ?? []) as TransformerRecord[];
     const totalCount = (instance.totalCount ?? 0) as number;
-    const limit = (instance.limit ?? 100) as number;
+    const limit = (instance.limit ?? 25) as number;
     const offset = (instance.offset ?? 0) as number;
     const nodeIds = useMemo(() => (instance.nodeIds ?? []) as string[], [instance.nodeIds]);
     const loading = instance.loading as boolean;
@@ -160,7 +166,6 @@ export const TransformerLoadingWindow = memo(function TransformerLoadingWindow({
         }
     }, [nodeIds, updateWindow, setNodeAverages]);
 
-    // Handle search changes
     useEffect(() => {
         if (debouncedSearch !== currentSearch && !loading) {
             handleFetch(limit, 0, debouncedSearch, currentSortField, currentSortDir);
@@ -189,37 +194,40 @@ export const TransformerLoadingWindow = memo(function TransformerLoadingWindow({
             ? t.ends.map((end, i) => (
                 <EndRow
                     key={`${t.mrid}-${i}`}
+                    transformer={t}
                     end={end}
-                    mrid={t.mrid}
-                    name={t.name}
-                    loading_percent={t.loading_percent}
-                    rowSpan={i === 0 ? t.ends.length : 0}
+                    isFirst={i === 0}
+                    rowCount={t.ends.length}
                     onSelect={selectAndNavigateToNode}
                 />
             ))
             : [
-                <Table.Tr key={t.mrid}>
+                <Table.Tr 
+                    key={t.mrid}
+                    onClick={() => selectAndNavigateToNode?.(t.mrid)}
+                    style={{ cursor: selectAndNavigateToNode ? 'pointer' : 'default' }}
+                >
                     <Table.Td>
-                        <Stack 
-                            gap={2}
-                            onClick={() => selectAndNavigateToNode?.(t.mrid)}
-                            style={{ cursor: selectAndNavigateToNode ? 'pointer' : 'default' }}
-                        >
-                            <Text 
-                                size="sm" 
-                                fw={600}
-                                c={selectAndNavigateToNode ? 'blue.4' : undefined}
-                                style={{ textDecoration: selectAndNavigateToNode ? 'underline' : 'none' }}
-                            >
-                                {t.name || '—'}
+                        <Stack gap={2}>
+                            <Text size="sm" fw={500}>{t.name || 'Unknown'}</Text>
+                            <Text size="xs" c="dimmed" style={{ fontFamily: 'monospace' }}>
+                                {t.mrid.split('_').pop()}
                             </Text>
-                            <Text size="xs" c="dimmed" ff="monospace">{t.mrid.slice(0, 14)}…</Text>
                         </Stack>
                     </Table.Td>
-                    <Table.Td colSpan={7}>
-                        <Text size="xs" c="dimmed">No winding data found</Text>
+                    <Table.Td>
+                        <Badge 
+                            color={getLoadingColor(t.loading_percent)} 
+                            variant="filled"
+                            size="sm"
+                        >
+                            {t.loading_percent?.toFixed(1) ?? '—'}%
+                        </Badge>
                     </Table.Td>
-                </Table.Tr>,
+                    <Table.Td colSpan={7}>
+                        <Text size="xs" c="dimmed" fs="italic">No winding data available</Text>
+                    </Table.Td>
+                </Table.Tr>
             ]
     ), [records, selectAndNavigateToNode]);
 
@@ -300,8 +308,10 @@ export const TransformerLoadingWindow = memo(function TransformerLoadingWindow({
                                     size="xs"
                                     value={limit.toString()}
                                     onChange={onLimitChange}
+                                    comboboxProps={{ zIndex: (instance.zIndex ?? 1000) + 500 }}
                                     data={[
                                         { value: '10', label: '10' },
+                                        { value: '25', label: '25' },
                                         { value: '50', label: '50' },
                                         { value: '100', label: '100' },
                                         { value: '250', label: '250' },

@@ -20,6 +20,8 @@ interface AnalysisWindowLayerProps {
  * This prevents the 'Maximum update depth exceeded' error caused by 
  * anonymous functions being re-created on every render.
  */
+const EMPTY_FN = () => {};
+
 const PluginWindowWrapper = React.memo(({ 
   win, 
   pluginDef, 
@@ -49,16 +51,16 @@ const PluginWindowWrapper = React.memo(({
     onClose: handleClose,
     onMinimize: handleMinimize,
     updateWindow,
-    setNodeAverages: onSetNodeAverages || (() => {}),
-    setEdgeAverages: onSetEdgeAverages || (() => {}),
-    setVoltageScale: onSetVoltageScale || (() => {}),
+    setNodeAverages: onSetNodeAverages || EMPTY_FN,
+    setEdgeAverages: onSetEdgeAverages || EMPTY_FN,
+    setVoltageScale: onSetVoltageScale || EMPTY_FN,
     selectAndNavigateToNode: onSelectAndNavigateToNode,
   }), [handleClose, handleMinimize, updateWindow, onSetNodeAverages, onSetEdgeAverages, onSetVoltageScale, onSelectAndNavigateToNode]);
 
   return <>{pluginDef.renderWindow(win, callbacks)}</>;
 });
 
-export function AnalysisWindowLayer({
+export const AnalysisWindowLayer = React.memo(function AnalysisWindowLayer({
   windows,
   pluginRegistry,
   onClose,
@@ -108,4 +110,4 @@ export function AnalysisWindowLayer({
       })}
     </>
   );
-}
+});

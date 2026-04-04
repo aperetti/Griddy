@@ -15,6 +15,7 @@ interface OverlayControlsProps {
   isMobile?: boolean;
   plugins?: PluginDefinition[];
   onRunPlugin?: (plugin: PluginDefinition) => void;
+  loading?: boolean;
 }
 
 export function OverlayControls({
@@ -27,7 +28,8 @@ export function OverlayControls({
   onClearSelection,
   isMobile,
   plugins = [],
-  onRunPlugin
+  onRunPlugin,
+  loading
 }: OverlayControlsProps) {
   const systemPlugins = plugins.filter(p => p.category === 'system');
 
@@ -70,6 +72,7 @@ export function OverlayControls({
             <ModelSwitcher
               activeModelIds={activeModelIds}
               onModelsChange={setActiveModelIds}
+              loading={loading}
             />
             <Menu position="bottom-end" offset={10} withArrow shadow="md" width={220}>
               <Menu.Target>

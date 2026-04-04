@@ -8,7 +8,7 @@ interface UseViewStateParams {
     highlightedNodes: Set<string>;
     fitHighlightedNodesTrigger: number;
     skipGlobalFit: boolean;
-    goToLocation?: { longitude: number; latitude: number } | null;
+    goToLocation?: { longitude: number; latitude: number; zoom?: number } | null;
     onViewStateChange?: (viewState: any) => void;
 }
 
@@ -31,7 +31,7 @@ export function useViewState({
 
     const lastModelIdsRef = useRef<Set<string>>(new Set());
     const lastHandledTrigger = useRef(0);
-    const lastGoTo = useRef<{ longitude: number; latitude: number } | null>(null);
+    const lastGoTo = useRef<{ longitude: number; latitude: number; zoom?: number } | null>(null);
 
     useEffect(() => {
         if (nodes.length > 0 && dimensions.width > 0 && !skipGlobalFit) {
@@ -80,7 +80,7 @@ export function useViewState({
             if (nodesToFit.length === 1) {
                 targetLon = nodesToFit[0].position[0];
                 targetLat = nodesToFit[0].position[1];
-                targetZoom = Math.max(viewState.zoom, 17);
+                targetZoom = Math.max(viewState.zoom, 18);
             } else {
                 const bounds = viewport.fitBounds(
                     [[minLon, minLat], [maxLon, maxLat]],
@@ -96,9 +96,19 @@ export function useViewState({
     }, [nodes, dimensions.width, dimensions.height, fitHighlightedNodesTrigger, highlightedNodes, skipGlobalFit]);
 
     useEffect(() => {
-        if (goToLocation && goToLocation !== lastGoTo.current) {
+        if (goToLocation && (
+            goToLocation.longitude !== lastGoTo.current?.longitude || 
+            goToLocation.latitude !== lastGoTo.current?.latitude ||
+            goToLocation.zoom !== lastGoTo.current?.zoom
+        )) {
             lastGoTo.current = goToLocation;
-            setViewState((prev: any) => ({ ...prev, longitude: goToLocation.longitude, latitude: goToLocation.latitude, transitionDuration: 300 }));
+            setViewState((prev: any) => ({ 
+                ...prev, 
+                longitude: goToLocation.longitude, 
+                latitude: goToLocation.latitude, 
+                zoom: goToLocation.zoom ?? prev.zoom,
+                transitionDuration: 1000 // Smooth move
+            }));
         }
     }, [goToLocation]);
 

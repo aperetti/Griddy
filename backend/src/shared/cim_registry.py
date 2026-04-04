@@ -143,38 +143,37 @@ class CimModelRegistry:
         )
         return manager
 
-    def resolve_node_to_model(self, node_id: str) -> Optional[str]:
-        """Query Neo4j to find which feeder (model) contains this node ID."""
-        # 1. Check loaded cache first
-        if node_id in self._node_to_model:
-            return self._node_to_model[node_id]
-
-        # 2. Query Neo4j
-        from neo4j import GraphDatabase
+    def resolve_node_to_model(self, node_id: str) -> Optional[dict[str, str]]:
+        """Resolve node ID (mRID or name) to its containing feeder and full identity."""
         url = os.getenv("CIMG_URL")
         if not url:
-            logger.warning("CIMG_URL not set, cannot resolve node to model via Neo4j")
             return None
 
         username = os.getenv("CIMG_USERNAME", "neo4j")
-        password = os.getenv("CIMG_PASSWORD", "")
+        password = os.getenv("CIMG_PASSWORD", "password123")
         database = os.getenv("CIMG_DATABASE", "neo4j")
 
         # Resolve node to its containing Feeder in Neo4j
         # We traverse memberships or direct associations.
         query = """
-        MATCH (n {`IdentifiedObject.mRID`: $node_id})
-        OPTIONAL MATCH (n)-[:MemberOf*0..5]-(f:Feeder)
-        RETURN f.`IdentifiedObject.name` AS feeder_id, f.uri AS feeder_uri
+        MATCH (n)
+        WHERE n.`IdentifiedObject.mRID` = $node_id OR n.`IdentifiedObject.name` = $node_id
+        OPTIONAL MATCH (n)-[:MemberOf|`Equipment.EquipmentContainer`*0..8]-(f:Feeder)
+        RETURN f.`IdentifiedObject.name` AS feeder_id, n.`IdentifiedObject.mRID` AS mrid, n.`IdentifiedObject.name` AS name
         LIMIT 1
         """
         
         try:
+            from neo4j import GraphDatabase
             driver = GraphDatabase.driver(url, auth=(username, password))
             with driver.session(database=database) as session:
                 result = session.run(query, {"node_id": node_id}).single()
-                if result and result["feeder_id"]:
-                    return result["feeder_id"]
+                if result:
+                    return {
+                        "feeder_id": result["feeder_id"],
+                        "mrid": result["mrid"],
+                        "name": result["name"]
+                    }
             driver.close()
         except Exception as e:
             logger.error("Failed to resolve node '%s' in Neo4j: %s", node_id, e)
