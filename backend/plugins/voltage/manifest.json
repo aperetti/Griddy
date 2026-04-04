@@ -1,5 +1,13 @@
 {
     "name": "voltage",
     "description": "Calculates downstream voltage distribution for selected nodes.",
-    "permissions": ["analytics:voltage", "topology:read"]
+    "permissions": ["analytics:voltage", "topology:read"],
+    "requirements": {
+        "description": "This plugin calculates the voltage distribution and timeseries profile for a selected asset and its neighbors (by degree).",
+        "agent_directives": [
+            "Use this plugin when the user asks for 'voltage', 'power quality', or 'voltage profile' around an asset.",
+            "Expect a distribution histogram (KDE), a loading-vs-voltage scatter plot, and a statistical timeseries.",
+            "Ask the user for 'degrees' if they want to expand the traversal depth (default 5)."
+        ]
+    }
 }

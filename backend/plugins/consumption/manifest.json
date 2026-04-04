@@ -1,5 +1,13 @@
 {
     "name": "consumption",
     "description": "Aggregates energy consumption time-series for downstream meters of the selected nodes.",
-    "permissions": ["analytics:consumption", "topology:read"]
+    "permissions": ["analytics:consumption", "topology:read"],
+    "requirements": {
+        "description": "This plugin analyses energy balance (consumption) for a given asset and its downstream meters.",
+        "agent_directives": [
+            "Use this plugin when the user asks for 'consumption', 'energy balance', or 'total power' downstream of an asset.",
+            "Expect a time-series response showing delivered and received kWh.",
+            "Navigate the map to the found downstream meters if requested."
+        ]
+    }
 }

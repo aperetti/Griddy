@@ -202,42 +202,49 @@ class NetworkXEngine(GraphEngine):
 
                     if curr_lvl is not None and next_lvl is not None:
                         if direction == "downstream" and next_lvl < curr_lvl:
-                            # Moving back toward source — skip.
-                            # `<` (not `<=`) allows same-depth stitch traversal.
+                            logger.debug("[BFS] Skipping upstream neighbor %s (lvl %s) from %s (lvl %s)", 
+                                         neighbor, next_lvl, current_node, curr_lvl)
                             continue
                         if direction == "upstream" and next_lvl > curr_lvl:
-                            # Moving away from source — skip.
+                            logger.debug("[BFS] Skipping downstream neighbor %s (lvl %s) from %s (lvl %s)", 
+                                         neighbor, next_lvl, current_node, curr_lvl)
                             continue
+                    else:
+                        logger.debug("[BFS] Neighbor %s or current %s missing flow_depth", neighbor, current_node)
 
                 # Check edge data (there might be multiple edges between u and v in MultiDiGraph)
                 edge_data_list = self.graph.get_edge_data(current_node, neighbor) or {}
                 # Also check reverse edges since we are in undirected mode
                 reverse_data_list = self.graph.get_edge_data(neighbor, current_node) or {}
                 
-                # Check edge data
-                # MultiDiGraph returns a dict of {key: data}, DiGraph returns data dict directly.
                 all_edges = []
                 if self.graph.is_multigraph():
-                    if edge_data_list:
-                        all_edges.extend(edge_data_list.values())
-                    if reverse_data_list:
-                        all_edges.extend(reverse_data_list.values())
+                    if edge_data_list: all_edges.extend(edge_data_list.values())
+                    if reverse_data_list: all_edges.extend(reverse_data_list.values())
                 else:
-                    if edge_data_list:
-                        all_edges.append(edge_data_list)
-                    if reverse_data_list:
-                        all_edges.append(reverse_data_list)
+                    if edge_data_list: all_edges.append(edge_data_list)
+                    if reverse_data_list: all_edges.append(reverse_data_list)
 
                 is_blocked = True
+                found_real_edge = False
                 for data in all_edges:
-                    # Capture real edge IDs (ignore virtual stitch edges for the result)
-                    if "edge_id" in data and not data.get("virtual", False):
-                        edges.add(data["edge_id"])
+                    is_virtual = data.get("virtual", False)
+                    if not is_virtual:
+                        found_real_edge = True
+                        if "edge_id" in data:
+                            edges.add(data["edge_id"])
                         
-                    # If AT LEAST ONE edge is not open, we can pass
-                    if not data.get("is_open", False):
+                        # If AT LEAST ONE real edge is not open, we can pass
+                        if not data.get("is_open", False):
+                            is_blocked = False
+                    else:
+                        # Virtual edges never block traversal
                         is_blocked = False
                 
+                if is_blocked and found_real_edge:
+                    logger.debug("[BFS] Path from %s to %s blocked by open switch", current_node, neighbor)
+                    continue
+
                 if not is_blocked:
                     visited_nodes.add(neighbor)
                     nodes.add(neighbor)

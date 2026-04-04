@@ -63,7 +63,7 @@ export interface SdkPluginContext {
         baseVoltage: number;
     }) => void;
     /** Center the map on a specific node and select it */
-    selectAndNavigateToNode: (nodeId: string) => void;
+    selectAndNavigateToNode: (nodeId: string | string[]) => void;
 }
 
 
@@ -77,7 +77,7 @@ export interface SdkPluginCallbacks {
     /** For standard plugins to update their own data */
     updateWindow?: (updates: Partial<SdkAnalysisInstance>) => void;
     /** Center the map on a specific node and select it */
-    selectAndNavigateToNode?: (nodeId: string) => void;
+    selectAndNavigateToNode?: (nodeId: string | string[]) => void;
 }
 
 

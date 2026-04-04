@@ -12,7 +12,7 @@ interface AnalysisWindowLayerProps {
   onSetNodeAverages?: (averages: Record<string, number> | null) => void;
   onSetEdgeAverages?: (averages: Record<string, number> | null) => void;
   onSetVoltageScale?: (scale: any) => void;
-  onSelectAndNavigateToNode?: (id: string) => void;
+  onSelectAndNavigateToNode?: (id: string | string[]) => void;
 }
 
 /**
@@ -39,7 +39,7 @@ const PluginWindowWrapper = React.memo(({
   onSetNodeAverages?: (averages: Record<string, number> | null) => void;
   onSetEdgeAverages?: (averages: Record<string, number> | null) => void;
   onSetVoltageScale?: (scale: any) => void;
-  onSelectAndNavigateToNode?: (id: string) => void;
+  onSelectAndNavigateToNode?: (id: string | string[]) => void;
 }) => {
   const handleClose = useCallback(() => onClose(win.id), [onClose, win.id]);
   const handleMinimize = useCallback(() => onMinimize(win.id), [onMinimize, win.id]);

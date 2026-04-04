@@ -11,6 +11,18 @@ async def list_feeders():
     return registry.list_models()
 
 
+@router.get("/resolve-node/{node_id}")
+async def resolve_node(node_id: str):
+    """Resolve a node ID to its containing feeder ID."""
+    feeder_id = registry.resolve_node_to_model(node_id)
+    if not feeder_id:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Node '{node_id}' could not be resolved to a feeder"
+        )
+    return {"node_id": node_id, "feeder_id": feeder_id}
+
+
 @router.post("/{feeder_id}/load")
 async def load_feeder(feeder_id: str):
     """Load a CIM feeder into memory by its ID."""

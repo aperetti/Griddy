@@ -4,5 +4,12 @@
   "description": "Visualizes average load across the network edges.",
   "version": "1.0.0",
   "author": "Antigravity",
-  "permissions": ["analytics:load", "topology:read"]
+  "permissions": ["analytics:load", "topology:read"],
+  "requirements": {
+    "description": "This plugin generates a network-wide load heatmap (average power flow) on edges.",
+    "agent_directives": [
+        "Use this plugin when the user asks for 'load heatmap', 'congested lines', or 'system-wide loading'.",
+        "This plugin colors the map edges based on average loading. It does not open a window."
+    ]
+  }
 }

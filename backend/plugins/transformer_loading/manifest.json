@@ -1,5 +1,13 @@
 {
     "name": "transformer_loading",
     "description": "Analyzes transformer loading via cypher queries to find overloaded transformers.",
-    "permissions": ["cim:read", "topology:read"]
+    "permissions": ["cim:read", "topology:read"],
+    "requirements": {
+        "description": "This plugin identifies and analyzes overloaded transformers across the grid models.",
+        "agent_directives": [
+            "Use this plugin when the user asks for 'overloaded transformers', 'transformer health', or 'asset utilization'.",
+            "This plugin returns a list of transformers matching loading criteria (e.g. >100%).",
+            "Allow the user to click a transformer in the report to jump to it on the map."
+        ]
+    }
 }

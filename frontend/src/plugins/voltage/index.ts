@@ -26,7 +26,10 @@ async function _performFetch(
             timeSeriesData: resp.timeseries ?? [],
             loading: false,
         } as any);
-        if (resp.downstream_node_ids?.length) ctx.addHighlightedNodes(resp.downstream_node_ids);
+        if (resp.downstream_node_ids?.length) {
+            ctx.addHighlightedNodes(resp.downstream_node_ids);
+            ctx.selectAndNavigateToNode([...nodeIds, ...resp.downstream_node_ids]);
+        }
         if (resp.downstream_edge_ids?.length) ctx.addHighlightedEdges(resp.downstream_edge_ids);
     } catch (e) {
         console.error('[voltage] fetch failed', e);

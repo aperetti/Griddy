@@ -17,7 +17,10 @@ async function _performFetch(
     try {
         const resp = await fetchConsumptionPlugin(nodeIds, start, end);
         ctx.updateAnalysisData(windowId, resp.time_series ?? []);
-        if (resp.downstream_node_ids?.length) ctx.addHighlightedNodes(resp.downstream_node_ids);
+        if (resp.downstream_node_ids?.length) {
+            ctx.addHighlightedNodes(resp.downstream_node_ids);
+            ctx.selectAndNavigateToNode([...nodeIds, ...resp.downstream_node_ids]);
+        }
         if (resp.downstream_edge_ids?.length) ctx.addHighlightedEdges(resp.downstream_edge_ids);
     } catch (e) {
         console.error('[consumption] fetch failed', e);

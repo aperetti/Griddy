@@ -1,0 +1,5 @@
+{
+    "name": "transformer_loading",
+    "version": "1.0.0",
+    "service_endpoint": "/api/plugins/transformer-loading"
+}

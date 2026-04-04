@@ -1,0 +1,5 @@
+{
+    "name": "load_heatmap",
+    "version": "1.0.0",
+    "service_endpoint": "/api/plugins/load-heatmap"
+}

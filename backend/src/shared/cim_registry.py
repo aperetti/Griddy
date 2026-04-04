@@ -127,21 +127,60 @@ class CimModelRegistry:
         # Populate fast-lookup indexes
         if manager._idx is not None:
             for mrid in manager._idx.equipment_index.keys():
-                self._mrid_to_model[mrid] = model_id
+                self._mrid_to_model[mrid] = feeder_id
             
             # Index EVERY node in the topology, even those without equipment
             for node in manager.get_topology_nodes():
                 node_id = node.get("node_id")
                 if node_id:
-                    self._node_to_model[node_id] = model_id
+                    self._node_to_model[node_id] = feeder_id
 
         logger.info(
             "Model '%s' loaded (%d nodes, %d edges)",
-            model_id,
+            feeder_id,
             len(manager.get_topology_nodes()),
             len(manager.get_topology_edges()),
         )
         return manager
+
+    def resolve_node_to_model(self, node_id: str) -> Optional[str]:
+        """Query Neo4j to find which feeder (model) contains this node ID."""
+        # 1. Check loaded cache first
+        if node_id in self._node_to_model:
+            return self._node_to_model[node_id]
+
+        # 2. Query Neo4j
+        from neo4j import GraphDatabase
+        url = os.getenv("CIMG_URL")
+        if not url:
+            logger.warning("CIMG_URL not set, cannot resolve node to model via Neo4j")
+            return None
+
+        username = os.getenv("CIMG_USERNAME", "neo4j")
+        password = os.getenv("CIMG_PASSWORD", "")
+        database = os.getenv("CIMG_DATABASE", "neo4j")
+
+        # Resolve node to its containing Feeder in Neo4j
+        # We traverse memberships or direct associations.
+        query = """
+        MATCH (n {`IdentifiedObject.mRID`: $node_id})
+        OPTIONAL MATCH (n)-[:MemberOf*0..5]-(f:Feeder)
+        RETURN f.`IdentifiedObject.name` AS feeder_id, f.uri AS feeder_uri
+        LIMIT 1
+        """
+        
+        try:
+            driver = GraphDatabase.driver(url, auth=(username, password))
+            with driver.session(database=database) as session:
+                result = session.run(query, {"node_id": node_id}).single()
+                if result and result["feeder_id"]:
+                    return result["feeder_id"]
+            driver.close()
+        except Exception as e:
+            logger.error("Failed to resolve node '%s' in Neo4j: %s", node_id, e)
+
+        return None
+
 
     def unload_model(self, model_id: str):
         """Unload a model, freeing memory."""

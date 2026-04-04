@@ -25,7 +25,7 @@ import { AnalysisTray } from './features/analytics/components/AnalysisTray';
 import { useTopology } from './hooks/useTopology';
 import { useRuleClassification } from './features/grid/hooks/useRuleClassification';
 import { useAnalyticsState, SETTINGS_KEY } from './hooks/useAnalyticsState';
-import { fetchTopology, fetchModels, fetchPluginRegistry } from './shared/api';
+import { fetchTopology, fetchModels, fetchPluginRegistry, resolveNodeModel } from './shared/api';
 import type { Node, Edge } from './shared/types';
 import { initPluginRegistry } from './plugins';
 import type { PluginDefinition, PluginExecutionContext } from './plugins/types';
@@ -77,6 +77,22 @@ export default function App() {
   const analytics = useAnalyticsState();
 
   const [dateRange, setDateRange] = useState(() => calculateRange(analytics.globalConfig));
+  
+  const pendingNavigationRef = useRef<string | null>(null);
+
+  // Fulfill pending navigation once nodes are loaded
+  useEffect(() => {
+    if (pendingNavigationRef.current && !topology.topologyLoading) {
+      const node = topology.nodes.find(n => n.id === pendingNavigationRef.current);
+      if (node) {
+        topology.setHighlightedNodes(new Set([node.id]));
+        topology.setHighlightedEdges(new Set());
+        setTargetLocation({ longitude: node.position[0], latitude: node.position[1] });
+        pendingNavigationRef.current = null;
+      }
+    }
+  }, [topology.nodes, topology.topologyLoading]);
+
   useEffect(() => {
     if (analytics.globalConfig.endDateType === 'now') {
       setDateRange(calculateRange(analytics.globalConfig));
@@ -102,6 +118,8 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  const [fitTrigger, setFitTrigger] = useState(0);
+
   const selectedNodes = topology.nodes.filter(n => topology.highlightedNodes.has(n.id));
   const selectedEdgeIds = Array.from(topology.highlightedEdges);
   const allPlugins = Array.from(pluginRegistry.values());
@@ -109,14 +127,38 @@ export default function App() {
     p => p.appliesToNodes(selectedNodes, topology.highlightedEdges.size)
   );
 
-  const selectAndNavigateToNode = useCallback((nodeId: string) => {
-    const node = topology.nodes.find(n => n.id === nodeId);
-    if (node) {
-      topology.setHighlightedNodes(new Set([node.id]));
+  const selectAndNavigateToNode = useCallback(async (nodeId: string | string[]) => {
+    const ids = Array.isArray(nodeId) ? nodeId : [nodeId];
+    
+    if (ids.length === 1) {
+      const id = ids[0];
+      const node = topology.nodes.find(n => n.id === id);
+      if (node) {
+        topology.setHighlightedNodes(new Set([id]));
+        topology.setHighlightedEdges(new Set());
+        setTargetLocation({ longitude: node.position[0], latitude: node.position[1] });
+      } else {
+        // Node not found in currently loaded models - try to resolve and load
+        try {
+          const { feeder_id } = await resolveNodeModel(id);
+          if (!topology.activeModelIds.includes(feeder_id)) {
+            pendingNavigationRef.current = id;
+            topology.setActiveModelIds(prev => [...prev, feeder_id]);
+          } else {
+            // Already includes feeder but node not in list? Possibly still loading.
+            pendingNavigationRef.current = id;
+          }
+        } catch (err) {
+          console.error('[App] Failed to resolve node for navigation:', err);
+        }
+      }
+    } else if (ids.length > 1) {
+      topology.setHighlightedNodes(new Set(ids));
       topology.setHighlightedEdges(new Set());
-      setTargetLocation({ longitude: node.position[0], latitude: node.position[1] });
+      setFitTrigger(prev => prev + 1);
+      setTargetLocation(null);
     }
-  }, [topology.nodes]);
+  }, [topology.nodes, topology.activeModelIds]);
 
   const pluginCtx: PluginExecutionContext = {
     selectedNodes,
@@ -293,6 +335,7 @@ export default function App() {
             voltageScale={voltageScale}
             onViewStateChange={setViewState}
             goToLocation={targetLocation}
+            fitHighlightedNodesTrigger={fitTrigger}
             spriteVersion={spriteVersion}
           />
 

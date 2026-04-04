@@ -25,7 +25,7 @@ export interface PluginWindowCallbacks {
     setEdgeAverages: (averages: Record<string, number> | null) => void;
     setVoltageScale: (scale: any) => void;
     /** Center the map on a specific node and select it */
-    selectAndNavigateToNode?: (nodeId: string) => void;
+    selectAndNavigateToNode?: (nodeId: string | string[]) => void;
 }
 
 
@@ -67,7 +67,7 @@ export interface PluginExecutionContext {
         baseVoltage: number;
     }) => void;
     /** Center the map on a specific node and select it */
-    selectAndNavigateToNode: (nodeId: string) => void;
+    selectAndNavigateToNode: (nodeId: string | string[]) => void;
 }
 
 
