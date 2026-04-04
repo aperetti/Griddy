@@ -16,7 +16,7 @@ await fastify.register(cors, {
 
 // Register routes (slices)
 await fastify.register(dataRoutes, { prefix: '/api/data' });
-await fastify.register(configRoutes, { prefix: '/api/config' });
+await fastify.register(configRoutes, { prefix: '/api/display-rules' });
 await fastify.register(usersRoutes, { prefix: '/api/users' });
 await fastify.register(pluginsRoutes, { prefix: '/api/plugins' });
 fastify.get('/ping', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));

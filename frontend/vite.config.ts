@@ -14,6 +14,10 @@ export default defineConfig({
     port: 3001,
     host: true,
     proxy: {
+      '/api/display-rules': {
+        target: 'http://localhost:8090',
+        changeOrigin: true
+      },
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true

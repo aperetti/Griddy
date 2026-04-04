@@ -31,6 +31,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
             onClose={onClose} 
             title={title}
             size="sm"
+            internal={true}
         >
             <Stack gap="md">
                 <Text size="sm" c="dimmed">{message}</Text>

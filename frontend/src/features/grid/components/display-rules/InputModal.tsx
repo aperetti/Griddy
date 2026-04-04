@@ -46,6 +46,7 @@ export const InputModal: React.FC<InputModalProps> = ({
             onClose={onClose} 
             title={title}
             size="sm"
+            internal={true}
         >
             <Stack gap="md">
                 <TextInput
