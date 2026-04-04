@@ -106,6 +106,7 @@ services:
       - ADMIN_CONSOLE_PORT=8090
       - ADMIN_DB_PATH=/data/config/admin_config.db
       - DB_PATH=/data/config/admin_config.db
+      - MAIN_BACKEND_URL=http://backend:8000
     ports:
       - "${ADMIN_BACKEND_PORT:-8090}:8090"
     restart: unless-stopped

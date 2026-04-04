@@ -45,14 +45,9 @@ export async function getDb(): Promise<Database> {
       id                  INTEGER PRIMARY KEY AUTOINCREMENT,
       config_id           INTEGER NOT NULL REFERENCES display_configs(id) ON DELETE CASCADE,
       name                TEXT NOT NULL,
-      visual_type         TEXT NOT NULL,
       priority            INTEGER DEFAULT 0,
-      match_edge_types    TEXT,
-      match_equipment     TEXT,
-      match_has_property  TEXT,
       match_conditions    TEXT,
-      icon                TEXT,
-      color_hex           TEXT,
+      config              TEXT,
       enabled             INTEGER DEFAULT 1,
       created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -67,11 +62,18 @@ export async function getDb(): Promise<Database> {
     );
   `);
 
-  // Migration: ensure match_conditions exists in existing databases
-  try {
-    await db.run('ALTER TABLE display_config_rules ADD COLUMN match_conditions TEXT');
-  } catch (e) {
-    // If it already exists, this will fail, which is fine
+  const migrations = [
+    'ALTER TABLE display_config_rules ADD COLUMN match_conditions TEXT',
+    'ALTER TABLE display_config_rules ADD COLUMN config TEXT',
+    'ALTER TABLE display_config_rules ADD COLUMN priority INTEGER DEFAULT 0'
+  ];
+
+  for (const sql of migrations) {
+    try {
+      await db.run(sql);
+    } catch (e) {
+      // Column likely already exists
+    }
   }
 
   // Seed default display config if none exists
@@ -85,25 +87,27 @@ export async function getDb(): Promise<Database> {
     if (configRow) {
       const configId = configRow.id;
       
-      // Seed a Regulator rule using the new match_conditions format
+      // Seed a Regulator rule using the new match_conditions and config format
       await db.run(
-        `INSERT INTO display_config_rules (config_id, name, visual_type, priority, match_conditions)
+        `INSERT INTO display_config_rules (config_id, name, priority, match_conditions, config)
          VALUES (?, ?, ?, ?, ?)`,
-        configId, 'Regulator', 'Regulator', 10,
+        configId, 'Regulator', 10,
         JSON.stringify({ 
           target_class: 'PowerTransformer', 
           conditions: [{ path: 'is_regulator', op: '==', value: true }] 
-        })
+        }),
+        JSON.stringify({ visual_type: 'Regulator' })
       );
       
       await db.run(
-        `INSERT INTO display_config_rules (config_id, name, visual_type, priority, match_conditions)
+        `INSERT INTO display_config_rules (config_id, name, priority, match_conditions, config)
          VALUES (?, ?, ?, ?, ?)`,
-        configId, 'Recloser', 'Recloser', 5,
+        configId, 'Recloser', 5,
         JSON.stringify({
           target_class: 'Recloser',
           conditions: []
-        })
+        }),
+        JSON.stringify({ visual_type: 'Recloser' })
       );
     }
   }
