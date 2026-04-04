@@ -76,27 +76,9 @@ def init_admin_db():
         )
     """)
     
-    # ── Migration: Add missing columns if they don't exist ────────────────
-    # Check current schema using table_info pragma
-    cursor = conn.execute("PRAGMA table_info(display_config_rules)")
-    existing_cols = [col[1] for col in cursor.fetchall()]
-    
-    if "config" not in existing_cols:
-        print("Migrating display_config_rules: Adding 'config' column...")
-        conn.execute("ALTER TABLE display_config_rules ADD COLUMN config TEXT")
-    
-    if "match_conditions" not in existing_cols:
-        print("Migrating display_config_rules: Adding 'match_conditions' column...")
-        conn.execute("ALTER TABLE display_config_rules ADD COLUMN match_conditions TEXT")
-    
-    conn.commit()
-    
-    # Ensure at least one default config exists
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM display_configs")
-    if cursor.fetchone()[0] == 0:
-        conn.execute("INSERT INTO display_configs (name, is_default) VALUES ('Default Profile', 1)")
-    
+    from .migrations import run_admin_migrations
+    run_admin_migrations(conn)
+
     # ── Users Table ───────────────────────────────────────────────
     conn.execute("""
         CREATE TABLE IF NOT EXISTS users (

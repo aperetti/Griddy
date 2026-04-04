@@ -62,17 +62,59 @@ export async function getDb(): Promise<Database> {
     );
   `);
 
-  const migrations = [
-    'ALTER TABLE display_config_rules ADD COLUMN match_conditions TEXT',
-    'ALTER TABLE display_config_rules ADD COLUMN config TEXT',
-    'ALTER TABLE display_config_rules ADD COLUMN priority INTEGER DEFAULT 0'
-  ];
-
-  for (const sql of migrations) {
+  // ── Migration: Robust display_config_rules transformation ──────────
+  const columns = await db.all("PRAGMA table_info(display_config_rules)");
+  const hasVisualType = columns.some(c => c.name === 'visual_type');
+  
+  if (hasVisualType) {
+    console.log("Migrating display_config_rules: Removing 'visual_type' and consolidating into 'config'...");
     try {
-      await db.run(sql);
-    } catch (e) {
-      // Column likely already exists
+      await db.run("BEGIN TRANSACTION");
+      
+      // 1. Create the new table
+      await db.exec(`
+        CREATE TABLE display_config_rules_new (
+          id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+          config_id           INTEGER NOT NULL REFERENCES display_configs(id) ON DELETE CASCADE,
+          name                TEXT NOT NULL,
+          priority            INTEGER DEFAULT 0,
+          match_conditions    TEXT,
+          config              TEXT,
+          enabled             INTEGER DEFAULT 1,
+          created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      
+      // 2. Copy data, mapping visual_type to config JSON
+      await db.run(`
+        INSERT INTO display_config_rules_new (id, config_id, name, priority, match_conditions, config, enabled, created_at, updated_at)
+        SELECT id, config_id, name, priority, match_conditions, 
+               COALESCE(config, '{"visual_type": "' || visual_type || '"}'), 
+               enabled, created_at, updated_at
+        FROM display_config_rules
+      `);
+      
+      // 3. Swap
+      await db.run("DROP TABLE display_config_rules");
+      await db.run("ALTER TABLE display_config_rules_new RENAME TO display_config_rules");
+      
+      await db.run("COMMIT");
+      console.log("Successfully migrated display_config_rules table.");
+    } catch (err) {
+      await db.run("ROLLBACK");
+      console.error("Error migrating display_config_rules:", err);
+      // We don't throw here to avoid preventing startup, but rule import may fail
+    }
+  } else {
+    // Fallback for incremental updates (if table was created without visual_type)
+    const migrations = [
+      'ALTER TABLE display_config_rules ADD COLUMN match_conditions TEXT',
+      'ALTER TABLE display_config_rules ADD COLUMN config TEXT',
+      'ALTER TABLE display_config_rules ADD COLUMN priority INTEGER DEFAULT 0'
+    ];
+    for (const sql of migrations) {
+      try { await db.run(sql); } catch (e) { /* ignore */ }
     }
   }
 
