@@ -58,13 +58,13 @@
 
 * **Minimap Visibility**: To optimize screen real estate on mobile devices, the minimap must be hidden when the viewport width is less than or equal to 768px.
 
-### 3.5 Display Rule Assistant
+### 3.5 Display Rule Assistant & Diagnostic Explorer
 * **Entity Exploration**: Users can select any grid entity to inspect its full CIM attribute set in a dedicated assistant panel.
 * **MRID Link Navigation**: The assistant must detect MRIDs in attribute values and provide "dive" buttons to jump to linked entities (e.g., from a Meter to its parent Transformer).
+* **Graph Traversal**: Both the Rule Assistant and Diagnostic Explorer must provide a force-directed graph view to visualize and navigate CIM relationships (neighbors).
 * **History & Breadcrumbs**: Support backward navigation through the exploration history.
-* **Attribute Actions**: A context menu on attributes allows users to quickly add conditions to the current rule (e.g., "exists", "matches value", "greater than").
-* **Semantic Path Generation**: The Rule Assistant generates hierarchical paths using lowercase CIM class names (e.g., `transformertank.0.ratedS`) for improved readability and graph traversal alignment.
-* **Flexible Workflow**: The assistant and rule builder provide a streamlined configuration process.
+* **Attribute Actions**: A context menu on attributes allows users to quickly add conditions to the current rule (Rule Assistant) or view historical trends (Diagnostic Explorer).
+* **Semantic Path Generation**: Hierarchical paths use lowercase CIM class names (e.g., `transformertank.0.ratedS`) for alignment with graph traversal.
 
 ### 3.6 Advanced Condition Logic
 * **Nested Groups**: Support for multi-level nested condition groups using AND/OR logical operators.
@@ -107,3 +107,10 @@ Users can create conditional formatting rules based on any attribute of a grid e
 * **Conditional Visibility Mapping**: Users can define a mapping between CIM conditions and the visibility of specific SVG elements without writing manual CSS.
 * **Reusable Visibility Profiles**: Support for creating visibility profiles that can be applied to any rule using compatible SVG icons.
 * **Dynamic Icon Variants**: The system must support rendering multiple "states" of a single SVG icon in the sprite atlas (e.g., an open vs. closed state for a single breaker rule).
+
+### 3.13 Diagnostic Explorer
+* **Relationship Discovery**: Provides a standalone graph view to explore neighbors of any grid entity without building a display rule.
+* **Attribute Inspection**: Display a side panel with the selected node's full CIM attribute set.
+* **Edge Exploration**: Users can select edges in the graph to view relationship types and any edge-specific attributes.
+* **Search Integration**: Users can start a diagnostic session by searching for an entity by name or mRID.
+* **Contextual Launch**: Right-clicking an asset on the map or in another analysis screen allows launching the Diagnostic Explorer focused on that entity.

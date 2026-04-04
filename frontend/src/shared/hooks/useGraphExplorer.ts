@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import { fetchCimNeighbors, fetchCimEquipment, fetchCimNode, fetchCimProperties } from '../../../shared/api';
+import { fetchCimNeighbors, fetchCimEquipment, fetchCimNode, fetchCimProperties } from '../api';
 
 export interface GNode {
     id: string;

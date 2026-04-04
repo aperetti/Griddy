@@ -3,9 +3,9 @@ import { Select, Stack, Text, Group, Paper, Button, Loader } from '@mantine/core
 import { Search, Database } from 'lucide-react';
 import { useMediaQuery } from '@mantine/hooks';
 import { useRuleAssistant } from '../../../hooks/useRuleAssistant';
-import { GraphExplorer } from './GraphExplorer';
+import { GraphExplorer } from '../../../../../shared/components/GraphExplorer/GraphExplorer';
 
-import type { GraphPathStep } from '../../../hooks/useGraphExplorer';
+import type { GraphPathStep } from '../../../../../shared/hooks/useGraphExplorer';
 
 interface RuleAssistantProps {
     onSelectAttribute: (path: string, value: any, operator?: string, graphPath?: GraphPathStep[]) => void;

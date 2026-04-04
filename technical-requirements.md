@@ -104,3 +104,9 @@
 ## 10. Graph Search Engine
 * **Edge Indexing**: The search service must index edge entities (conductors, lines) in addition to nodes.
 * **Fast Lookup**: Search should use efficient string matching (contains/starts-with) across both device names and IDs.
+
+## 11. Grid Diagnostic Explorer
+* **Force-Directed Graph Rendering**: Use `reagraph` for high-performance 2D/3D graph visualization in the frontend.
+* **Non-Directional Traversal**: The backend must support fetching all immediate neighbors (incoming and outgoing edges) for any given CIM mRID to support open-ended exploration.
+* **Lazy Detail Loading**: Node attributes must be fetched on-demand (on click) to minimize payload size during large graph expansions.
+* **Traversal Context**: The explorer must track the path taken from the root node to provide semantic context for attribute inspection.

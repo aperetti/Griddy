@@ -9,7 +9,7 @@ import { AlertTriangle } from 'lucide-react';
 import { GraphCanvas, darkTheme, useSelection, type GraphCanvasRef } from 'reagraph';
 import { Text as ThreeText } from '@react-three/drei';
 import { Expand, RotateCcw, X } from 'lucide-react';
-import { useGraphExplorer, type GNode, type GraphPathStep } from '../../../hooks/useGraphExplorer';
+import { useGraphExplorer, type GNode, type GraphPathStep } from '../../hooks/useGraphExplorer';
 import { AttributeRow } from './AttributeRow';
 
 interface GraphExplorerProps {
