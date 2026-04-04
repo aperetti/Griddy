@@ -31,6 +31,7 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
         configs, selectedConfigId, setSelectedConfigId, rules,
         editingRule, setEditingRule, saveError,
         isAuthenticated, setIsAuthenticated,
+        handleSetDefault,
         handleSaveRule, handleDeleteRule, handleDuplicateRule,
         createConfig, deleteConfig, handleTestRule,
         handleExportConfig, handleImportConfig
