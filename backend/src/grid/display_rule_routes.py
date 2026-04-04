@@ -239,7 +239,7 @@ async def duplicate_config_rule(rule_id: int, username: str = Depends(get_curren
             return {"id": cursor.lastrowid, "name": new_name}
     return await run_in_threadpool(_duplicate)
 
-@router.get("/active")
+@router.get("/profile/active")
 async def get_active_config():
     """Returns the current active configuration profile and its rules."""
     def _get():

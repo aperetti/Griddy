@@ -15,6 +15,7 @@ services:
       - PARQUET_DIR=/data/cim_readings
       - ADMIN_DB_PATH=/data/config/admin_config.db
       - CONFIG_DB_PATH=/data/config/admin_config.db
+      - TOPOLOGY_DB_PATH=/data/grid_topology.sqlite
       - CIM_MODEL_PATH=/app/cim/IEEE8500.xml
       - WEATHER_DATA_PATH=/app/cim/weather.epw
       - CIMG_URL=bolt://neo4j:7687
@@ -43,6 +44,15 @@ services:
       - "${FRONTEND_PORT:-8080}:80"
     depends_on:
       - backend
+    restart: unless-stopped
+
+  maintenance:
+    image: nginx:alpine
+    container_name: grid-maintenance
+    volumes:
+      - ./maintenance:/usr/share/nginx/html:ro
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
     restart: unless-stopped
 
   documentation:
