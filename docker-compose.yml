@@ -48,6 +48,7 @@ services:
 
   maintenance:
     image: nginx:alpine
+    profiles: ["maintenance"]
     container_name: grid-maintenance
     volumes:
       - ./maintenance:/usr/share/nginx/html:ro
