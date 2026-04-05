@@ -55,6 +55,11 @@ export const loadHeatMapPlugin: SdkPluginDefinition = {
             const est = await fetchLoadMapEstimate(nodeId, start, end);
             const threshold = Number(ctx.systemConfig['analytics_threshold'] || DEFAULT_THRESHOLD);
 
+            ctx.updateWindowProps(windowId, {
+                startTime: start,
+                endTime: end,
+            } as any);
+
             if (est.estimated_rows > threshold) {
                 ctx.updateWindowProps(windowId, {
                     loading: false,
@@ -101,6 +106,8 @@ export const loadHeatMapPlugin: SdkPluginDefinition = {
             isPaused: instance.isPaused,
             zIndex: instance.zIndex ?? 1000,
             onConfirm,
+            startTime: instance.startTime,
+            endTime: instance.endTime,
         });
     },
 };

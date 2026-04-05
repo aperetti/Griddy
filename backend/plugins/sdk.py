@@ -266,7 +266,7 @@ class PluginAnalyticsService:
         """Calculate aggregated edge load for map-wide visualization."""
         self._check("analytics:load")
         from src.analytics.map_edge_load import MapEdgeLoadUseCase
-        uc = MapEdgeLoadUseCase(self._engine, self._db_path)
+        uc = MapEdgeLoadUseCase(self._engine, self._db_path, self._parquet_dir)
         return uc.execute(start_time, end_time, agg, start_node_id=start_node_id)
 
     def estimate_edge_load_map(
@@ -279,7 +279,7 @@ class PluginAnalyticsService:
         """Estimate row count before running a full edge load query."""
         self._check("analytics:load")
         from src.analytics.map_edge_load import MapEdgeLoadUseCase
-        uc = MapEdgeLoadUseCase(self._engine, self._db_path)
+        uc = MapEdgeLoadUseCase(self._engine, self._db_path, self._parquet_dir)
         return uc.estimate(start_time, end_time, agg, start_node_id=start_node_id)
 
 
