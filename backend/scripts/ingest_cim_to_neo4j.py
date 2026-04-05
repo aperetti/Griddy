@@ -184,16 +184,25 @@ def main() -> None:
     )
     parser.add_argument("xml_path", help="CIM XML file or directory")
     parser.add_argument("--url",         default=os.getenv("CIMG_URL", "bolt://localhost:7687"))
-    parser.add_argument("--username",    default=os.getenv("CIMG_USERNAME", "neo4j"))
-    parser.add_argument("--password",    default=os.getenv("CIMG_PASSWORD", "password123"))
+    parser.add_argument("--username",    default=os.getenv("CIMG_USERNAME"))
+    parser.add_argument("--password",    default=os.getenv("CIMG_PASSWORD"))
     parser.add_argument("--database",    default="neo4j")
     parser.add_argument("--cim-profile", default=os.getenv("CIMG_CIM_PROFILE", "cimhub_2023"),
                         dest="cim_profile")
     args = parser.parse_args()
 
     url = args.url
+    username = args.username
+    password = args.password
 
-    ingest_cim(args.xml_path, url, args.username, args.password,
+    if not username:
+        logger.error("Neo4j username is required (provide via --username or CIMG_USERNAME env var)")
+        sys.exit(1)
+    if not password:
+        logger.error("Neo4j password is required (provide via --password or CIMG_PASSWORD env var)")
+        sys.exit(1)
+
+    ingest_cim(args.xml_path, url, username, password,
                args.database, args.cim_profile)
 
 
