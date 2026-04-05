@@ -33,12 +33,12 @@ export const diagnosticExplorerPlugin: SdkPluginDefinition = {
     },
 
     renderWindow(instance, callbacks) {
-        // Our component handles the display logic
         return createElement(DiagnosticExplorerWindow, { 
             instance: instance as any, 
             onClose: callbacks.onClose, 
             onMinimize: callbacks.onMinimize,
-            onFocus: () => {} 
+            onFocus: () => {},
+            onSelectAndNavigateToNode: callbacks.selectAndNavigateToNode
         });
     },
 };

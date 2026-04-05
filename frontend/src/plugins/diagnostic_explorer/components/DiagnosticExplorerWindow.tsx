@@ -11,13 +11,15 @@ interface DiagnosticExplorerWindowProps {
     onClose: (id: string) => void;
     onMinimize: (id: string) => void;
     onFocus: (id: string) => void;
+    onSelectAndNavigateToNode?: (id: string | string[]) => void;
 }
 
 export const DiagnosticExplorerWindow: React.FC<DiagnosticExplorerWindowProps> = ({
     instance,
     onClose,
     onMinimize,
-    onFocus
+    onFocus,
+    onSelectAndNavigateToNode
 }) => {
     // initialId comes from the window nodeIds or edgeIds (set during handleRun)
     const initialId = instance.nodeIds?.[0] || (instance as any).edgeIds?.[0];
@@ -32,6 +34,13 @@ export const DiagnosticExplorerWindow: React.FC<DiagnosticExplorerWindowProps> =
         schema,
         isMobile
     } = useDiagnosticExplorer(initialId);
+
+    const handleSelectRoot = (id: string | null) => {
+        selectRoot(id);
+        if (id && onSelectAndNavigateToNode) {
+            onSelectAndNavigateToNode(id);
+        }
+    };
 
     // Filter out internal attribute types from rule builder selection
     const handleSelectAttribute = (path: string, value: any) => {
@@ -72,7 +81,7 @@ export const DiagnosticExplorerWindow: React.FC<DiagnosticExplorerWindowProps> =
                         searchable
                         searchValue={searchValue}
                         onSearchChange={setSearchValue}
-                        onChange={(val) => selectRoot(val)}
+                        onChange={handleSelectRoot}
                         comboboxProps={{ withinPortal: true, zIndex: 1000000 }}
                         styles={{ input: { background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)' } }}
                     />

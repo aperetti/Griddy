@@ -40,10 +40,13 @@ test.describe('Visual Rules Editor', () => {
     });
 
     // Ensure we have a profile selected
-    const profileSelect = page.getByLabel('Display Profile');
-    const profileValue = await profileSelect.inputValue();
+    const profileSelect = page.getByRole('combobox', { name: 'Display Profile' });
     
-    if (!profileValue) {
+    // Mantine Select might not have inputValue() set on the hidden input in some versions
+    // so we check if the selected text is visible instead.
+    const hasProfile = await page.getByText('Default Grid View (Default)').isVisible();
+    
+    if (!hasProfile) {
       // Click + button and then "New Profile"
       await page.locator('button').filter({ has: page.locator('svg.lucide-plus') }).last().click();
       await page.getByText('New Profile').click();

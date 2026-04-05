@@ -49,7 +49,7 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
 
     // Collect all equipment mRIDs present in the active topology.
     // These scope each rule query so Neo4j never scans the full graph.
-    const activeMrids = useMemo(() => {
+    const activeMridsKey = useMemo(() => {
         const mrids = new Set<string>();
         for (const n of rawNodes) {
             for (const eq of n.attached_equipment || []) {
@@ -59,15 +59,16 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
         for (const e of rawEdges) {
             if (e.id) mrids.add(e.id);
         }
-        return Array.from(mrids);
+        return Array.from(mrids).sort().join(',');
     }, [rawNodes, rawEdges]);
 
     useEffect(() => {
-        if (activeMrids.length === 0) {
+        if (!activeMridsKey) {
             setRuleMatches([]);
             return;
         }
 
+        const activeMrids = activeMridsKey.split(',');
         let cancelled = false;
 
         const run = async () => {
@@ -119,7 +120,7 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
 
         run();
         return () => { cancelled = true; };
-    }, [activeMrids, refreshVersion]);
+    }, [activeMridsKey, refreshVersion]);
 
     // Apply rule display props to nodes.  First matching rule wins (sorted by priority DESC).
     const classifiedNodes = useMemo((): Node[] => {

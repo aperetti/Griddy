@@ -15,7 +15,7 @@ export default defineConfig({
     host: true,
     proxy: {
       '/api/display-rules': {
-        target: 'http://localhost:8090',
+        target: 'http://localhost:8000',
         changeOrigin: true
       },
       '/api': {
