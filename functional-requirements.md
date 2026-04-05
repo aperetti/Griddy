@@ -121,3 +121,4 @@ Users can create conditional formatting rules based on any attribute of a grid e
 * **Edge Exploration**: Users can select edges in the graph to view relationship types and any edge-specific attributes.
 * **Search Integration**: Users can start a diagnostic session by searching for an entity by name or mRID.
 * **Contextual Launch**: Right-clicking an asset on the map or in another analysis screen allows launching the Diagnostic Explorer focused on that entity.
+* **PC Layout Optimization**: When viewed on a PC (non-mobile viewport), the GraphExplorer must use a side-by-side layout with the attribute table as a right-hand sidebar to optimize screen real estate and maximize the graph canvas area.

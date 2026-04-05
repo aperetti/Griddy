@@ -114,3 +114,4 @@
 * **Non-Directional Traversal**: The backend must support fetching all immediate neighbors (incoming and outgoing edges) for any given CIM mRID to support open-ended exploration.
 * **Lazy Detail Loading**: Node attributes must be fetched on-demand (on click) to minimize payload size during large graph expansions.
 * **Traversal Context**: The explorer must track the path taken from the root node to provide semantic context for attribute inspection.
+* **Component Responsive Layout**: The `GraphExplorer` must implement a responsive layout that switches from a vertical `Stack` (mobile/small screens) to a horizontal `Flex` container (PC/large screens). In PC mode, the attribute table must occupy a 350px fixed-width sidebar on the right, with the graph canvas expanding to fill the remaining horizontal space.
