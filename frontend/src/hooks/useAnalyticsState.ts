@@ -21,6 +21,7 @@ export interface AnalysisInstance {
   id: string;
   type: keyof AnalysisType | string;
   nodeIds: string[];
+  edgeIds?: string[];
   nodeName: string;
   isOpen: boolean;
   isMinimized: boolean;

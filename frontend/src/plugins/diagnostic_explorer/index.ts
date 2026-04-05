@@ -14,8 +14,17 @@ export const diagnosticExplorerPlugin: SdkPluginDefinition = {
     appliesToNodes: () => true,
 
     handleRun(ctx) {
-        const selectedId = ctx.selectedNodes[0]?.id || null;
-        const reportName = selectedId ? `Explore: ${ctx.selectedNodes[0].name || selectedId}` : 'Diagnostic Explorer';
+        const selectedNode = ctx.selectedNodes[0];
+        const selectedEdgeId = ctx.selectedEdgeIds[0];
+        
+        let reportName = 'Diagnostic Explorer';
+        if (selectedNode) {
+            reportName = `Explore: ${selectedNode.name || selectedNode.id}`;
+        } else if (selectedEdgeId) {
+            // Truncate long edge IDs for readability
+            const displayId = selectedEdgeId.length > 12 ? `${selectedEdgeId.slice(0, 8)}…` : selectedEdgeId;
+            reportName = `Explore Edge: ${displayId}`;
+        }
         
         const windowId = ctx.openAnalysisWindow('diagnostic_explorer', reportName);
         

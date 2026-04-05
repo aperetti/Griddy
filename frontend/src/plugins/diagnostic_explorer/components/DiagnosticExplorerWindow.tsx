@@ -19,8 +19,8 @@ export const DiagnosticExplorerWindow: React.FC<DiagnosticExplorerWindowProps> =
     onMinimize,
     onFocus
 }) => {
-    // initialId comes from the window nodeIds (set during handleRun)
-    const initialId = instance.nodeIds?.[0];
+    // initialId comes from the window nodeIds or edgeIds (set during handleRun)
+    const initialId = instance.nodeIds?.[0] || (instance as any).edgeIds?.[0];
     
     const {
         selectedRootId,
