@@ -51,6 +51,10 @@ export const loadHeatMapPlugin: SdkPluginDefinition = {
         const windowId = ctx.openAnalysisWindow('load_heatmap', nodeName);
 
         const { start, end } = ctx.dateRange;
+        if (!start || !end) {
+            console.error('[load_heatmap] Cannot run analysis: simulation time range is missing or uninitialized.');
+            return;
+        }
         try {
             const est = await fetchLoadMapEstimate(nodeId, start, end);
             const threshold = Number(ctx.systemConfig['analytics_threshold'] || DEFAULT_THRESHOLD);

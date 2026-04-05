@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Query, HTTPException
-from backend.plugins.sdk import get_sdk
+from plugins.sdk import get_sdk
 from typing import Any
 
 router = APIRouter(prefix="/api/plugins/load_heatmap", tags=["plugins", "load_heatmap"])

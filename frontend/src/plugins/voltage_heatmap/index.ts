@@ -59,6 +59,10 @@ export const voltageHeatMapPlugin: SdkPluginDefinition = {
         const windowId = ctx.openAnalysisWindow('voltage_heatmap', nodeName);
 
         const { start, end } = ctx.dateRange;
+        if (!start || !end) {
+            console.error('[voltage_heatmap] Cannot run analysis: simulation time range is missing.');
+            return;
+        }
         try {
             const est = await fetchVoltageMapEstimate(nodeId, start, end);
             const threshold = Number(ctx.systemConfig['analytics_threshold'] || DEFAULT_THRESHOLD);
