@@ -50,6 +50,8 @@ function AnalysisWindowComponent({
 }: AnalysisWindowProps) {
     const [showFilters, setShowFilters] = useState<boolean>(false);
     const [copied, setCopied] = useState(false);
+    const [isMaximized, setIsMaximized] = useState(false);
+    const preMaximizeState = useRef<typeof rndState | null>(null);
 
     const [rndState, setRndState] = useState<{ x: number; y: number; width: string | number; height: string | number }>(() => {
         const saved = localStorage.getItem(storageKey);
@@ -93,12 +95,41 @@ function AnalysisWindowComponent({
         const newState = clampToViewport({ ...rndState, ...d });
         setRndState(newState);
         saveState(newState);
+        if (isMaximized) {
+            setIsMaximized(false);
+            preMaximizeState.current = null;
+        }
     };
 
     const handleResetPosition = () => {
         const reset = defaultPosition();
         setRndState(reset);
         saveState(reset);
+    };
+
+    const handleMaximize = () => {
+        if (isMaximized && preMaximizeState.current) {
+            const restored = preMaximizeState.current;
+            preMaximizeState.current = null;
+            setIsMaximized(false);
+            setRndState(restored);
+            saveState(restored);
+        } else {
+            preMaximizeState.current = rndState;
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            const topMargin = vh < 600 ? 40 : 80;
+            const margin = 10;
+            const maximized = {
+                x: margin,
+                y: topMargin + margin,
+                width: vw - margin * 2,
+                height: vh - topMargin - margin * 2,
+            };
+            setIsMaximized(true);
+            setRndState(maximized);
+            saveState(maximized);
+        }
     };
 
     const handleCopy = () => {
@@ -211,8 +242,8 @@ function AnalysisWindowComponent({
                         )}
                         
                         {layoutMode === 'floating' && (
-                            <Tooltip label="Reset Layout" withArrow position="bottom" withinPortal zIndex={zIndex + 100}>
-                                <ActionIcon variant="subtle" color="gray" onClick={handleResetPosition}>
+                            <Tooltip label={isMaximized ? "Restore" : "Maximize"} withArrow position="bottom" withinPortal zIndex={zIndex + 100}>
+                                <ActionIcon variant={isMaximized ? "filled" : "subtle"} color={isMaximized ? "blue" : "gray"} onClick={handleMaximize}>
                                     <Maximize2 size={16} />
                                 </ActionIcon>
                             </Tooltip>
