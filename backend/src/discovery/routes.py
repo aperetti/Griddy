@@ -218,13 +218,13 @@ async def execute_cim_query(request: CypherQueryRequest):
         try:
             driver = GraphDatabase.driver(neo4j_url, auth=(neo4j_user, neo4j_password))
             with driver.session(database=neo4j_database) as session:
-                result = session.run(request.cypher, **request.params)
-                records = result.data()
-                keys: List[str] = (
-                    result.keys()
-                    if hasattr(result, "keys")
-                    else (list(records[0].keys()) if records else [])
-                )
+                def work(tx):
+                    res = tx.run(request.cypher, **request.params)
+                    return res.data(), res.keys() if hasattr(res, "keys") else None
+                records, keys = session.execute_read(work)
+                if not keys and records:
+                    keys = list(records[0].keys())
+                keys = keys or []
             driver.close()
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Neo4j query error: {exc}")
