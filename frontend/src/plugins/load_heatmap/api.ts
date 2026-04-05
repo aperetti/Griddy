@@ -12,7 +12,10 @@ export interface LoadMapEstimate {
 export interface LoadMapResponse {
     edge_count: number;
     edge_loads: Record<string, number>;
-    agg: string;
+    aggregated: boolean;
+    start_time?: string;
+    end_time?: string;
+    warning?: string;
     error?: string;
 }
 

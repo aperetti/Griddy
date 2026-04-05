@@ -54,6 +54,10 @@ export const consumptionPlugin: SdkPluginDefinition = {
         const windowId = ctx.openAnalysisWindow('consumption', nodeName);
 
         const { start, end } = ctx.dateRange;
+        if (!start || !end) {
+            console.error('[consumption] Cannot run analysis: simulation time range is missing.');
+            return;
+        }
         try {
             const est = await fetchConsumptionEstimatePlugin(nodeIds, start, end);
             if (est.downstream_node_ids?.length) ctx.addHighlightedNodes(est.downstream_node_ids);

@@ -15,6 +15,8 @@ export interface LoadHeatMapModalProps {
   isPaused: boolean;
   zIndex: number;
   onConfirm: () => void;
+  startTime?: string;
+  endTime?: string;
 }
 
 export const LoadHeatMapModal: React.FC<LoadHeatMapModalProps> = ({
@@ -29,7 +31,26 @@ export const LoadHeatMapModal: React.FC<LoadHeatMapModalProps> = ({
   isPaused,
   zIndex,
   onConfirm,
+  startTime,
+  endTime,
 }) => {
+  const periodStart = data?.start_time || startTime;
+  const periodEnd = data?.end_time || endTime;
+
+  const formatDate = (iso?: string) => {
+    if (!iso) return 'N/A';
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString(undefined, { 
+        month: 'short', 
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch { return iso; }
+  };
+
   return (
     <AnalysisWindow
       title={`Network Load: ${nodeName}`}
@@ -95,10 +116,21 @@ export const LoadHeatMapModal: React.FC<LoadHeatMapModalProps> = ({
               </Stack>
             </Paper>
 
+            {data?.warning && (
+              <Alert icon={<AlertCircle size={14} />} title="Calculation Note" color="orange" variant="light">
+                {data.warning}
+              </Alert>
+            )}
+
             <Alert color="indigo" variant="light" py="xs" icon={<Activity size={14} />}>
-              <Text size="xs">
-                Color scale: <Text component="span" c="green" fw={700}>Green (Low)</Text> → <Text component="span" c="orange" fw={700}>Yellow</Text> → <Text component="span" c="red" fw={700}>Red (High)</Text>
-              </Text>
+              <Stack gap={4}>
+                <Text size="xs">
+                  Color scale: <Text component="span" c="green" fw={700}>Green (Low)</Text> → <Text component="span" c="orange" fw={700}>Yellow</Text> → <Text component="span" c="red" fw={700}>Red (High)</Text>
+                </Text>
+                <Text size="xs" c="dimmed">
+                  Period: <Text component="span" fw={600} c="indigo">{formatDate(periodStart)}</Text> to <Text component="span" fw={600} c="indigo">{formatDate(periodEnd)}</Text>
+                </Text>
+              </Stack>
             </Alert>
 
             <Button
