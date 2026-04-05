@@ -117,8 +117,10 @@ class MapEdgeLoadUseCase:
             downstream_nodes, _ = discover.execute(start_node_id)
             if downstream_nodes:
                 downstream_nodes.add(start_node_id)
-                node_ids_str = ", ".join([f"'{nid}'" for nid in downstream_nodes])
-                node_filter = f"AND node_id IN ({node_ids_str})"
+                nodes_to_query = list(downstream_nodes)
+                placeholders = ",".join(["?"] * len(nodes_to_query))
+                node_filter = f"AND node_id IN ({placeholders})"
+                query_params.extend(nodes_to_query)
 
         node_load_query = f"""
             SELECT 
