@@ -150,19 +150,19 @@ export default function App() {
     p => p.appliesToNodes(selectedNodes, topology.highlightedEdges.size)
   );
 
-  const selectAndNavigateToNode = useCallback(async (targetId: string | string[]) => {
+  const selectAndNavigateToNode = useCallback(async (targetId: string | string[], hintModelId?: string) => {
     const ids = Array.isArray(targetId) ? targetId : [targetId];
-    
+
     if (ids.length === 1) {
       const id = ids[0];
-      
+
       // 1. Try finding as a Node (or attached equipment on a node)
-      const node = topology.nodes.find(n => 
-        n.id === id || 
+      const node = topology.nodes.find(n =>
+        n.id === id ||
         n.name === id ||
         n.attached_equipment?.some(eq => eq.mrid === id || eq.name === id)
       );
-      
+
       if (node) {
         topology.setHighlightedNodes(new Set([node.id]));
         topology.setHighlightedEdges(new Set());
@@ -175,7 +175,7 @@ export default function App() {
       if (edge) {
         topology.setHighlightedNodes(new Set());
         topology.setHighlightedEdges(new Set([edge.id || `${edge.source}-${edge.target}`]));
-        
+
         // Center on edge midpoint
         const midLon = (edge.sourcePosition[0] + edge.targetPosition[0]) / 2;
         const midLat = (edge.sourcePosition[1] + edge.targetPosition[1]) / 2;
@@ -183,18 +183,20 @@ export default function App() {
         return;
       }
 
-      // 3. Not found in currently loaded models - try to resolve and load
+      // 3. Not found in currently loaded models — activate the model then navigate
       try {
-        const res = await resolveNodeModel(id);
-        const actualId = res.mrid || res.name || id;
-        const feeder_id = res.feeder_id;
-        
-        pendingNavigationRef.current = { id: actualId, zoom: 18 };
-        
+        let feeder_id = hintModelId;
+        if (!feeder_id) {
+          const res = await resolveNodeModel(id);
+          feeder_id = res.feeder_id;
+        }
+
+        pendingNavigationRef.current = { id, zoom: 18 };
+
         if (!topology.activeModelIds.includes(feeder_id)) {
-          topology.setActiveModelIds(prev => [...new Set([...prev, feeder_id])]);
+          topology.setActiveModelIds(prev => [...new Set([...prev, feeder_id!])]);
         } else {
-          // Trigger the effect to check again, as it might have just finished loading
+          // Model already active but node not yet visible — trigger re-check
           setNavTrigger(prev => prev + 1);
         }
       } catch (err) {
@@ -453,7 +455,7 @@ export default function App() {
           <OverlayControls
             activeModelIds={topology.activeModelIds}
             setActiveModelIds={topology.setActiveModelIds}
-            onSearchSelect={onNodeClick}
+            onSearchSelect={(node) => selectAndNavigateToNode(node.id, node.model_id)}
             onSettingsClick={() => setSettingsOpen(true)}
             onDisplayRulesClick={() => setDisplayRulesOpen(true)}
             onRefreshTopology={topology.refreshTopology}

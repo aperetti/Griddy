@@ -253,6 +253,52 @@ class CimModelRegistry:
 
     # ── Combined topology ─────────────────────────────────────────
 
+    def search_neo4j_global(self, query: str, class_name: str | None = None) -> list[dict]:
+        """Search all feeders in Neo4j directly, regardless of which are loaded in memory."""
+        url = os.getenv("CIMG_URL")
+        if not url:
+            return []
+
+        username = os.getenv("CIMG_USERNAME", "neo4j")
+        password = os.getenv("CIMG_PASSWORD", "password123")
+        database = os.getenv("CIMG_DATABASE", "neo4j")
+
+        # Build label filter clause
+        label_clause = f"AND any(lbl IN labels(n) WHERE toLower(lbl) CONTAINS toLower('{class_name}'))" if class_name else ""
+
+        cypher = f"""
+        MATCH (n)
+        WHERE n.`IdentifiedObject.name` CONTAINS $query {label_clause}
+        OPTIONAL MATCH (n)-[:`Equipment.EquipmentContainer`|MemberOf*0..6]-(f:Feeder)
+        RETURN
+            n.`IdentifiedObject.mRID`      AS id,
+            n.`IdentifiedObject.name`      AS name,
+            labels(n)[0]                   AS cim_type,
+            f.`IdentifiedObject.name`      AS model_id
+        LIMIT 50
+        """
+
+        try:
+            from neo4j import GraphDatabase
+            driver = GraphDatabase.driver(url, auth=(username, password))
+            results = []
+            with driver.session(database=database) as session:
+                for record in session.run(cypher, {"query": query}):
+                    mid = record["model_id"] or ""
+                    results.append({
+                        "id": record["id"] or "",
+                        "name": record["name"] or record["id"] or "",
+                        "type": "equipment",
+                        "model_id": mid,
+                        "cim_type": record["cim_type"] or "Equipment",
+                        "loaded": mid in self._active_models,
+                    })
+            driver.close()
+            return results
+        except Exception as e:
+            logger.error("Global Neo4j search failed: %s", e)
+            return []
+
     def search_all_models(self, query: str, class_name: str | None = None) -> list[dict]:
         """Search across all loaded models for nodes or equipment matching the query."""
         results = []
@@ -285,6 +331,7 @@ class CimModelRegistry:
                                 "type": "node",
                                 "model_id": mid,
                                 "cim_type": cim_type,
+                                "loaded": True,
                             }
                         )
 
@@ -310,6 +357,7 @@ class CimModelRegistry:
                                     "type": "equipment",
                                     "model_id": mid,
                                     "cim_type": cim_type,
+                                    "loaded": True,
                                 }
                             )
                     if len(results) >= 50:
@@ -338,6 +386,7 @@ class CimModelRegistry:
                                     "type": "edge",
                                     "model_id": mid,
                                     "cim_type": cim_type,
+                                    "loaded": True,
                                 }
                             )
                     if len(results) >= 50:

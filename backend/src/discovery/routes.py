@@ -150,9 +150,13 @@ async def get_cim_neighbors(target_id: str):
 
 @router.get("/search")
 async def search_cim(
-    query: str = Query(..., min_length=2), class_name: str | None = None
+    query: str = Query(..., min_length=2),
+    class_name: str | None = None,
+    global_search: bool = False,
 ):
-    """Search across all loaded models for nodes matching the query."""
+    """Search for nodes/equipment. global_search=true queries Neo4j directly across all feeders."""
+    if global_search:
+        return registry.search_neo4j_global(query, class_name=class_name)
     return registry.search_all_models(query, class_name=class_name)
 
 

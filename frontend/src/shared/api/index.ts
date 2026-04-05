@@ -487,10 +487,13 @@ export const fetchCimNeighbors = async (id: string): Promise<any> => {
     return res.json();
 };
 
-export const searchCim = async (query: string, className?: string): Promise<any[]> => {
+export const searchCim = async (query: string, className?: string, globalSearch?: boolean): Promise<any[]> => {
     let url = `${API_BASE}/cim/search?query=${encodeURIComponent(query)}`;
     if (className) {
         url += `&class_name=${encodeURIComponent(className)}`;
+    }
+    if (globalSearch) {
+        url += `&global_search=true`;
     }
     const response = await fetch(url);
     if (!response.ok) throw new Error('Search failed');
