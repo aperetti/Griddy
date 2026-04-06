@@ -22,6 +22,8 @@ interface AnalysisWindowProps {
     layoutMode?: 'floating' | 'grid';
     initialWidth?: number | string;
     initialHeight?: number | string;
+    /** Override styles on the content wrapper (e.g. disable scroll/padding for canvas children). */
+    contentStyle?: React.CSSProperties;
 }
 
 /**
@@ -47,6 +49,7 @@ function AnalysisWindowComponent({
     layoutMode = 'floating',
     initialWidth,
     initialHeight,
+    contentStyle,
 }: AnalysisWindowProps) {
     const [showFilters, setShowFilters] = useState<boolean>(false);
     const [copied, setCopied] = useState(false);
@@ -287,6 +290,7 @@ function AnalysisWindowComponent({
                             overflow: 'auto',
                             padding: '10px',
                             minHeight: loading ? 200 : 100,
+                            ...contentStyle,
                         }}
                     >
                         {children}

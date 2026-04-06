@@ -70,6 +70,7 @@ export interface SdkPluginContext {
 export interface SdkPluginCallbacks {
     onClose: () => void;
     onMinimize: () => void;
+    onFocus: () => void;
     /** Update map-wide node colors/averages */
     setNodeAverages?: (averages: Record<string, number> | null) => void;
     /** Update global voltage scale */

@@ -77,11 +77,17 @@ class TopologyEngine(GraphEngine):
                 self._forward_adj[src].append((dst, eid))
                 self._reverse_adj[dst].append((src, eid))
 
-        # Spatial stitching: nodes at the same lat/lon get zero-cost peer connections
+        # Spatial stitching: nodes at the same lat/lon get zero-cost peer connections.
+        # Skip (0.0, 0.0) — it is a placeholder for nodes whose coordinates are
+        # unknown; grouping them would incorrectly merge unrelated buses.
         pos_index: Dict[Tuple[float, float], List[str]] = defaultdict(list)
         for nid, node in self._nodes.items():
             if node.latitude is not None and node.longitude is not None:
-                pos = (round(node.latitude, 8), round(node.longitude, 8))
+                lat = round(node.latitude, 8)
+                lon = round(node.longitude, 8)
+                if lat == 0.0 and lon == 0.0:
+                    continue  # sentinel — not a real coordinate
+                pos = (lat, lon)
                 pos_index[pos].append(nid)
 
         stitch_group_count = 0
@@ -108,6 +114,28 @@ class TopologyEngine(GraphEngine):
 
     def find_upstream(self, start_node_id: str, max_depth: int = None) -> Tuple[List[str], List[str]]:
         return self._bfs(start_node_id, "upstream", max_depth)
+
+    def get_all_neighbors(self, node_id: str) -> list[str]:
+        """Return all neighbors of *node_id*: forward edges, reverse edges, and stitch peers.
+
+        Deduplicated; order is forward → reverse → stitch.
+        Used by the one-line explorer to trace upstream paths across stitch boundaries.
+        """
+        seen: set[str] = set()
+        result: list[str] = []
+        for nb, _ in self._forward_adj.get(node_id, []):
+            if nb not in seen:
+                seen.add(nb)
+                result.append(nb)
+        for nb, _ in self._reverse_adj.get(node_id, []):
+            if nb not in seen:
+                seen.add(nb)
+                result.append(nb)
+        for nb in self._stitch_adj.get(node_id, []):
+            if nb not in seen:
+                seen.add(nb)
+                result.append(nb)
+        return result
 
     def get_node_phases(self, node_ids: List[str]) -> Dict[str, List[str]]:
         return {nid: self._nodes[nid].phases for nid in node_ids if nid in self._nodes}

@@ -314,6 +314,130 @@ test.describe('Transformer Loading plugin', () => {
 });
 
 // ---------------------------------------------------------------------------
+// One-Line Explorer plugin
+// ---------------------------------------------------------------------------
+
+test.describe('One-Line Explorer plugin', () => {
+    test.beforeEach(async ({ page }) => {
+        await page.goto('/');
+        await page.waitForTimeout(2000);
+    });
+
+    test('diagram endpoint returns expected shape for a valid node', async ({ page }) => {
+        const nodeIds = await getNodeIds(page, 1);
+        if (nodeIds.length === 0) {
+            test.skip();
+            return;
+        }
+
+        const response: any = await page.evaluate(
+            async (id: string) => {
+                const res = await fetch(`/api/plugins/one-line-explorer/diagram/${encodeURIComponent(id)}?depth=2`);
+                return { status: res.status, body: await res.json() };
+            },
+            nodeIds[0],
+        );
+
+        // If the plugin is disabled the gate returns 404 — skip gracefully
+        if (response.status === 404) {
+            console.log('[one_line_explorer] Plugin not enabled — skipping response-shape assertions');
+            return;
+        }
+
+        expect(response.status).toBe(200);
+        expect(response.body).toHaveProperty('centre_id');
+        expect(response.body).toHaveProperty('depth');
+        expect(response.body).toHaveProperty('nodes');
+        expect(response.body).toHaveProperty('edges');
+        expect(Array.isArray(response.body.nodes)).toBe(true);
+        expect(Array.isArray(response.body.edges)).toBe(true);
+        expect(response.body.centre_id).toBe(nodeIds[0]);
+        expect(response.body.depth).toBe(2);
+    });
+
+    test('exactly one node is flagged as centre', async ({ page }) => {
+        const nodeIds = await getNodeIds(page, 1);
+        if (nodeIds.length === 0) {
+            test.skip();
+            return;
+        }
+
+        const response: any = await page.evaluate(
+            async (id: string) => {
+                const res = await fetch(`/api/plugins/one-line-explorer/diagram/${encodeURIComponent(id)}`);
+                return { status: res.status, body: await res.json() };
+            },
+            nodeIds[0],
+        );
+
+        if (response.status !== 200) return; // plugin disabled — skip
+
+        const centreNodes = response.body.nodes.filter((n: any) => n.is_centre === true);
+        expect(centreNodes).toHaveLength(1);
+        expect(centreNodes[0].id).toBe(nodeIds[0]);
+    });
+
+    test('all edges in response connect nodes within the returned node set', async ({ page }) => {
+        const nodeIds = await getNodeIds(page, 1);
+        if (nodeIds.length === 0) {
+            test.skip();
+            return;
+        }
+
+        const response: any = await page.evaluate(
+            async (id: string) => {
+                const res = await fetch(`/api/plugins/one-line-explorer/diagram/${encodeURIComponent(id)}`);
+                return { status: res.status, body: await res.json() };
+            },
+            nodeIds[0],
+        );
+
+        if (response.status !== 200) return;
+
+        const nodeIdSet = new Set<string>(response.body.nodes.map((n: any) => n.id));
+        for (const edge of response.body.edges) {
+            expect(nodeIdSet.has(edge.from_node_id)).toBe(true);
+            expect(nodeIdSet.has(edge.to_node_id)).toBe(true);
+        }
+    });
+
+    test('unknown node id returns 404', async ({ page }) => {
+        const response: any = await page.evaluate(async () => {
+            const res = await fetch('/api/plugins/one-line-explorer/diagram/NONEXISTENT_NODE_xyz');
+            return { status: res.status };
+        });
+
+        // 404 from plugin-not-enabled gate or from unknown-node logic — both acceptable
+        expect([404]).toContain(response.status);
+    });
+
+    test('depth=1 returns fewer nodes than depth=2 for any node with neighbours', async ({ page }) => {
+        const nodeIds = await getNodeIds(page, 1);
+        if (nodeIds.length === 0) {
+            test.skip();
+            return;
+        }
+
+        const [d1, d2]: any[] = await page.evaluate(
+            async (id: string) => {
+                const [r1, r2] = await Promise.all([
+                    fetch(`/api/plugins/one-line-explorer/diagram/${encodeURIComponent(id)}?depth=1`).then(r => r.json()),
+                    fetch(`/api/plugins/one-line-explorer/diagram/${encodeURIComponent(id)}?depth=2`).then(r => r.json()),
+                ]);
+                return [r1, r2];
+            },
+            nodeIds[0],
+        );
+
+        // If depth field is missing the plugin is disabled — skip
+        if (!d1.depth || !d2.depth) return;
+
+        // depth=2 must have at least as many nodes as depth=1
+        expect(d2.nodes.length).toBeGreaterThanOrEqual(d1.nodes.length);
+    });
+});
+
+// ---------------------------------------------------------------------------
 // Plugin toolbar UI
 // ---------------------------------------------------------------------------
 

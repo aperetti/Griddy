@@ -1,0 +1,59 @@
+{
+  "name": "one_line_explorer",
+  "title": "One-Line Diagram",
+  "description": "Renders a one-line (single-line) connectivity diagram for a selected node, exploring 2 hops of neighbours. ConnectivityNodes are displayed as bus bars.",
+  "version": "0.1.0",
+  "author": "Antigravity",
+  "permissions": ["topology:read"],
+  "requirements": {
+    "description": "Generates a one-line diagram centred on a selected node with 2-depth neighbourhood traversal.",
+    "agent_directives": [
+      "Use this plugin when the user asks for a 'one-line diagram', 'single-line diagram', 'connectivity diagram', or 'one-line' for a node.",
+      "This plugin opens an analysis window with a structured diagram — not a force-directed graph."
+    ]
+  },
+  "_implementation_plan": {
+    "status": "scaffolded",
+    "summary": "One-line diagram plugin. Selected node → 2-depth BFS over topology edges. ConnectivityNodes rendered as bus bars. Mobile layout: top-down (TB). Desktop layout: left-to-right (LR). Uses reagraph with layoutType='treeTd2d' (mobile) or 'treeLr2d' (desktop).",
+    "completed_steps": [
+      "manifest.json created with plan",
+      "backend routes.py stub created",
+      "frontend index.ts stub created",
+      "frontend model/OneLineModel.ts types defined",
+      "frontend api.ts created",
+      "frontend hooks/useOneLineDiagram.ts created",
+      "frontend components/OneLineDiagramWindow.tsx created"
+    ],
+    "remaining_steps": [
+      "Implement bus-bar custom node renderer in reagraph",
+      "Style edge labels by equipment type (Transformer, ACLineSegment, Breaker, etc.)",
+      "Add attached equipment (EnergyConsumer, EnergySource) as tooltip or inline badge on bus bar nodes",
+      "Add Playwright e2e test",
+      "Add unit test for backend 2-hop BFS endpoint"
+    ],
+    "backend": {
+      "entry": "backend/plugins/one_line_explorer/routes.py",
+      "endpoint": "GET /api/plugins/one-line-explorer/diagram/{node_id}?depth=2",
+      "logic": "Use registry.get_combined_topology to get all nodes/edges. Build an undirected networkx graph. Use ego_graph(node_id, radius=depth) to extract the 2-hop subgraph. Return filtered nodes and edges with attached_equipment included on each bus bar node."
+    },
+    "frontend": {
+      "plugin_entry": "frontend/src/plugins/one_line_explorer/index.ts",
+      "files": {
+        "api.ts": "fetchOneLineDiagram(nodeId, depth) → GET /api/plugins/one-line-explorer/diagram/{nodeId}",
+        "model/OneLineModel.ts": "TypeScript interfaces: BusBarNode, EquipmentEdge, OneLineDiagramData. Pure transform functions.",
+        "hooks/useOneLineDiagram.ts": "Fetches diagram data, maps to reagraph nodes/edges, picks layoutType based on viewport width.",
+        "components/OneLineDiagramWindow.tsx": "AnalysisWindow wrapper around GraphCanvas from reagraph. Props: instance, onClose, onMinimize."
+      },
+      "layout": {
+        "mobile": "treeTd2d (top-down)",
+        "desktop": "treeLr2d (left-to-right)",
+        "breakpoint": "768px — use @mantine/hooks useMediaQuery or window.innerWidth"
+      },
+      "node_rendering": {
+        "ConnectivityNode": "Wide rectangle styled as a bus bar (dark grey/blue, full width)",
+        "Substation": "Wide rectangle styled as a bus bar with a distinct colour (amber/gold)"
+      },
+      "edge_rendering": "Label showing equipment type (e.g. 'Transformer 500kVA', 'Line 120m', 'Breaker [OPEN]')"
+    }
+  }
+}

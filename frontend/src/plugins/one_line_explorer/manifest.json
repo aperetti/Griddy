@@ -1,0 +1,5 @@
+{
+    "name": "one_line_explorer",
+    "version": "0.1.0",
+    "service_endpoint": "/api/plugins/one-line-explorer"
+}
