@@ -530,6 +530,7 @@ export default function App() {
           onSetNodeAverages={topology.setNodeAverages}
           onSetEdgeAverages={topology.setEdgeAverages}
           onSetVoltageScale={setVoltageScale}
+          onFocus={analytics.bringWindowToFront}
           onSelectAndNavigateToNode={selectAndNavigateToNode}
         />
       </div>

@@ -18,6 +18,7 @@ import type { AnalysisInstance } from '../hooks/useAnalyticsState';
 export interface PluginWindowCallbacks {
     onClose: () => void;
     onMinimize: () => void;
+    onFocus: () => void;
     /** Pre-bound to the instance ID — update the window without knowing its ID. */
     updateWindow: (updates: Partial<AnalysisInstance>) => void;
     /** Update map-wide node colors/averages */

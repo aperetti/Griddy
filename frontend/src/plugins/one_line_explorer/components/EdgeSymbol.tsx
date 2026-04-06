@@ -5,7 +5,6 @@
  * A background rect blanks the wire beneath each symbol so the
  * symbol reads cleanly without overlapping strokes.
  */
-import React from 'react';
 import type { LayoutEdge } from '../model/OneLineModel';
 
 const BG = '#0a0a0a';

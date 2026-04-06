@@ -1,4 +1,3 @@
-import React from 'react';
 import { Box, Stack, Loader, Text, Alert, Badge, Group } from '@mantine/core';
 import { AlertTriangle } from 'lucide-react';
 import { AnalysisWindow } from '../../../features/analytics/components/AnalysisWindow';
@@ -29,6 +28,7 @@ export const OneLineDiagramWindow: React.FC<OneLineDiagramWindowProps> = ({
             storageKey={`one-line-explorer-${instance.id}`}
             onClose={() => onClose(instance.id)}
             onMinimize={() => onMinimize(instance.id)}
+            onFocus={() => onFocus(instance.id)}
             zIndex={instance.zIndex}
             contentStyle={{ overflow: 'hidden', padding: 0 }}
         >
