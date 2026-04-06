@@ -104,12 +104,6 @@ function AnalysisWindowComponent({
         }
     };
 
-    const handleResetPosition = () => {
-        const reset = defaultPosition();
-        setRndState(reset);
-        saveState(reset);
-    };
-
     const handleMaximize = () => {
         if (isMaximized && preMaximizeState.current) {
             const restored = preMaximizeState.current;
