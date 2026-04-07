@@ -21,6 +21,10 @@
 * **Multi-Entity Search**: The search engine must support finding both Nodes and Edges by name or CIM mRID.
 * **Direct Navigation**: Selecting a search result (Node or Edge) must center the map on that entity and highlight it.
 
+### 1.5 Robust Regulator Support
+* **FR-CIM-03: Robust Regulator Identification**: The system must robustly identify Step Voltage Regulators across different CIM model variations. This includes identifying `PowerTransformer` entities as regulators if they are associated with `RatioTapChanger` or `StepVoltageRegulator` entities, even if standard hierarchical links (e.g., `TransformerTankEnd`) are missing.
+* **FR-CIM-04: Specialized Control Attributes**: For identified regulators, the system must extract and display specialized control parameters from `TapChangerControl` and `RegulatingControl`, including Set Point (`targetValue`), Bandwidth (`targetDeadband`), and Line Drop Compensation settings.
+
 ## 2. Analytical Agent Capabilities
 ### 2.1 Graph Navigation & Discovery
 * **Downstream Discovery**: Given a Device_ID (e.g., a specific Fuse), the agent must identify all downstream Transformers and their associated Meters.

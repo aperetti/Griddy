@@ -26,9 +26,11 @@ Implementation notes
 
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
+import logging
 
 import networkx as nx
 
+from src.grid.topology_engine import TopologyEngine
 from src.shared.dependencies import (
     registry,
     ensure_graph_built,
@@ -36,76 +38,161 @@ from src.shared.dependencies import (
     graph_engine,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/plugins/one-line-explorer", tags=["one_line_explorer"])
+
+_TRANSMISSION_KV_THRESHOLD = TopologyEngine.TRANSMISSION_KV_THRESHOLD
 
 
 def _find_upstream_path(G: nx.Graph, node_map: dict, node_id: str) -> list[str]:
-    """Return the ordered path [feeder_head, ..., node_id] tracing back to the source.
+    """Return the ordered path [upstream_target, ..., node_id].
 
-    Strategy
-    --------
-    1. Quick-exit — if the topology engine already knows this node IS the feeder
-       head (flow_depth == 0), return immediately.
+    Strategy — unified depth-constrained BFS
+    ------------------------------------------
+    BFS upstream from ``node_id`` following *decreasing* ``flow_depth``.
+    Stop at the first node that satisfies any of:
 
-    2. Primary — always call ``graph_engine.find_upstream(node_id)`` regardless
-       of whether flow_depth is populated.
-       * When flow_depth IS populated: undirected BFS filtered by depth so that
-         stitch connections and mis-oriented edges are handled gracefully.
-       * When flow_depth is EMPTY (no EnergySource / Substation nodes found):
-         directed-only BFS following reverse edges (load → source direction),
-         which correctly traces upstream by CIM edge orientation alone.
-       Results are sorted ascending by flow_depth when available; otherwise by
-       descending undirected hop distance from the centre (nodes farther away
-       are more upstream and should appear first).
+    * ``base_voltage_kv`` strictly greater than the selected node's voltage
+      (when voltage data is available on both sides).
+    * ``node_type == "Substation"``
+    * ``flow_depth == 0`` (feeder head)
+    * Attached equipment includes an ``EnergySource``
 
-    3. nx shortest-path fallback — used only when find_upstream returns empty.
-       Searches from any Substation / EnergySource / flow_depth-0 node in the
-       full undirected display graph (which includes even open switches, giving
-       a complete topological picture).
+    When ``flow_depth`` is unavailable for either current or neighbour node,
+    we still allow traversal (don't skip) so that sparse data doesn't block
+    legitimate paths.
+
+    Falls back to ``nx.shortest_path`` from any root-like node if BFS
+    finds nothing.
     """
-    flow_depth = graph_engine.flow_depth
+    from collections import deque as _deque
 
-    # ── 1. Quick-exit: selected node IS the feeder head ───────────────────
-    if flow_depth.get(node_id) == 0:
+    flow_depth = graph_engine.flow_depth
+    node_raw = node_map.get(node_id) or {}
+    selected_kv = node_raw.get("base_voltage_kv")
+    selected_fd = flow_depth.get(node_id)
+
+    logger.info(
+        "[upstream] node_id=%s  kv=%s  depth=%s  neighbors=%d  name=%s",
+        node_id, selected_kv, selected_fd,
+        len(list(G.neighbors(node_id))), node_raw.get("name", ""),
+    )
+
+    # Quick-exit: already at feeder head
+    if selected_fd == 0:
+        logger.info("[upstream] quick-exit: flow_depth==0")
         return [node_id]
 
-    # ── 2. Primary: topology engine upstream BFS ──────────────────────────
-    # Works regardless of whether flow_depth is populated:
-    #   - flow_depth available  → undirected BFS filtered by depth
-    #   - flow_depth empty      → directed reverse-edge BFS (CIM orientation)
+    # ── Unified upstream BFS ──────────────────────────────────────────────
+    def _is_upstream_target(nid: str) -> bool:
+        """Return True if *nid* qualifies as where the upstream trace stops."""
+        n = node_map.get(nid) or {}
+        # Higher voltage than selected node (voltage-gated stop)
+        if selected_kv is not None and selected_kv > 0:
+            nb_kv = n.get("base_voltage_kv")
+            if nb_kv is not None and nb_kv > selected_kv:
+                return True
+        # Substation
+        if n.get("node_type") == "Substation":
+            return True
+        # Feeder head
+        if flow_depth.get(nid) == 0:
+            return True
+        # Energy source attached
+        if any(eq.get("type") == "EnergySource"
+               for eq in n.get("attached_equipment", [])):
+            return True
+        return False
+
+    parent: dict[str, str | None] = {node_id: None}
+    queue: _deque[str] = _deque([node_id])
+    target: str | None = None
+    visited = 0
+    skipped_downstream = 0
+
+    while queue and target is None:
+        cur = queue.popleft()
+        visited += 1
+        cur_fd = flow_depth.get(cur)
+
+        for nb in G.neighbors(cur):
+            if nb in parent:
+                continue
+
+            nb_fd = flow_depth.get(nb)
+
+            # Direction filter: only move upstream (decreasing flow_depth).
+            # If either depth value is None we allow the edge (sparse data).
+            if cur_fd is not None and nb_fd is not None and nb_fd > cur_fd:
+                skipped_downstream += 1
+                continue
+
+            parent[nb] = cur
+
+            if _is_upstream_target(nb):
+                target = nb
+                break
+            queue.append(nb)
+
+    if target is not None:
+        # Reconstruct  target → ... → node_id
+        path: list[str] = []
+        c: str | None = target
+        while c is not None:
+            path.append(c)
+            c = parent[c]
+        logger.info(
+            "[upstream] BFS found target after visiting=%d skipped=%d, path len=%d",
+            visited, skipped_downstream, len(path),
+        )
+        return path
+
+    logger.info(
+        "[upstream] BFS exhausted: visited=%d skipped=%d. Falling to fallbacks.",
+        visited, skipped_downstream,
+    )
+
+    # ── Fallback A: topology engine's directed-edge upstream ──────────────
     upstream_set, _ = graph_engine.find_upstream(node_id)
-
     if upstream_set:
-        if flow_depth:
-            # Sort ascending by flow_depth → feeder head (depth 0) first
-            ordered = sorted(upstream_set, key=lambda n: flow_depth.get(n, 0))
-        else:
-            # No flow_depth: farther hop distance from centre ≈ more upstream
-            hop_dist = nx.single_source_shortest_path_length(G, node_id)
-            ordered = sorted(upstream_set, key=lambda n: -hop_dist.get(n, 0))
-        return ordered + [node_id]
+        # Sort by hop distance from node_id (furthest first)
+        hop_dist = nx.single_source_shortest_path_length(G, node_id)
+        root = max(upstream_set, key=lambda n: hop_dist.get(n, 0))
+        try:
+            path = nx.shortest_path(G, root, node_id)
+            logger.info("[upstream] directed fallback path len=%d from %s",
+                        len(path), root[:20])
+            return path
+        except nx.NetworkXNoPath:
+            pass
 
-    # ── 3. nx shortest-path fallback ──────────────────────────────────────
-    # Last resort when find_upstream returns nothing.  Also accepts
-    # flow_depth-0 nodes as feeder heads even when not typed as Substation.
+    # ── Fallback B: nx shortest-path from any root-like node ──────────────
     source_nodes = [
         nid for nid, n in node_map.items()
         if nid in G and nid != node_id and (
             n.get("node_type") == "Substation"
-            or any(eq.get("type") == "EnergySource" for eq in n.get("attached_equipment", []))
+            or any(eq.get("type") == "EnergySource"
+                   for eq in n.get("attached_equipment", []))
             or flow_depth.get(nid) == 0
         )
     ]
 
     best: list[str] | None = None
     for src in source_nodes:
-        if not nx.has_path(G, src, node_id):
+        try:
+            p = nx.shortest_path(G, src, node_id)
+        except nx.NetworkXNoPath:
             continue
-        p = nx.shortest_path(G, src, node_id)
         if best is None or len(p) < len(best):
             best = p
 
-    return best if best is not None else [node_id]
+    if best:
+        logger.info("[upstream] nx fallback found path len=%d", len(best))
+        return best
+
+    return [node_id]
+
 
 
 def _build_undirected_topology(model_ids: list[str]) -> tuple[dict, list[dict], nx.Graph]:
@@ -188,10 +275,13 @@ async def get_one_line_diagram(
     source_path = _find_upstream_path(G, node_map, node_id)
     # All path nodes except the centre itself are "upstream"
     upstream_set: set[str] = set(source_path[:-1])
+    logger.info("[diagram] source_path=%d  upstream_set=%d", len(source_path), len(upstream_set))
 
     # ── Downstream: depth-limited BFS from selected node ─────────────────────
     downstream_sub = nx.ego_graph(G, node_id, radius=depth)
     downstream_set: set[str] = set(downstream_sub.nodes()) - upstream_set - {node_id}
+    logger.info("[diagram] ego_graph nodes=%d  downstream_set=%d  depth=%d  total_neighbors_of_centre=%d",
+                len(downstream_sub.nodes()), len(downstream_set), depth, len(list(G.neighbors(node_id))))
 
     # ── Combined node set ─────────────────────────────────────────────────────
     all_node_ids = upstream_set | {node_id} | downstream_set

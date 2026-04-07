@@ -182,11 +182,21 @@ class TopologyEngine(GraphEngine):
 
     # ── Internal helpers ───────────────────────────────────────────────────
 
+    # Nodes at or above this voltage (kV) are treated as transmission-level
+    # pseudo-sources when no Substation / EnergySource nodes are present.
+    TRANSMISSION_KV_THRESHOLD: float = 69.0
+
     def _compute_flow_depth(self) -> None:
         """Dijkstra from all Substation/EnergySource nodes.
 
         Real edges cost 1; stitch connections cost 0 (same physical point).
         This ensures spatially-stitched peers always share the same depth.
+
+        Fallback: when no Substation/EnergySource nodes exist, nodes whose
+        ``base_voltage_kv`` is at or above ``TRANSMISSION_KV_THRESHOLD`` (69 kV)
+        are promoted to pseudo-sources.  This handles models that capture a
+        transmission-to-distribution boundary substation without an explicit
+        source node type — typically there is exactly one such high-voltage bus.
         """
         sources = [
             nid for nid, n in self._nodes.items()
@@ -195,11 +205,30 @@ class TopologyEngine(GraphEngine):
         ]
 
         if not sources:
-            logger.warning(
-                "[TopologyEngine] No Substation/EnergySource nodes found — "
-                "traversal will use directed edge orientation only."
-            )
-            return
+            voltage_nodes = [
+                (nid, n.base_voltage_kv)
+                for nid, n in self._nodes.items()
+                if n.base_voltage_kv is not None and n.base_voltage_kv > 0
+            ]
+            if voltage_nodes:
+                max_kv = max(kv for _, kv in voltage_nodes)
+                other_kv = [kv for _, kv in voltage_nodes if kv < max_kv * 0.99]
+                if other_kv:
+                    # Distinct high-voltage tier exists — treat max-voltage nodes as pseudo-sources
+                    sources = [nid for nid, kv in voltage_nodes if kv >= max_kv * 0.99]
+                    logger.info(
+                        "[TopologyEngine] No Substation/EnergySource — using %d "
+                        "max-voltage node(s) (%.2f kV) as pseudo-source(s)",
+                        len(sources), max_kv,
+                    )
+                # else: all nodes same voltage — fall through to directed-edge mode
+
+            if not sources:
+                logger.warning(
+                    "[TopologyEngine] No Substation/EnergySource nodes found — "
+                    "traversal will use directed edge orientation only."
+                )
+                return
 
         dist: Dict[str, int] = {s: 0 for s in sources}
         heap: List[Tuple[int, str]] = [(0, s) for s in sources]

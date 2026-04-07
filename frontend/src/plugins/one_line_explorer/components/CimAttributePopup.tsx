@@ -44,6 +44,21 @@ const KEY_OVERRIDES: Record<string, string> = {
     q_mvar: 'Reactive Power',
     voltage_pu: 'Voltage (p.u.)',
     angle_deg: 'Voltage Angle',
+    step: 'Current Step',
+    neutralStep: 'Neutral Step',
+    lowStep: 'Lower Limit',
+    highStep: 'Upper Limit',
+    neutralU: 'Neutral Voltage',
+    stepVoltageIncrement: 'Step Increment',
+    targetValue: 'Set Point',
+    targetDeadband: 'Bandwidth',
+    lineDropR: 'LDC R-Setting',
+    lineDropX: 'LDC X-Setting',
+    lineDropCompensation: 'LDC Enabled',
+    timeDelay: 'Time Delay',
+    discrete: 'Discrete Control',
+    mode: 'Control Mode',
+    monitoredPhase: 'Monitored Phase',
 };
 
 function formatKey(k: string): string {
@@ -61,6 +76,12 @@ function formatNumber(k: string, v: number): string {
     if (k === 'length_m')      return `${v.toLocaleString()} m`;
     if (k === 'active_power_w' || k === 'p_mw') return `${v} W`;
     if (k === 'reactive_power_var' || k === 'q_mvar') return `${v} VAr`;
+    if (k === 'step' || k === 'neutralStep' || k === 'lowStep' || k === 'highStep') return v.toString();
+    if (k === 'stepVoltageIncrement') return `${v}%`;
+    if (k === 'neutralU' || k === 'targetValue') return `${v} V`;
+    if (k === 'targetDeadband') return `${v} V`;
+    if (k === 'lineDropR' || k === 'lineDropX') return `${v} Ω`;
+    if (k === 'timeDelay') return `${v} s`;
     if (Number.isInteger(v))   return v.toLocaleString();
     return parseFloat(v.toPrecision(6)).toString();
 }
@@ -188,7 +209,8 @@ const styles = {
 
 // Keys shown in the main attribute table (others handled specially or skipped)
 const SKIP_KEYS = new Set([
-    'name', 'model_id', 'terminals', 'connected_equipment',
+    'name', 'model_id', 'terminals', 'connected_equipment', 'RatioTapChanger', 'PhaseTapChanger',
+    'TapChangerControl', 'RegulatingControl', 'display_class', 'hierarchy', 'transformerends'
 ]);
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
@@ -238,6 +260,33 @@ function TerminalsSection({ terminals }: { terminals: Array<{ connectivity_node:
     );
 }
 
+function RegulatorControlSection({ data }: { data: any }) {
+    const control = data.TapChangerControl || {};
+    const reg = data.RegulatingControl || {};
+    const combined = { ...reg, ...control };
+    
+    // Filter out common metadata keys
+    const entries = Object.entries(combined).filter(([k]) => {
+        return !['mrid', 'name', 'cim_class', 'class', 'uri', 'uuid'].includes(k);
+    });
+
+    if (entries.length === 0) return null;
+
+    return (
+        <div style={{ padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.15)' }}>
+            <div style={{ fontSize: 10, color: '#5c5f66', textTransform: 'uppercase', marginBottom: 6, fontWeight: 600, letterSpacing: '0.02em' }}>
+                Regulator Control Settings
+            </div>
+            {entries.map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                    <span style={{ fontSize: 11, color: '#888' }}>{formatKey(k)}</span>
+                    <span style={{ fontSize: 11, color: '#ccc', fontFamily: 'monospace' }}>{formatValue(k, v)}</span>
+                </div>
+            ))}
+        </div>
+    );
+}
+
 function ConnectedEquipmentSection({ equipment }: { equipment: any[] }) {
     if (!equipment || equipment.length === 0) return null;
     return (
@@ -268,6 +317,33 @@ function ConnectedEquipmentSection({ equipment }: { equipment: any[] }) {
                         )}
                     </div>
                 ))}
+            </div>
+        </>
+    );
+}
+
+function TapChangerSection({ data, label }: { data: any; label: string }) {
+    if (!data) return null;
+    const entries = Object.entries(data).filter(([k]) => k !== 'mrid' && k !== 'name');
+    
+    return (
+        <>
+            <div style={styles.divider} />
+            <div style={styles.section}>
+                <div style={styles.sectionLabel}>{label}</div>
+                <div style={{
+                    background: 'rgba(255,255,255,0.03)',
+                    borderRadius: 4,
+                    padding: '4px 0',
+                    border: '1px solid rgba(255,255,255,0.05)'
+                }}>
+                    {entries.map(([k, v]) => (
+                        <div key={k} style={styles.row}>
+                            <span style={styles.rowKey}>{formatKey(k)}</span>
+                            <span style={styles.rowVal}>{formatValue(k, v)}</span>
+                        </div>
+                    ))}
+                </div>
             </div>
         </>
     );
@@ -350,7 +426,7 @@ export function CimAttributePopup({ id, type, anchorEl, onClose, virtualEdge }: 
         : (data?.name || (type === 'node' ? 'Bus' : 'Equipment'));
     const subtitle = virtualEdge
         ? 'Virtual · ACLineSegment'
-        : (data?.cim_class ?? (type === 'node' ? 'ConnectivityNode' : null));
+        : (data?.display_class ?? (data?.RatioTapChanger || data?.TapChangerControl ? 'Regulator' : (data?.cim_class ?? (type === 'node' ? 'ConnectivityNode' : null))));
 
     // Entries to show in the main attribute table
     const tableEntries = data
@@ -366,6 +442,9 @@ export function CimAttributePopup({ id, type, anchorEl, onClose, virtualEdge }: 
         <div
             style={{ position: 'fixed', top, left, zIndex: 10000, ...styles.card }}
             onMouseDown={e => e.stopPropagation()}
+            onPointerDown={e => e.stopPropagation()}
+            onPointerUp={e => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
         >
             {/* Header */}
             <div style={styles.header}>
@@ -425,6 +504,17 @@ export function CimAttributePopup({ id, type, anchorEl, onClose, virtualEdge }: 
 
                             {/* Terminals (equipment) */}
                             {data.terminals && <TerminalsSection terminals={data.terminals} />}
+
+                            {/* Regulator Control */}
+                            <RegulatorControlSection data={data} />
+
+                            {/* Tap Changers */}
+                            {data.RatioTapChanger && (
+                                <TapChangerSection data={data.RatioTapChanger} label="Ratio Tap Changer" />
+                            )}
+                            {data.PhaseTapChanger && (
+                                <TapChangerSection data={data.PhaseTapChanger} label="Phase Tap Changer" />
+                            )}
 
                             {/* Connected equipment (node) */}
                             {data.connected_equipment && (

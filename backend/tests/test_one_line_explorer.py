@@ -554,3 +554,253 @@ class TestNoSourceNodeUpstream:
         resp = client.get("/api/plugins/one-line-explorer/diagram/END_BUS")
         data = resp.json()
         assert data["source_path"][0] == "FEEDER_HEAD"
+
+
+# ── Transmission-voltage fallback topology ────────────────────────────────────
+#
+# Models a transmission-to-distribution substation with NO Substation node type
+# and NO EnergySource — only voltage distinguishes the source side.
+#
+#   TX_BUS (115 kV) ── tx_xfmr ── DIST_BUS_A (12.47 kV) ── dist_line_a ── DIST_BUS_B
+#                                                                                 |
+#                                                                           dist_line_b
+#                                                                                 |
+#                                                                           DIST_BUS_C
+#
+# TX_BUS is the only node with base_voltage_kv >= 69 kV.  The engine must
+# promote it to a pseudo-source and populate flow_depth accordingly.
+
+TX_FALLBACK_NODES = [
+    {"node_id": "TX_BUS", "node_type": "Bus", "name": "Transmission Bus",
+     "phases": ["A", "B", "C"], "latitude": 36.100, "longitude": -121.100,
+     "base_voltage_kv": 115.0, "attached_equipment": []},
+    {"node_id": "DIST_BUS_A", "node_type": "Bus", "name": "Distribution Bus A",
+     "phases": ["A", "B", "C"], "latitude": 36.101, "longitude": -121.101,
+     "base_voltage_kv": 12.47, "attached_equipment": []},
+    {"node_id": "DIST_BUS_B", "node_type": "Bus", "name": "Distribution Bus B",
+     "phases": ["A", "B", "C"], "latitude": 36.102, "longitude": -121.102,
+     "base_voltage_kv": 12.47, "attached_equipment": []},
+    {"node_id": "DIST_BUS_C", "node_type": "Bus", "name": "Distribution Bus C",
+     "phases": ["A", "B", "C"], "latitude": 36.103, "longitude": -121.103,
+     "base_voltage_kv": 12.47, "attached_equipment": [
+         {"mrid": "ec_tx", "type": "EnergyConsumer", "name": "Load C", "phases": ["A", "B", "C"]}
+     ]},
+]
+
+TX_FALLBACK_EDGES = [
+    {"edge_id": "tx_xfmr", "edge_type": "PowerTransformer",
+     "from_node_id": "TX_BUS", "to_node_id": "DIST_BUS_A",
+     "name": "TX Transformer", "phases": ["A", "B", "C"], "transformer_kva": 10000.0},
+    {"edge_id": "dist_line_a", "edge_type": "ACLineSegment",
+     "from_node_id": "DIST_BUS_A", "to_node_id": "DIST_BUS_B",
+     "name": "Dist Line A", "phases": ["A", "B", "C"], "length_m": 250.0},
+    {"edge_id": "dist_line_b", "edge_type": "ACLineSegment",
+     "from_node_id": "DIST_BUS_B", "to_node_id": "DIST_BUS_C",
+     "name": "Dist Line B", "phases": ["A", "B", "C"], "length_m": 180.0},
+]
+
+
+def _mock_tx_fallback_topology(_model_ids=None):
+    return TX_FALLBACK_NODES, TX_FALLBACK_EDGES
+
+
+@pytest.fixture
+def _tx_fallback_topology(monkeypatch):
+    """Build graph_engine for the transmission-voltage-fallback topology.
+
+    No Substation or EnergySource nodes exist — flow_depth must be populated
+    using TX_BUS (115 kV) as a pseudo-source via the voltage fallback.
+    """
+    from src.grid.graph_node import GraphNode
+    from src.shared.dependencies import graph_engine as ge
+
+    monkeypatch.setattr(
+        "plugins.one_line_explorer.routes.registry.get_combined_topology",
+        _mock_tx_fallback_topology,
+    )
+
+    nodes = [
+        GraphNode(
+            id=n["node_id"], type=n["node_type"], name=n["name"],
+            phases=n.get("phases", ["A", "B", "C"]),
+            latitude=n["latitude"], longitude=n["longitude"],
+            attached_equipment=n.get("attached_equipment", []),
+            base_voltage_kv=n.get("base_voltage_kv"),
+        )
+        for n in TX_FALLBACK_NODES
+    ]
+    ge.build_graph(nodes=nodes, edges=TX_FALLBACK_EDGES)
+    yield
+    ge.build_graph()
+
+
+class TestTransmissionVoltageFallback:
+    """When no Substation/EnergySource exists, the highest-voltage bus (>= 69 kV)
+    must be promoted to a pseudo-source and used as the root for flow_depth."""
+
+    def test_flow_depth_populated_from_tx_bus(self, _tx_fallback_topology):
+        from src.shared.dependencies import graph_engine as ge
+        fd = ge.flow_depth
+        assert fd, "flow_depth must be non-empty — TX_BUS should be a pseudo-source"
+        assert fd.get("TX_BUS") == 0, "TX_BUS (115 kV) must have flow_depth 0"
+        assert fd.get("DIST_BUS_A") == 1
+        assert fd.get("DIST_BUS_B") == 2
+        assert fd.get("DIST_BUS_C") == 3
+
+    def test_tx_bus_is_source_in_path(self, _tx_fallback_topology):
+        resp = client.get("/api/plugins/one-line-explorer/diagram/DIST_BUS_B")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["source_path"][0] == "TX_BUS"
+        assert data["source_path"][-1] == "DIST_BUS_B"
+
+    def test_full_source_path_traverses_transformer(self, _tx_fallback_topology):
+        resp = client.get("/api/plugins/one-line-explorer/diagram/DIST_BUS_C")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["source_path"] == ["TX_BUS", "DIST_BUS_A", "DIST_BUS_B", "DIST_BUS_C"]
+
+    def test_node_roles_with_tx_source(self, _tx_fallback_topology):
+        resp = client.get("/api/plugins/one-line-explorer/diagram/DIST_BUS_B")
+        data = resp.json()
+        roles = {n["id"]: n["node_role"] for n in data["nodes"]}
+        assert roles["TX_BUS"] == "upstream"
+        assert roles["DIST_BUS_A"] == "upstream"
+        assert roles["DIST_BUS_B"] == "centre"
+        assert roles["DIST_BUS_C"] == "downstream"
+
+    def test_only_one_pseudo_source(self, _tx_fallback_topology):
+        """TX_FALLBACK_NODES has exactly one node >= 69 kV — flow_depth 0 belongs to TX_BUS only."""
+        from src.shared.dependencies import graph_engine as ge
+        depth_zero = [nid for nid, d in ge.flow_depth.items() if d == 0]
+        assert depth_zero == ["TX_BUS"]
+
+    def test_distribution_nodes_not_depth_zero(self, _tx_fallback_topology):
+        from src.shared.dependencies import graph_engine as ge
+        assert ge.flow_depth.get("DIST_BUS_A", -1) > 0
+        assert ge.flow_depth.get("DIST_BUS_B", -1) > 0
+
+    def test_upstream_not_depth_capped(self, _tx_fallback_topology):
+        """With depth=1, TX_BUS and DIST_BUS_A must still appear as upstream."""
+        resp = client.get("/api/plugins/one-line-explorer/diagram/DIST_BUS_B?depth=1")
+        assert resp.status_code == 200
+        data = resp.json()
+        node_ids = {n["id"] for n in data["nodes"]}
+        assert "TX_BUS" in node_ids
+        assert "DIST_BUS_A" in node_ids
+
+
+# ── Mixed-distribution-voltage topology (sub-69 kV pseudo-source) ─────────────
+#
+# Models a secondary distribution system with NO Substation/EnergySource nodes
+# and NO transmission-level voltage.  The max-voltage bus (4.16 kV) must be
+# promoted to a pseudo-source via the relative voltage heuristic, even though
+# it is well below the old 69 kV hard-coded threshold.
+#
+#   PRIMARY_HEAD (4.16 kV) ── tr_primary ── SEC_BUS (0.24 kV) ── svc_line ── SVC_BUS (0.24 kV)
+
+MIXED_VOLT_NODES = [
+    {"node_id": "PRIMARY_HEAD", "node_type": "Bus", "name": "Primary Head",
+     "phases": ["A", "B", "C"], "latitude": 37.100, "longitude": -122.100,
+     "base_voltage_kv": 4.16, "attached_equipment": []},
+    {"node_id": "SEC_BUS", "node_type": "Bus", "name": "Secondary Bus",
+     "phases": ["A", "B", "C"], "latitude": 37.101, "longitude": -122.101,
+     "base_voltage_kv": 0.24, "attached_equipment": []},
+    {"node_id": "SVC_BUS", "node_type": "Bus", "name": "Service Bus",
+     "phases": ["A", "B", "C"], "latitude": 37.102, "longitude": -122.102,
+     "base_voltage_kv": 0.24, "attached_equipment": [
+         {"mrid": "ec_mv", "type": "EnergyConsumer", "name": "Service Load",
+          "phases": ["A", "B", "C"]}
+     ]},
+]
+
+MIXED_VOLT_EDGES = [
+    {"edge_id": "tr_primary", "edge_type": "PowerTransformer",
+     "from_node_id": "PRIMARY_HEAD", "to_node_id": "SEC_BUS",
+     "name": "Primary Transformer", "phases": ["A", "B", "C"], "transformer_kva": 50.0},
+    {"edge_id": "svc_line", "edge_type": "ACLineSegment",
+     "from_node_id": "SEC_BUS", "to_node_id": "SVC_BUS",
+     "name": "Service Line", "phases": ["A", "B", "C"], "length_m": 20.0},
+]
+
+
+def _mock_mixed_volt_topology(_model_ids=None):
+    return MIXED_VOLT_NODES, MIXED_VOLT_EDGES
+
+
+@pytest.fixture
+def _mixed_volt_topology(monkeypatch):
+    """Build graph_engine for the mixed-distribution-voltage topology.
+
+    No Substation/EnergySource; max_kv (4.16) is distinctly higher than
+    secondary nodes (0.24).  flow_depth must be populated via the relative
+    max-voltage heuristic — PRIMARY_HEAD becomes pseudo-source even though
+    4.16 kV is well below the old 69 kV hard-coded threshold.
+    """
+    from src.grid.graph_node import GraphNode
+    from src.shared.dependencies import graph_engine as ge
+
+    monkeypatch.setattr(
+        "plugins.one_line_explorer.routes.registry.get_combined_topology",
+        _mock_mixed_volt_topology,
+    )
+
+    nodes = [
+        GraphNode(
+            id=n["node_id"], type=n["node_type"], name=n["name"],
+            phases=n.get("phases", ["A", "B", "C"]),
+            latitude=n["latitude"], longitude=n["longitude"],
+            attached_equipment=n.get("attached_equipment", []),
+            base_voltage_kv=n.get("base_voltage_kv"),
+        )
+        for n in MIXED_VOLT_NODES
+    ]
+    ge.build_graph(nodes=nodes, edges=MIXED_VOLT_EDGES)
+    yield
+    ge.build_graph()
+
+
+class TestMixedVoltageSourceFinding:
+    """When no Substation/EnergySource exists and max_kv < 69 kV, the
+    max-voltage node must still be promoted to a pseudo-source via the
+    relative voltage heuristic (ratio 4.16/0.24 ≈ 17x >> 1)."""
+
+    def test_flow_depth_populated_from_primary_head(self, _mixed_volt_topology):
+        from src.shared.dependencies import graph_engine as ge
+        fd = ge.flow_depth
+        assert fd, "flow_depth must be non-empty — PRIMARY_HEAD should be a pseudo-source"
+        assert fd.get("PRIMARY_HEAD") == 0, "PRIMARY_HEAD (4.16 kV, max) must be depth 0"
+        assert fd.get("SEC_BUS") == 1
+        assert fd.get("SVC_BUS") == 2
+
+    def test_only_primary_head_is_depth_zero(self, _mixed_volt_topology):
+        from src.shared.dependencies import graph_engine as ge
+        depth_zero = [nid for nid, d in ge.flow_depth.items() if d == 0]
+        assert depth_zero == ["PRIMARY_HEAD"]
+
+    def test_secondary_nodes_not_depth_zero(self, _mixed_volt_topology):
+        from src.shared.dependencies import graph_engine as ge
+        assert ge.flow_depth.get("SEC_BUS", -1) > 0
+        assert ge.flow_depth.get("SVC_BUS", -1) > 0
+
+    def test_source_path_starts_at_primary_head(self, _mixed_volt_topology):
+        resp = client.get("/api/plugins/one-line-explorer/diagram/SVC_BUS")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["source_path"][0] == "PRIMARY_HEAD"
+        assert data["source_path"][-1] == "SVC_BUS"
+
+    def test_full_source_path_correct(self, _mixed_volt_topology):
+        resp = client.get("/api/plugins/one-line-explorer/diagram/SVC_BUS")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["source_path"] == ["PRIMARY_HEAD", "SEC_BUS", "SVC_BUS"]
+
+    def test_node_roles_with_mixed_voltage(self, _mixed_volt_topology):
+        resp = client.get("/api/plugins/one-line-explorer/diagram/SEC_BUS")
+        assert resp.status_code == 200
+        data = resp.json()
+        roles = {n["id"]: n["node_role"] for n in data["nodes"]}
+        assert roles["PRIMARY_HEAD"] == "upstream"
+        assert roles["SEC_BUS"] == "centre"
+        assert roles["SVC_BUS"] == "downstream"

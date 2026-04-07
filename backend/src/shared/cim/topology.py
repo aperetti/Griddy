@@ -183,6 +183,11 @@ class TopologyBuilder:
                 continue
 
             eq_type = idx.equipment_types.get(eq_mrid)
+            
+            # If it's a transformer with a tap changer, treat it as a Regulator for labeling
+            if eq_type == "PowerTransformer" and idx.transformer_has_tap_changer.get(eq_mrid):
+                eq_type = "Regulator"
+
             if eq_type not in self.EDGE_TYPES:
                 continue
 

@@ -37,6 +37,7 @@
 - **Security:** Modifying endpoints are protected via FastAPI `HTTPBasic` authentication leveraging a SQLite `users` table with PBKDF2 hashing. Account creation and modification routes are exclusively exposed through the Node/Fastify Admin Console and pure Python CLI overrides.
 *   **Backend (FastAPI & Data Ingestion)**:
     *   **Data Ingestion (CIM):** The CIM ingestor must effectively extract robust asset taxonomy, correctly tagging `Substation`, `Breaker`, `Switch`, `Transformer`, and `Meter` types. Determine the switch 'open' status for visualizations.
+    *   **Robust Regulator Enrichment (TR-BE-01):** The `CimManager` must robustly identify `PowerTransformer` objects as `Regulator` by looking for associated `RatioTapChanger` and `TapChangerControl` entities. If standard relationship paths are missing, it must fallback to searching via `TransformerTank` MRIDs and neighbor connections in the CIM graph.
     *   **Graph Export Endpoint:** An endpoint to export the full grid (or a simplified version) as JSON (nodes and links) for the frontend visualization library.
     *   **Time Series Endpoints:** Endpoints to fetch consumption metrics must support dynamic start/end ISO strings and perform phase-weighted aggregation using node phasing attributes.
     *   **Display Rule Management API**:

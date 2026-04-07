@@ -11,14 +11,43 @@ const BG = '#0a0a0a';
 
 // ── Individual symbol renderers ───────────────────────────────────
 
-function TransformerSymbol({ x, y, color }: { x: number; y: number; color: string }) {
+function TransformerSymbol({ x, y, color, fromKv, toKv }: { x: number; y: number; color: string; fromKv?: number | null; toKv?: number | null }) {
     // ANSI: two tangent circles stacked vertically on the wire
     const r = 10;
+    // Show the higher kV on top, lower on bottom (matches physical layout)
+    const topKv = fromKv != null && toKv != null ? Math.max(fromKv, toKv) : (fromKv ?? toKv);
+    const botKv = fromKv != null && toKv != null ? Math.min(fromKv, toKv) : null;
     return (
         <g>
             <rect x={x - r - 2} y={y - r * 2 - 2} width={r * 2 + 4} height={r * 4 + 4} fill={BG} />
             <circle cx={x} cy={y - r} r={r} fill="none" stroke={color} strokeWidth={1.8} />
             <circle cx={x} cy={y + r} r={r} fill="none" stroke={color} strokeWidth={1.8} />
+            {/* Upper voltage marker (high side) */}
+            {topKv != null && (
+                <text
+                    x={x + r + 14}
+                    y={y - r}
+                    fontSize={7}
+                    fill="#91a7ff"
+                    dominantBaseline="middle"
+                    fontWeight={600}
+                >
+                    {topKv} kV
+                </text>
+            )}
+            {/* Lower voltage marker (low side) */}
+            {botKv != null && botKv !== topKv && (
+                <text
+                    x={x + r + 14}
+                    y={y + r}
+                    fontSize={7}
+                    fill="#91a7ff"
+                    dominantBaseline="middle"
+                    fontWeight={600}
+                >
+                    {botKv} kV
+                </text>
+            )}
         </g>
     );
 }
@@ -135,7 +164,7 @@ export function EdgeSymbol({ edge }: { edge: LayoutEdge }) {
     const et = data.edge_type;
 
     if (TRANSFORMER_TYPES.has(et)) {
-        return <TransformerSymbol x={x} y={y} color={color} />;
+        return <TransformerSymbol x={x} y={y} color={color} fromKv={edge.fromKv} toKv={edge.toKv} />;
     }
     if (et === 'Recloser') {
         return <RecloserSymbol x={x} y={y} color={color} />;

@@ -11,7 +11,7 @@
  * On mount (and whenever the layout changes) the diagram is automatically
  * scaled and centred so the whole diagram is visible.
  */
-import { useRef, useCallback, useState, useEffect } from 'react';
+import { useRef, useCallback, useState, useEffect, useLayoutEffect } from 'react';
 import type { DiagramLayout, LayoutEdge } from '../model/OneLineModel';
 import { BUS_W, BUS_H } from '../model/OneLineModel';
 import { EdgeSymbol } from './EdgeSymbol';
@@ -36,11 +36,10 @@ function calcFit(
 ) {
     const s     = Math.min(containerW / totalWidth, containerH / totalHeight) * 0.9;
     const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, s));
-    return {
-        scale,
-        tx: (containerW  - totalWidth  * scale) / 2,
-        ty: (containerH - totalHeight * scale) / 2,
-    };
+    // Clamp so content never starts off the left or top edge.
+    const tx    = Math.max(0, (containerW  - totalWidth  * scale) / 2);
+    const ty    = Math.max(0, (containerH - totalHeight * scale) / 2);
+    return { scale, tx, ty };
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -61,10 +60,16 @@ export function OneLineDiagramSvg({ layout }: Props) {
     } | null>(null);
 
     // ── Auto-fit on layout change ─────────────────────────────────────────────
-    useEffect(() => {
+    // useLayoutEffect fires synchronously after DOM mutations and BEFORE the
+    // browser paints, so the diagram always opens already fitted — no visible
+    // flash of the full-scale overflowing state.
+    useLayoutEffect(() => {
+        if (totalWidth === 0 || totalHeight === 0) return;
         const el = containerRef.current;
-        if (!el || totalWidth === 0 || totalHeight === 0) return;
-        const fit = calcFit(el.offsetWidth, el.offsetHeight, totalWidth, totalHeight);
+        if (!el) return;
+        const { offsetWidth: w, offsetHeight: h } = el;
+        if (w === 0 || h === 0) return;
+        const fit = calcFit(w, h, totalWidth, totalHeight);
         setTx(fit.tx);
         setTy(fit.ty);
         setScale(fit.scale);
@@ -102,84 +107,110 @@ export function OneLineDiagramSvg({ layout }: Props) {
         return () => el.removeEventListener('wheel', onWheel);
     }, []); // intentionally empty — stable setState setters, no external deps
 
-    // ── Mouse pan (window-level listeners so fast drags don't drop) ───────────
-    const dragging  = useRef(false);
-    const lastMouse = useRef({ x: 0, y: 0 });
+    // ── Unified pan + pinch-zoom via Pointer Events API ──────────────────────
+    // Using the Pointer Events API instead of separate mouse/touch handlers
+    // avoids conflicts with react-rnd (which uses mouse/touch, not pointer
+    // events) and works identically for mouse, touch, and stylus.
+    // setPointerCapture keeps events flowing even when the pointer leaves the div.
+    const pointers    = useRef<Map<number, { x: number; y: number }>>(new Map());
+    // Tracks whether the current gesture moved enough to be a drag (vs a tap).
+    // onNodeClick / onEdgeClick bail out when this is true so a drag on a bus
+    // bar doesn't accidentally open the popup.
+    const didDrag     = useRef(false);
+    const pointerDownTarget = useRef<Element | null>(null);
 
-    const onMouseDown = useCallback((e: React.MouseEvent) => {
-        if (e.button !== 0) return;
-        // Don't start a drag when clicking a selectable element (node / edge)
-        if ((e.target as Element).closest('[data-clickable="true"]')) return;
-        e.preventDefault();
-        dragging.current  = true;
-        lastMouse.current = { x: e.clientX, y: e.clientY };
-
-        const onMove = (ev: MouseEvent) => {
-            if (!dragging.current) return;
-            setTx(x => x + ev.clientX - lastMouse.current.x);
-            setTy(y => y + ev.clientY - lastMouse.current.y);
-            lastMouse.current = { x: ev.clientX, y: ev.clientY };
-        };
-        const onUp = () => {
-            dragging.current = false;
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup',   onUp);
-        };
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup',   onUp);
+    const onPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+        // Always capture so panning works even when starting on a bus bar.
+        e.currentTarget.setPointerCapture(e.pointerId);
+        e.stopPropagation();
+        didDrag.current = false;
+        pointerDownTarget.current = e.target as Element;
+        pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     }, []);
 
-    // ── Touch pan + pinch-zoom ────────────────────────────────────────────────
-    const lastTouches = useRef<React.Touch[]>([]);
+    const onPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+        const prev = pointers.current.get(e.pointerId);
+        if (!prev) return;
+        e.stopPropagation();
 
-    useEffect(() => {
-        const el = containerRef.current;
-        if (!el) return;
-        const onTouchMove = (e: TouchEvent) => {
-            e.preventDefault();
-            const touches = Array.from(e.touches);
-            const prev    = lastTouches.current;
-            if (touches.length === 1 && prev.length >= 1) {
-                setTx(x => x + touches[0].clientX - prev[0].clientX);
-                setTy(y => y + touches[0].clientY - prev[0].clientY);
-            } else if (touches.length === 2 && prev.length === 2) {
-                const prevDist = Math.hypot(prev[1].clientX - prev[0].clientX, prev[1].clientY - prev[0].clientY);
-                const currDist = Math.hypot(touches[1].clientX - touches[0].clientX, touches[1].clientY - touches[0].clientY);
-                if (prevDist > 0) {
-                    const factor = currDist / prevDist;
-                    setScale(s => Math.max(MIN_SCALE, Math.min(MAX_SCALE, s * factor)));
+        const curr = { x: e.clientX, y: e.clientY };
+        // Mark as drag once movement exceeds a small threshold so accidental
+        // micro-movement during a tap doesn't suppress click events.
+        if (!didDrag.current && Math.hypot(curr.x - prev.x, curr.y - prev.y) > 4) {
+            didDrag.current = true;
+        }
+
+        const ids  = Array.from(pointers.current.keys());
+
+        if (ids.length === 1) {
+            // Single pointer — pan
+            setTx(x => x + curr.x - prev.x);
+            setTy(y => y + curr.y - prev.y);
+        } else if (ids.length >= 2) {
+            // Two pointers — pinch-zoom centred on midpoint + pan by midpoint delta
+            const otherId  = ids.find(id => id !== e.pointerId)!;
+            const other    = pointers.current.get(otherId)!;
+            const prevDist = Math.hypot(prev.x - other.x, prev.y - other.y);
+            const currDist = Math.hypot(curr.x - other.x, curr.y - other.y);
+
+            if (prevDist > 1) {
+                const factor = currDist / prevDist;
+                const el     = containerRef.current;
+                if (el) {
+                    const rect = el.getBoundingClientRect();
+                    const midX = (curr.x + other.x) / 2 - rect.left;
+                    const midY = (curr.y + other.y) / 2 - rect.top;
+                    setScale(s => {
+                        const ns = Math.max(MIN_SCALE, Math.min(MAX_SCALE, s * factor));
+                        setTx(x => midX - (midX - x) * (ns / s));
+                        setTy(y => midY - (midY - y) * (ns / s));
+                        return ns;
+                    });
                 }
-                const pmx = (prev[0].clientX + prev[1].clientX) / 2;
-                const pmy = (prev[0].clientY + prev[1].clientY) / 2;
-                const cmx = (touches[0].clientX + touches[1].clientX) / 2;
-                const cmy = (touches[0].clientY + touches[1].clientY) / 2;
-                setTx(x => x + cmx - pmx);
-                setTy(y => y + cmy - pmy);
             }
-            lastTouches.current = touches;
-        };
-        const onTouchStart = (e: TouchEvent) => { lastTouches.current = Array.from(e.touches); };
-        const onTouchEnd   = (e: TouchEvent) => { lastTouches.current = Array.from(e.touches); };
-        el.addEventListener('touchstart', onTouchStart, { passive: true  });
-        el.addEventListener('touchmove',  onTouchMove,  { passive: false });
-        el.addEventListener('touchend',   onTouchEnd,   { passive: true  });
-        return () => {
-            el.removeEventListener('touchstart', onTouchStart);
-            el.removeEventListener('touchmove',  onTouchMove);
-            el.removeEventListener('touchend',   onTouchEnd);
-        };
-    }, []); // intentionally empty — stable setState setters
+
+            // Pan contribution from midpoint movement
+            const prevMidX = (prev.x + other.x) / 2;
+            const prevMidY = (prev.y + other.y) / 2;
+            const currMidX = (curr.x + other.x) / 2;
+            const currMidY = (curr.y + other.y) / 2;
+            setTx(x => x + currMidX - prevMidX);
+            setTy(y => y + currMidY - prevMidY);
+        }
+
+        pointers.current.set(e.pointerId, curr);
+    }, []);
+
+    const onPointerUp = useCallback((e: React.PointerEvent) => {
+        pointers.current.delete(e.pointerId);
+        // Explicitly release pointer capture to prevent frozen-view state.
+        try { (e.target as Element).releasePointerCapture(e.pointerId); } catch { /* already released */ }
+
+        // Tap (not drag) on a data-clickable element → dispatch a synthetic
+        // click so the element's onClick handler fires.  setPointerCapture
+        // redirects all events to the container div and suppresses the
+        // browser's normal click synthesis, so we re-create it here.
+        if (!didDrag.current && pointerDownTarget.current) {
+            const clickable = pointerDownTarget.current.closest?.('[data-clickable]');
+            if (clickable) {
+                clickable.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: e.clientX, clientY: e.clientY }));
+            }
+        }
+        pointerDownTarget.current = null;
+    }, []);
 
     // ── Zoom button handlers ──────────────────────────────────────────────────
     const zoomIn  = useCallback(() => setScale(s => Math.min(MAX_SCALE, s * 1.3)), []);
     const zoomOut = useCallback(() => setScale(s => Math.max(MIN_SCALE, s / 1.3)), []);
 
     const onNodeClick = useCallback((e: React.MouseEvent, nodeId: string) => {
+        if (didDrag.current) return; // pointer moved — this was a pan, not a tap
         e.stopPropagation();
         setSelection({ id: nodeId, type: 'node', anchorEl: e.currentTarget as HTMLElement });
     }, []);
 
     const onEdgeClick = useCallback((e: React.MouseEvent, edge: LayoutEdge) => {
+        if (didDrag.current) return;
         e.stopPropagation();
         setSelection({
             id: edge.id,
@@ -198,8 +229,12 @@ export function OneLineDiagramSvg({ layout }: Props) {
                 overflow: 'hidden', background: BG,
                 cursor: 'grab', position: 'relative',
                 touchAction: 'none',
+                userSelect: 'none',
             }}
-            onMouseDown={onMouseDown}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
         >
             <svg width="100%" height="100%" style={{ display: 'block' }}>
                 <g transform={`translate(${tx},${ty}) scale(${scale})`}>
@@ -270,23 +305,23 @@ export function OneLineDiagramSvg({ layout }: Props) {
                                 fill={n.fill}
                                 rx={1}
                             />
-                            {/* Name label above bus bar */}
+                            {/* Name label above bus bar (offset to right of vertical centerline) */}
                             <text
-                                x={n.cx}
-                                y={n.y - 5}
-                                textAnchor="middle"
+                                x={n.cx + 30}
+                                y={n.y - 6}
+                                textAnchor="start"
                                 fontSize={10}
                                 fontWeight={n.data.is_centre ? 700 : 400}
                                 fill={n.data.is_centre ? '#ffd43b' : '#c1c2c5'}
                             >
                                 {n.data.name}
                             </text>
-                            {/* Voltage below bus bar */}
+                            {/* Voltage below bus bar (offset to right of vertical centerline) */}
                             {n.data.base_voltage_kv != null && (
                                 <text
-                                    x={n.cx}
+                                    x={n.cx + 30}
                                     y={n.y + BUS_H + 12}
-                                    textAnchor="middle"
+                                    textAnchor="start"
                                     fontSize={9}
                                     fill="#868e96"
                                 >

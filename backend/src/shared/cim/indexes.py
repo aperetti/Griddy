@@ -49,6 +49,24 @@ class IndexBuilder:
         self._build_transformer_index()
         self._build_limit_index()
         self._classify_equipment()
+        
+        logger.info("IndexBuilder stats:")
+        logger.info(f"  Tap changers documented: {len(self.transformer_has_tap_changer)}")
+        regulators = [m for m, t in self.equipment_types.items() if t == "Regulator"]
+        logger.info(f"  Regulators classified: {len(regulators)}")
+
+        # Write to a debug file so I can verify background execution
+        try:
+            import json
+            debug_info = {
+                "tap_changers": len(self.transformer_has_tap_changer),
+                "regulators": len(regulators),
+                "model_id": getattr(self.graph, "feeder_mrid", "unknown")
+            }
+            with open("tmp/index_build_last.json", "w") as f:
+                json.dump(debug_info, f)
+        except Exception as e:
+            logger.error(f"Failed to write debug file: {e}")
 
     # ------------------------------------------------------------------
     # Private builders
@@ -178,8 +196,8 @@ RETURN
         cim = self.cim
         graph = self.graph
 
-        type_map: dict = {}
-        for opt_name, type_str in [
+        # We store (class_name, default_type_label)
+        type_map_configs = [
             ("ACLineSegment", "ACLineSegment"),
             ("PowerTransformer", "PowerTransformer"),
             ("Breaker", "Breaker"),
@@ -187,27 +205,39 @@ RETURN
             ("EnergyConsumer", "EnergyConsumer"),
             ("EnergySource", "EnergySource"),
             ("TransformerTank", "PowerTransformer"),
+            ("StepVoltageRegulator", "Regulator"),
+            ("Regulator", "Regulator"),
             ("Fuse", "Fuse"),
             ("Disconnector", "Disconnector"),
             ("Recloser", "Recloser"),
             ("LinearShuntCompensator", "Capacitor"),
-        ]:
-            cls = getattr(cim, opt_name, None)
-            if cls:
-                type_map[cls] = type_str
+        ]
 
-        for eq_cls, type_name in type_map.items():
-            for _eid, eq in graph.get(eq_cls, {}).items():
+        for cls_name, default_label in type_map_configs:
+            cls = getattr(cim, cls_name, None)
+            if not cls:
+                continue
+            
+            for _eid, eq in graph.get(cls, {}).items():
                 m = _mrid_str(eq)
-                if m:
-                    self.equipment_types[m] = type_name
-                    
+                if not m:
+                    continue
+                
+                label = default_label
+                # If it's a transformer but has a tap changer, it's functionally a Regulator
+                if cls_name in ("PowerTransformer", "TransformerTank"):
+                    if m in self.transformer_has_tap_changer:
+                        label = "Regulator"
+                
+                self.equipment_types[m] = label
+                
+                # Metadata for switches
+                if label in ("Breaker", "LoadBreakSwitch", "Fuse",
+                             "Disconnector", "Recloser"):
+                    is_open = getattr(eq, "normalOpen", None) or getattr(eq, "open", None)
+                    self.equipment_open[m] = bool(is_open) if is_open is not None else False
 
-                    if type_name in ("Breaker", "LoadBreakSwitch", "Fuse",
-                                     "Disconnector", "Recloser"):
-                        is_open = getattr(eq, "normalOpen", None) or getattr(eq, "open", None)
-                        self.equipment_open[m] = bool(is_open) if is_open is not None else False
-
+        # Substation handling
         for _sid, sub in graph.get(getattr(cim, "Substation", None), {}).items():
             m = _mrid_str(sub)
             if m:
@@ -409,49 +439,52 @@ RETURN
                         self.transformer_kva[pt_id] = max(current, kva)
 
         # ── 3b. Tap Changer identification (Regulators) ──
+        # Check both directions: RTC pointing to End, and End having an RTC.
+        
+        def _register_rtc(rtc_obj, parent_id):
+            if not parent_id:
+                return
+            self.transformer_has_tap_changer[parent_id] = True
+            rtc_data = {
+                "step": _safe_float(getattr(rtc_obj, "step", None)),
+                "neutralStep": _safe_float(getattr(rtc_obj, "neutralStep", None)),
+                "lowStep": _safe_float(getattr(rtc_obj, "lowStep", None)),
+                "highStep": _safe_float(getattr(rtc_obj, "highStep", None)),
+                "neutralU": _safe_float(getattr(rtc_obj, "neutralU", None)),
+                "stepVoltageIncrement": _safe_float(getattr(rtc_obj, "stepVoltageIncrement", None)),
+            }
+            self.transformer_tap_changers[parent_id] = rtc_data
+
+        # Mode A: RatioTapChanger -> TransformerEnd
         rtc_cls = getattr(cim, "RatioTapChanger", None)
         if rtc_cls:
             for _eid, rtc in graph.get(rtc_cls, {}).items():
-                # RatioTapChanger can be linked to PowerTransformerEnd or TransformerTankEnd
-                pte = getattr(rtc, "TransformerEnd", None) # Often just "TransformerEnd" in CIM
+                pte = getattr(rtc, "TransformerEnd", None) or getattr(rtc, "RatioTapChangerInfo", None)
                 if pte:
-                    # TransformerTankEnd -> TransformerTank
                     tank = getattr(pte, "TransformerTank", None)
                     tank_id = _mrid_str(tank)
                     if tank_id:
-                        self.transformer_has_tap_changer[tank_id] = True
-                        # Store properties
-                        rtc_data = {
-                            "step": _safe_float(getattr(rtc, "step", None)),
-                            "neutralStep": _safe_float(getattr(rtc, "neutralStep", None)),
-                            "lowStep": _safe_float(getattr(rtc, "lowStep", None)),
-                            "highStep": _safe_float(getattr(rtc, "highStep", None)),
-                            "neutralU": _safe_float(getattr(rtc, "neutralU", None)),
-                            "stepVoltageIncrement": _safe_float(getattr(rtc, "stepVoltageIncrement", None)),
-                        }
-                        self.transformer_tap_changers[tank_id] = rtc_data
-
-                        # Also flag the parent transformer if it's a tank
-                        pt_from_tank = getattr(tank, "PowerTransformer", None)
-                        pt_from_tank_id = _mrid_str(pt_from_tank)
-                        if pt_from_tank_id:
-                            self.transformer_has_tap_changer[pt_from_tank_id] = True
-                            self.transformer_tap_changers[pt_from_tank_id] = rtc_data
+                        _register_rtc(rtc, tank_id)
+                        pt = getattr(tank, "PowerTransformer", None)
+                        if pt: _register_rtc(rtc, _mrid_str(pt))
                     
-                    # PowerTransformerEnd -> PowerTransformer
                     pt = getattr(pte, "PowerTransformer", None)
-                    pt_id = _mrid_str(pt)
-                    if pt_id:
-                        self.transformer_has_tap_changer[pt_id] = True
-                        rtc_data = {
-                            "step": _safe_float(getattr(rtc, "step", None)),
-                            "neutralStep": _safe_float(getattr(rtc, "neutralStep", None)),
-                            "lowStep": _safe_float(getattr(rtc, "lowStep", None)),
-                            "highStep": _safe_float(getattr(rtc, "highStep", None)),
-                            "neutralU": _safe_float(getattr(rtc, "neutralU", None)),
-                            "stepVoltageIncrement": _safe_float(getattr(rtc, "stepVoltageIncrement", None)),
-                        }
-                        self.transformer_tap_changers[pt_id] = rtc_data
+                    if pt: _register_rtc(rtc, _mrid_str(pt))
+
+        # Mode B: TransformerEnd -> RatioTapChanger (Often the case in this specific Neo4j ingestion)
+        for cls_name in ["PowerTransformerEnd", "TransformerTankEnd"]:
+            cls = getattr(cim, cls_name, None)
+            if not cls: continue
+            for _eid, pte in graph.get(cls, {}).items():
+                rtc = getattr(pte, "RatioTapChanger", None)
+                if rtc:
+                    parent = getattr(pte, "PowerTransformer", None) or getattr(pte, "TransformerTank", None)
+                    parent_id = _mrid_str(parent)
+                    if parent_id:
+                        _register_rtc(rtc, parent_id)
+                        if cls_name == "TransformerTankEnd":
+                            pt_from_tank = getattr(parent, "PowerTransformer", None)
+                            if pt_from_tank: _register_rtc(rtc, _mrid_str(pt_from_tank))
                     
     def _build_limit_index(self):
         """Map equipment to their associated CurrentLimit values."""

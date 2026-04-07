@@ -154,6 +154,8 @@ class CimModelManager:
             getattr(cim, "OperationalLimitValue", None),
             getattr(cim, "LinearShuntCompensator", None),
             getattr(cim, "CurrentLimit", None),
+            getattr(cim, "StepVoltageRegulator", None),
+            getattr(cim, "Regulator", None),
         ]:
             if cls_type:
                 logger.info("  Fetching %s...", cls_type.__name__)
@@ -822,19 +824,92 @@ RETURN
         detail["hierarchy"] = hierarchy
         detail["transformerends"] = sorted(ends, key=lambda e: e.get("endNumber") or 0)
 
-        # Look for RatioTapChanger
+        # Identify if this PowerTransformer is actually a Regulator
+        is_regulator = False
+        
+        # Check 1:1 voltage ratio (Strong signal for Regulator)
+        all_rated_u = []
+        for end in ends:
+            v = _safe_float(end.get("ratedU"))
+            if v: all_rated_u.append(v)
+            
+        def collect_u(node):
+            if node.get("class") == "TransformerEndInfo":
+                v = _safe_float(node.get("ratedU"))
+                if v: all_rated_u.append(v)
+            for child in node.get("children", []):
+                collect_u(child)
+        
+        collect_u(hierarchy)
+                    
+        has_1to1 = (len(all_rated_u) >= 2 and len(set(all_rated_u)) == 1)
+        name_lower = (detail.get("name") or "").lower()
+        is_named_reg = any(x in name_lower for x in ["reg", "regulator", "vreg"])
 
-        # Look for RatioTapChanger
+        # Look for RatioTapChanger and associated Controls
         rtc_cls = getattr(cim, "RatioTapChanger", None)
+        tcc_cls = getattr(cim, "TapChangerControl", None)
+        
         if rtc_cls:
-            winding_mrids = {w["mrid"] for w in ends if w.get("mrid")}
+            # First find ALL ends belonging to this transformer to match RTCs
+            parent_transformer_ends = []
+            tank_mrids = []
+            
+            # Extract Tank MRIDs from hierarchy
+            def collect_tanks(node):
+                if node.get("class") == "TransformerTank":
+                    tank_mrids.append(node["mrid"])
+                for child in node.get("children", []):
+                    collect_tanks(child)
+            collect_tanks(hierarchy)
+
+            pte_cls = getattr(cim, "PowerTransformerEnd", None)
+            if pte_cls:
+                for _peid, pte in self.network.graph.get(pte_cls, {}).items():
+                    pt_p = getattr(pte, "PowerTransformer", None)
+                    if pt_p and _mrid_str(pt_p) == detail["mrid"]:
+                        parent_transformer_ends.append(_mrid_str(pte))
+
+            # Find RTC through Ends OR Tanks
             for _rid, rtc in self.network.graph.get(rtc_cls, {}).items():
                 te = getattr(rtc, "TransformerEnd", None)
-                if te and _mrid_str(te) in winding_mrids:
+                found = False
+                if te:
+                    te_mrid = _mrid_str(te)
+                    if te_mrid in parent_transformer_ends:
+                        found = True
+                    else:
+                        # Fallback: Is this end linked to one of our tanks?
+                        tte_cls = getattr(cim, "TransformerTankEnd", None)
+                        if tte_cls:
+                            for _tteid, tte in self.network.graph.get(tte_cls, {}).items():
+                                if _mrid_str(tte) == te_mrid:
+                                    tt_p = getattr(tte, "TransformerTank", None)
+                                    if tt_p and _mrid_str(tt_p) in tank_mrids:
+                                        found = True
+                                        break
+                
+                if found:
                     detail["RatioTapChanger"] = self._extract_primitives(rtc)
+                    
+                    # Look for TapChangerControl linked to this RTC
+                    if tcc_cls:
+                        for _tcid, tcc in self.network.graph.get(tcc_cls, {}).items():
+                            tc_ref = getattr(tcc, "TapChanger", None)
+                            if tc_ref and _mrid_str(tc_ref) == _rid:
+                                detail["TapChangerControl"] = self._extract_primitives(tcc)
+                                is_regulator = True
+                                # Parental link to RegulatingControl
+                                rc_ref = getattr(tcc, "RegulatingControl", None)
+                                if rc_ref:
+                                    detail["RegulatingControl"] = self._extract_primitives(rc_ref)
+                                break
                     break
 
-        # Look for PhaseTapChanger (indicates a voltage regulator)
+        if is_regulator or (has_1to1 and detail.get("RatioTapChanger")) or is_named_reg:
+            detail["display_class"] = "Regulator"
+
+        # Look for PhaseTapChanger
         ptc_cls = getattr(cim, "PhaseTapChanger", None)
         if ptc_cls:
             winding_mrids = {w["mrid"] for w in ends if w.get("mrid")}

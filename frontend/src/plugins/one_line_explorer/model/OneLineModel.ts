@@ -93,6 +93,10 @@ export interface LayoutEdge {
     label: string;
     color: string;
     dashed: boolean;
+    /** base_voltage_kv of the from_node (upper side in vertical layout). */
+    fromKv: number | null;
+    /** base_voltage_kv of the to_node (lower side in vertical layout). */
+    toKv: number | null;
 }
 
 export interface DiagramLayout {
@@ -112,6 +116,8 @@ const TRANSFORMER_TYPES = new Set([
 ]);
 
 function edgeColor(e: EquipmentEdge): string {
+    // LoadBreakSwitch: closed = red (energised/live), open = green (de-energised/safe)
+    if (e.edge_type === 'LoadBreakSwitch') return e.is_open ? '#51cf66' : '#fa5252';
     if (SWITCH_TYPES.has(e.edge_type)) return e.is_open ? '#fa5252' : '#51cf66';
     if (TRANSFORMER_TYPES.has(e.edge_type)) return '#fd7e14';
     if (e.edge_type === 'ACLineSegment') return '#868e96';
@@ -171,7 +177,9 @@ function edgeShortLabel(e: EquipmentEdge): string {
 // Chains of such buses are replaced by a single virtual ACLineSegment whose
 // length, kVA, and customer count are the sums across the collapsed chain.
 
-const TR_TYPES = new Set(['PowerTransformer', 'Regulator', 'TransformerTank']);
+// TR_ABSORBABLE: transformer offshoots to dead-end leaves may be absorbed into virtual edges.
+// Regulator is intentionally excluded — regulators always remain as their own visible nodes.
+const TR_ABSORBABLE = new Set(['PowerTransformer', 'TransformerTank']);
 
 function collapsePassThroughBuses(data: OneLineDiagramData): OneLineDiagramData {
     const { nodes, edges, centre_id, source_path } = data;
@@ -201,7 +209,7 @@ function collapsePassThroughBuses(data: OneLineDiagramData): OneLineDiagramData 
         const result: Array<{ edge: EquipmentEdge; leafId: string }> = [];
         for (const nb of adj.get(id) ?? []) {
             const e = edgeByPair.get(`${id}|${nb}`);
-            if (!e || !TR_TYPES.has(e.edge_type)) continue;
+            if (!e || !TR_ABSORBABLE.has(e.edge_type)) continue;
             if ((adj.get(nb)?.size ?? 0) === 1) {           // nb is a leaf
                 result.push({ edge: e, leafId: nb });
             }
@@ -226,8 +234,10 @@ function collapsePassThroughBuses(data: OneLineDiagramData): OneLineDiagramData 
             if (e?.edge_type === 'ACLineSegment') { lineCount++; continue; }
             // Switch edge (Breaker, Recloser, Fuse…): keep this bus visible
             if (!e || SWITCH_TYPES.has(e.edge_type)) return false;
-            // Transformer to a dead-end leaf: absorb into virtual edge
-            if (TR_TYPES.has(e.edge_type) && (adj.get(nb)?.size ?? 0) === 1) continue;
+            // Regulator: always keep visible — never absorb into a virtual edge
+            if (e.edge_type === 'Regulator') return false;
+            // PowerTransformer/TransformerTank to a dead-end leaf: absorb into virtual edge
+            if (TR_ABSORBABLE.has(e.edge_type) && (adj.get(nb)?.size ?? 0) === 1) continue;
             // Transformer to a non-leaf, or unknown edge type: keep
             return false;
         }
@@ -455,8 +465,8 @@ export function computeLayout(data: OneLineDiagramData): DiagramLayout {
             ].join(' ');
             symbolX = (ax + bx) / 2;
             symbolY = below;
-            labelX = symbolX;
-            labelY = below + 22;
+            labelX = symbolX + 24;
+            labelY = below;
         } else {
             // Different levels — tap horizontal off upper bus bar, then straight
             // vertical drop to lower bus bar (ANSI standard routing).
@@ -474,9 +484,12 @@ export function computeLayout(data: OneLineDiagramData): DiagramLayout {
 
             symbolX = botX;
             symbolY = (wireStart + wireEnd) / 2;
-            labelX  = botX + 8;
+            labelX  = botX + 24;
             labelY  = symbolY;
         }
+
+        const fromNode = nodes.find(n => n.id === e.from_node_id);
+        const toNode   = nodes.find(n => n.id === e.to_node_id);
 
         layoutEdges.push({
             id:          e.id,
@@ -491,6 +504,8 @@ export function computeLayout(data: OneLineDiagramData): DiagramLayout {
             label:       edgeShortLabel(e),
             color:       edgeColor(e),
             dashed:      e.is_open,
+            fromKv:      fromNode?.base_voltage_kv ?? null,
+            toKv:        toNode?.base_voltage_kv ?? null,
         });
     }
 
