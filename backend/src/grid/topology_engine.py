@@ -110,10 +110,12 @@ class TopologyEngine(GraphEngine):
         )
 
     def find_downstream(self, start_node_id: str, max_depth: int = None) -> Tuple[List[str], List[str]]:
-        return self._bfs(start_node_id, "downstream", max_depth)
+        flow_depth = self._flow_depth_for_node(start_node_id)
+        return self._bfs(start_node_id, "downstream", max_depth, flow_depth=flow_depth)
 
     def find_upstream(self, start_node_id: str, max_depth: int = None) -> Tuple[List[str], List[str]]:
-        return self._bfs(start_node_id, "upstream", max_depth)
+        flow_depth = self._flow_depth_for_node(start_node_id)
+        return self._bfs(start_node_id, "upstream", max_depth, flow_depth=flow_depth)
 
     def get_all_neighbors(self, node_id: str) -> list[str]:
         """Return all neighbors of *node_id*: forward edges, reverse edges, and stitch peers.
@@ -185,6 +187,89 @@ class TopologyEngine(GraphEngine):
     # Nodes at or above this voltage (kV) are treated as transmission-level
     # pseudo-sources when no Substation / EnergySource nodes are present.
     TRANSMISSION_KV_THRESHOLD: float = 69.0
+
+    def _find_topologically_connected_energy_source(self, start_node_id: str) -> Optional[str]:
+        """Undirected BFS from *start_node_id* to discover all reachable EnergySource nodes.
+
+        Returns the node ID of the EnergySource with the highest ``base_voltage_kv``
+        among those reachable, or ``None`` if no EnergySource is found.  When there
+        are multiple generation sources (e.g. the 9500-node model), this ensures that
+        downstream/upstream traversal is anchored to the source that actually feeds
+        the selected node rather than whichever source happens to be topologically
+        closest in the global flow-depth map.
+        """
+        if start_node_id not in self._nodes:
+            return None
+
+        visited: Set[str] = {start_node_id}
+        queue: deque[str] = deque([start_node_id])
+        energy_sources: List[Tuple[float, str]] = []  # (base_voltage_kv, node_id)
+
+        while queue:
+            current = queue.popleft()
+            node = self._nodes.get(current)
+            if node and any(eq.get("type") == "EnergySource" for eq in node.attached_equipment):
+                kv = node.base_voltage_kv if node.base_voltage_kv is not None else 0.0
+                energy_sources.append((kv, current))
+
+            for neighbor, _ in self._forward_adj[current] + self._reverse_adj[current]:
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    queue.append(neighbor)
+            for stitch_nb in self._stitch_adj[current]:
+                if stitch_nb not in visited:
+                    visited.add(stitch_nb)
+                    queue.append(stitch_nb)
+
+        if not energy_sources:
+            return None
+        energy_sources.sort(reverse=True)  # highest voltage first
+        chosen = energy_sources[0][1]
+        logger.info(
+            "[TopologyEngine] connected EnergySource for %s: %s (%.2f kV), "
+            "%d source(s) reachable",
+            start_node_id, chosen, energy_sources[0][0], len(energy_sources),
+        )
+        return chosen
+
+    def _compute_flow_depth_from_source(self, source_id: str) -> Dict[str, int]:
+        """Dijkstra from a single *source_id*.
+
+        Mirrors the logic of ``_compute_flow_depth`` but for one source only.
+        Real edges cost 1; stitch connections cost 0.
+        """
+        dist: Dict[str, int] = {source_id: 0}
+        heap: List[Tuple[int, str]] = [(0, source_id)]
+
+        while heap:
+            d, node = heapq.heappop(heap)
+            if d > dist.get(node, float("inf")):
+                continue
+            for neighbor, _ in self._forward_adj[node] + self._reverse_adj[node]:
+                nd = d + 1
+                if nd < dist.get(neighbor, float("inf")):
+                    dist[neighbor] = nd
+                    heapq.heappush(heap, (nd, neighbor))
+            for stitch_nb in self._stitch_adj[node]:
+                if d < dist.get(stitch_nb, float("inf")):
+                    dist[stitch_nb] = d
+                    heapq.heappush(heap, (d, stitch_nb))
+
+        return dist
+
+    def _flow_depth_for_node(self, start_node_id: str) -> Dict[str, int]:
+        """Return the flow-depth map anchored to the EnergySource connected to *start_node_id*.
+
+        When the graph has a single source (or no EnergySource nodes), this falls
+        back to the global ``_flow_depth`` computed at build time.  When multiple
+        EnergySources exist, we anchor the depth map to the one with the highest
+        voltage that is topologically reachable from *start_node_id*, ensuring
+        downstream/upstream traversal stays within the correct feeder.
+        """
+        source_id = self._find_topologically_connected_energy_source(start_node_id)
+        if source_id is None:
+            return self._flow_depth  # fall back — no EnergySource found
+        return self._compute_flow_depth_from_source(source_id)
 
     def _compute_flow_depth(self) -> None:
         """Dijkstra from all Substation/EnergySource nodes.
@@ -263,6 +348,7 @@ class TopologyEngine(GraphEngine):
         start_node_id: str,
         direction: str,
         max_depth: Optional[int],
+        flow_depth: Optional[Dict[str, int]] = None,
     ) -> Tuple[List[str], List[str]]:
         """BFS traversal with flow-depth direction enforcement.
 
@@ -275,13 +361,19 @@ class TopologyEngine(GraphEngine):
         When flow depth is unavailable (no source nodes detected):
           - Directed-only BFS: follow forward_adj for downstream,
             reverse_adj for upstream.  Still correct for well-oriented data.
+
+        *flow_depth* overrides ``self._flow_depth`` when provided.  Callers
+        (``find_downstream`` / ``find_upstream``) pass a source-anchored depth
+        map so that traversal stays within the correct feeder when multiple
+        EnergySources are present.
         """
         if start_node_id not in self._nodes:
             logger.warning("[TopologyEngine] start node '%s' not in graph", start_node_id)
             return [], []
 
-        start_depth = self._flow_depth.get(start_node_id)
-        use_flow_depth = bool(self._flow_depth) and start_depth is not None
+        effective_flow_depth = flow_depth if flow_depth is not None else self._flow_depth
+        start_depth = effective_flow_depth.get(start_node_id)
+        use_flow_depth = bool(effective_flow_depth) and start_depth is not None
 
         # Voltage-based direction fallback: when flow_depth is unavailable, use
         # the start node's base_voltage_kv to filter traversal direction.
@@ -319,7 +411,7 @@ class TopologyEngine(GraphEngine):
             if max_depth is not None and hop >= max_depth:
                 continue
 
-            curr_lvl = self._flow_depth.get(current) if use_flow_depth else None
+            curr_lvl = effective_flow_depth.get(current) if use_flow_depth else None
 
             # ── Real edge neighbors ────────────────────────────────────────
             if use_flow_depth or use_voltage_filter:
@@ -337,7 +429,7 @@ class TopologyEngine(GraphEngine):
                 if neighbor in visited:
                     continue
                 if use_flow_depth and curr_lvl is not None:
-                    next_lvl = self._flow_depth.get(neighbor)
+                    next_lvl = effective_flow_depth.get(neighbor)
                     if next_lvl is not None:
                         if direction == "downstream" and next_lvl < curr_lvl:
                             continue  # moving toward source — skip

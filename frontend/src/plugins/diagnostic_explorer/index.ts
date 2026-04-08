@@ -1,4 +1,4 @@
-import { Network } from 'lucide-react';
+import { ChartNetwork } from 'lucide-react';
 import { createElement } from 'react';
 import type { SdkPluginDefinition } from '@plugin-sdk';
 import { DiagnosticExplorerWindow } from './components/DiagnosticExplorerWindow';
@@ -8,7 +8,7 @@ export const diagnosticExplorerPlugin: SdkPluginDefinition = {
     category: 'system',
     label: 'Diagnostic Explorer',
     description: 'Explore CIM relationships and attributes in a force-directed graph.',
-    icon: Network,
+    icon: ChartNetwork,
     color: 'blue',
 
     appliesToNodes: () => true,

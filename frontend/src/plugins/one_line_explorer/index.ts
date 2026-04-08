@@ -1,4 +1,4 @@
-import { GitFork } from 'lucide-react';
+import { Network } from 'lucide-react';
 import { createElement } from 'react';
 import type { SdkPluginDefinition, SdkNode } from '../sdk';
 import { OneLineDiagramWindow } from './components/OneLineDiagramWindow';
@@ -8,7 +8,7 @@ export const oneLineExplorerPlugin: SdkPluginDefinition = {
     category: 'node',
     label: 'One-Line Diagram',
     description: 'Render a one-line connectivity diagram for the selected node or edge endpoint (2-depth neighbourhood, ConnectivityNodes as bus bars).',
-    icon: GitFork,
+    icon: Network,
     color: 'teal',
 
     // Show when exactly 1 node is selected, or when exactly 1 edge is selected (no nodes)
