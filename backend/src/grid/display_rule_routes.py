@@ -61,6 +61,25 @@ def _get_admin_conn():
 
 # ── Routes ────────────────────────────────────────────────────────
 
+@router.get("/classifiers")
+async def list_field_device_classifiers():
+    """Return all registered FieldDevice classifiers for the rule editor.
+
+    No authentication required — this is read-only static metadata.
+    The frontend uses this to populate the 'Built-in Classifier' picker.
+    """
+    from src.shared.cim.classifiers import FIELD_DEVICE_CLASSIFIERS
+    return [
+        {
+            "name": c.name,
+            "derived_type": c.derived_type,
+            "target_cim_class": c.target_cim_class,
+            "description": c.description,
+        }
+        for c in FIELD_DEVICE_CLASSIFIERS
+    ]
+
+
 @router.get("/active")
 async def get_active_display_rules():
     """Public endpoint: returns enabled rules for the default display config.

@@ -117,6 +117,12 @@ class CypherRuleBuilder:
         return f" {logical_op} ".join(parts)
 
     def _build_leaf(self, cond: Dict[str, Any], cim_class: str) -> str:
+        # ── Field Device Classifier shorthand ─────────────────────────────────
+        # Condition shape: {"type": "field_device_classifier", "classifier_name": "Recloser"}
+        # Emits a verbatim EXISTS { <exists_pattern> } fragment from the registry.
+        if cond.get("type") == "field_device_classifier":
+            return self._build_classifier_exists(cond, cim_class)
+
         path = cond.get("path", "")
         op_str = cond.get("op", "")
         val = cond.get("value")
@@ -162,6 +168,39 @@ class CypherRuleBuilder:
         else:
             inner = f"{e_prop} {cypher_op} {param_name}"
         return f"EXISTS {{ (n:{cim_class}){traversal} WHERE {inner} }}"
+
+    def _build_classifier_exists(self, cond: Dict[str, Any], cim_class: str) -> str:
+        """Build an EXISTS fragment from a named FieldDeviceClassifier.
+
+        Looks up ``classifier_name`` in the registry and emits:
+            EXISTS { <classifier.exists_pattern> }
+
+        The ``cim_class`` supplied by the rule is used as a sanity label. If the
+        classifier's ``target_cim_class`` differs we emit a warning but still
+        generate the clause using the classifier's own pattern (which already
+        references the correct label internally).
+        """
+        from src.shared.cim.classifiers import CLASSIFIER_BY_NAME
+
+        classifier_name = cond.get("classifier_name", "")
+        classifier = CLASSIFIER_BY_NAME.get(classifier_name)
+
+        if not classifier:
+            known = list(CLASSIFIER_BY_NAME.keys())
+            self.warnings.append(
+                f"Unknown field_device_classifier '{classifier_name}'. "
+                f"Known classifiers: {known}"
+            )
+            return ""
+
+        if cim_class != classifier.target_cim_class:
+            self.warnings.append(
+                f"Classifier '{classifier_name}' targets '{classifier.target_cim_class}' "
+                f"but rule target_class is '{cim_class}'. "
+                f"Using classifier's exists_pattern — ensure target_class matches."
+            )
+
+        return f"EXISTS {{ {classifier.exists_pattern} }}"
 
 
 # ── Module-level helpers ──────────────────────────────────────────────────────

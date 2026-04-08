@@ -40,6 +40,9 @@ class CimModelManager:
         self._topology_nodes: list[dict] = []
         self._topology_edges: list[dict] = []
 
+        # Lazily populated by classify_field_devices()
+        self._field_device_classifications: dict[str, dict] = {}
+
     # ── Singleton access (legacy — prefer CimModelRegistry) ───────
 
     @classmethod
@@ -193,6 +196,26 @@ class CimModelManager:
     def get_topology_edges(self) -> list[dict]:
         """All pre-computed topology edges."""
         return self._topology_edges
+
+    def classify_field_devices(self) -> dict[str, dict]:
+        """Run all registered FieldDevice classifiers against Neo4j.
+
+        Results are cached on this instance. Subsequent calls return the cache.
+
+        Returns:
+            ``{mrid: {"derived_type": str, "child_mrids": list[str], "classifier_name": str}}``
+        """
+        if self._field_device_classifications:
+            return self._field_device_classifications
+
+        from src.shared.cim.field_device_engine import FieldDeviceEngine
+        engine = FieldDeviceEngine(self)
+        self._field_device_classifications = engine.run()
+        return self._field_device_classifications
+
+    def get_field_device_classifications(self) -> dict[str, dict]:
+        """Return cached field device classifications (empty dict if not yet run)."""
+        return self._field_device_classifications
 
     def execute_cypher(self, query: str, params: dict = None) -> list[dict]:
         """Execute a raw Cypher query against the Neo4j database.
