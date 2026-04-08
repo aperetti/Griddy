@@ -41,20 +41,20 @@ def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
         "sha256", credentials.password.encode("utf8"), salt_bytes, 100000
     ).hex()
 
-    if not correct_username or not stored_hash or not stored_salt:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-        )
+    is_valid_user = bool(correct_username and stored_hash and stored_salt)
+
+    # Use empty strings as fallback to ensure compare_digest runs
+    safe_username = correct_username if is_valid_user else ""
+    safe_hash = stored_hash if is_valid_user else ""
 
     is_correct_username = secrets.compare_digest(
-        credentials.username.encode("utf8"), correct_username.encode("utf8")
+        credentials.username.encode("utf8"), safe_username.encode("utf8")
     )
     is_correct_password = secrets.compare_digest(
-        inbound_hash.encode("utf8"), stored_hash.encode("utf8")
+        inbound_hash.encode("utf8"), safe_hash.encode("utf8")
     )
 
-    if not (is_correct_username and is_correct_password):
+    if not is_valid_user or not is_correct_username or not is_correct_password:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
