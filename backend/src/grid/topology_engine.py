@@ -283,10 +283,29 @@ class TopologyEngine(GraphEngine):
         start_depth = self._flow_depth.get(start_node_id)
         use_flow_depth = bool(self._flow_depth) and start_depth is not None
 
+        # Voltage-based direction fallback: when flow_depth is unavailable, use
+        # the start node's base_voltage_kv to filter traversal direction.
+        # Downstream = don't cross to strictly higher voltage (moving toward source).
+        # Upstream   = don't cross to strictly lower voltage (moving away from source).
+        # This mirrors the one-line explorer's upstream-path logic and handles
+        # models where edge orientation is inconsistent (e.g. 9500-node feeder).
+        start_node_data = self._nodes.get(start_node_id)
+        start_kv = (
+            start_node_data.base_voltage_kv
+            if start_node_data is not None
+            else None
+        )
+        use_voltage_filter = (
+            not use_flow_depth
+            and start_kv is not None
+            and start_kv > 0
+        )
+
         logger.info(
             "[TopologyEngine] BFS direction=%s start=%s start_depth=%s "
-            "use_flow_depth=%s total_nodes=%d",
-            direction, start_node_id, start_depth, use_flow_depth, len(self._nodes),
+            "use_flow_depth=%s use_voltage_filter=%s start_kv=%s total_nodes=%d",
+            direction, start_node_id, start_depth, use_flow_depth,
+            use_voltage_filter, start_kv, len(self._nodes),
         )
 
         nodes_found: Set[str] = set()
@@ -303,8 +322,8 @@ class TopologyEngine(GraphEngine):
             curr_lvl = self._flow_depth.get(current) if use_flow_depth else None
 
             # ── Real edge neighbors ────────────────────────────────────────
-            if use_flow_depth:
-                # Undirected: check both directions, filter by depth
+            if use_flow_depth or use_voltage_filter:
+                # Undirected: check both directions, filter by depth or voltage
                 candidates = self._forward_adj[current] + self._reverse_adj[current]
             else:
                 # Directed fallback: only follow edges in the intended direction
@@ -324,6 +343,14 @@ class TopologyEngine(GraphEngine):
                             continue  # moving toward source — skip
                         if direction == "upstream" and next_lvl > curr_lvl:
                             continue  # moving away from source — skip
+                elif use_voltage_filter:
+                    nb_data = self._nodes.get(neighbor)
+                    nb_kv = nb_data.base_voltage_kv if nb_data is not None else None
+                    if nb_kv is not None and nb_kv != start_kv:
+                        if direction == "downstream" and nb_kv > start_kv:
+                            continue  # moving toward higher voltage (source) — skip
+                        if direction == "upstream" and nb_kv < start_kv:
+                            continue  # moving toward lower voltage (load) — skip
                 visited.add(neighbor)
                 nodes_found.add(neighbor)
                 edges_found.add(edge_id)

@@ -87,7 +87,12 @@ export const consumptionPlugin: SdkPluginDefinition = {
             if (callbacks.updateWindow) {
                 callbacks.updateWindow({ loading: true, isPaused: false });
                 fetchConsumptionPlugin(req.nodeIds, req.start, req.end, true)
-                    .then(resp => callbacks.updateWindow({ data: resp.time_series ?? [], loading: false }))
+                    .then(resp => {
+                        callbacks.updateWindow({ data: resp.time_series ?? [], loading: false });
+                        if (resp.downstream_node_ids?.length && callbacks.selectAndNavigateToNode) {
+                            callbacks.selectAndNavigateToNode([...req.nodeIds, ...resp.downstream_node_ids]);
+                        }
+                    })
                     .catch(() => callbacks.updateWindow({ loading: false }));
             }
         };

@@ -25,17 +25,20 @@ class CalculateAggregateConsumptionUseCase:
     def estimate(self, start_node_ids: List[str], start_time: str, end_time: str) -> Dict[str, Any]:
         """Returns the estimated number of rows to be processed for multiple nodes."""
         all_downstream_nodes = set()
+        all_downstream_edges = set()
         for node_id in start_node_ids:
-            nodes, _ = self.graph_engine.find_downstream(node_id)
+            nodes, edges = self.graph_engine.find_downstream(node_id)
             if nodes:
                 all_downstream_nodes.update(nodes)
             else:
                 all_downstream_nodes.add(node_id)
-        
+            if edges:
+                all_downstream_edges.update(edges)
+
         nodes_to_query = list(all_downstream_nodes)
         placeholders = ",".join(["?"] * len(nodes_to_query))
         query_params = nodes_to_query + [start_time, end_time]
-        
+
         safe_dir = _safe_parquet_path(self.parquet_dir)
         prefetch_query = f"""
             SELECT COUNT(*) as estimated_rows
@@ -50,7 +53,9 @@ class CalculateAggregateConsumptionUseCase:
 
         return {
             "estimated_rows": prefetch_results[0] if prefetch_results else 0,
-            "node_count": len(nodes_to_query)
+            "node_count": len(nodes_to_query),
+            "downstream_node_ids": nodes_to_query,
+            "downstream_edge_ids": list(all_downstream_edges),
         }
 
     def execute(self, start_node_ids: List[str], start_time: str, end_time: str) -> Dict[str, Any]:

@@ -55,3 +55,17 @@ def test_calculate_multi_node_consumption(graph_engine):
     # If M-1 exists, its downstream should be in the result
     if result["downstream_node_ids"]:
         assert len(result["downstream_node_ids"]) > 0
+
+
+def test_estimate_returns_downstream_ids(graph_engine):
+    """estimate() must return downstream_node_ids and downstream_edge_ids so the
+    frontend can highlight nodes even when the query is paused (over threshold)."""
+    uc = CalculateAggregateConsumptionUseCase(graph_engine, PARQUET_DIR)
+    result = uc.estimate(["M-1"], "2020-01-01T00:00:00", "2030-01-01T00:00:00")
+
+    assert "estimated_rows" in result
+    assert "node_count" in result
+    assert "downstream_node_ids" in result, "estimate must return downstream_node_ids for map highlighting"
+    assert "downstream_edge_ids" in result, "estimate must return downstream_edge_ids for map highlighting"
+    assert isinstance(result["downstream_node_ids"], list)
+    assert isinstance(result["downstream_edge_ids"], list)
