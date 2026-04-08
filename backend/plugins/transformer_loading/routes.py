@@ -28,7 +28,7 @@ _CYPHER_LOAD = "( (size(pt.`IdentifiedObject.mRID`) + coalesce(size(pt.`Identifi
 
 _CYPHER_COUNT = f"""
 MATCH (pt:PowerTransformer)
-WHERE ($search = "" OR pt.`IdentifiedObject.name` CONTAINS $search OR pt.`IdentifiedObject.mRID` CONTAINS $search)
+WHERE ($search = "" OR pt["IdentifiedObject.name"] CONTAINS $search OR pt["IdentifiedObject.mRID"] CONTAINS $search)
 RETURN count(pt) as total
 """
 
@@ -53,19 +53,19 @@ OPTIONAL MATCH (tank)-[:`TransformerTank.TransformerTankInfo`]-(ti:TransformerTa
 OPTIONAL MATCH (ti)-[:`TransformerEndInfo.TransformerTankInfo`]-(tei_catalog:TransformerEndInfo)
 
 RETURN
-  pt.`IdentifiedObject.mRID`                    AS mrid,
-  pt.`IdentifiedObject.name`                    AS name,
+  pt["IdentifiedObject.mRID"]                    AS mrid,
+  pt["IdentifiedObject.name"]                    AS name,
   load                                          AS loading_percent,
-  coalesce(pte.`PowerTransformerEnd.endNumber`, tte.`TransformerTankEnd.endNumber`) AS end_number,
-  coalesce(pte.`PowerTransformerEnd.ratedU`, tte.`TransformerTankEnd.ratedU`)       AS rated_u_end_v,
-  coalesce(pte.`PowerTransformerEnd.ratedS`, tte.`TransformerTankEnd.ratedS`)       AS rated_s_end_kva,
-  coalesce(tei_direct.`TransformerEndInfo.endNumber`, tei_tank.`TransformerEndInfo.endNumber`, tei_catalog.`TransformerEndInfo.endNumber`) AS tei_num,
-  coalesce(tei_direct.`TransformerEndInfo.ratedS`, tei_tank.`TransformerEndInfo.ratedS`, tei_catalog.`TransformerEndInfo.ratedS`)           AS rated_s_kva,
-  coalesce(tei_direct.`TransformerEndInfo.ratedU`, tei_tank.`TransformerEndInfo.ratedU`, tei_catalog.`TransformerEndInfo.ratedU`)           AS rated_u_v,
-  coalesce(tei_direct.`TransformerEndInfo.r`, tei_tank.`TransformerEndInfo.r`, tei_catalog.`TransformerEndInfo.r`)                         AS resistance_ohm,
-  coalesce(tei_direct.`TransformerEndInfo.x`, tei_tank.`TransformerEndInfo.x`, tei_catalog.`TransformerEndInfo.x`)                         AS reactance_ohm,
-  coalesce(tei_direct.`TransformerEndInfo.shortTermS`, tei_tank.`TransformerEndInfo.shortTermS`, tei_catalog.`TransformerEndInfo.shortTermS`) AS short_term_s_kva,
-  coalesce(tei_direct.`TransformerEndInfo.emergencyS`, tei_tank.`TransformerEndInfo.emergencyS`, tei_catalog.`TransformerEndInfo.emergencyS`) AS emergency_s_kva
+  coalesce(pte["PowerTransformerEnd.endNumber"], tte["TransformerTankEnd.endNumber"]) AS end_number,
+  coalesce(pte["PowerTransformerEnd.ratedU"], tte["TransformerTankEnd.ratedU"])       AS rated_u_end_v,
+  coalesce(pte["PowerTransformerEnd.ratedS"], tte["TransformerTankEnd.ratedS"])       AS rated_s_end_kva,
+  coalesce(tei_direct["TransformerEndInfo.endNumber"], tei_tank["TransformerEndInfo.endNumber"], tei_catalog["TransformerEndInfo.endNumber"]) AS tei_num,
+  coalesce(tei_direct["TransformerEndInfo.ratedS"], tei_tank["TransformerEndInfo.ratedS"], tei_catalog["TransformerEndInfo.ratedS"])           AS rated_s_kva,
+  coalesce(tei_direct["TransformerEndInfo.ratedU"], tei_tank["TransformerEndInfo.ratedU"], tei_catalog["TransformerEndInfo.ratedU"])           AS rated_u_v,
+  coalesce(tei_direct["TransformerEndInfo.r"], tei_tank["TransformerEndInfo.r"], tei_catalog["TransformerEndInfo.r"])                         AS resistance_ohm,
+  coalesce(tei_direct["TransformerEndInfo.x"], tei_tank["TransformerEndInfo.x"], tei_catalog["TransformerEndInfo.x"])                         AS reactance_ohm,
+  coalesce(tei_direct["TransformerEndInfo.shortTermS"], tei_tank["TransformerEndInfo.shortTermS"], tei_catalog["TransformerEndInfo.shortTermS"]) AS short_term_s_kva,
+  coalesce(tei_direct["TransformerEndInfo.emergencyS"], tei_tank["TransformerEndInfo.emergencyS"], tei_catalog["TransformerEndInfo.emergencyS"]) AS emergency_s_kva
 ORDER BY {sort_expr} {sort_dir}, mrid, end_number, tei_num
 """
 
@@ -98,8 +98,8 @@ def _fetch(
     
     # Map valid sort fields to Cypher expressions
     sort_map = {
-        "name": "pt.`IdentifiedObject.name`",
-        "mrid": "pt.`IdentifiedObject.mRID`",
+        "name": "pt[\"IdentifiedObject.name\"]",
+        "mrid": "pt[\"IdentifiedObject.mRID\"]",
         "load": "load"
     }
     sort_expr = sort_map.get(sort_field, sort_map["name"])

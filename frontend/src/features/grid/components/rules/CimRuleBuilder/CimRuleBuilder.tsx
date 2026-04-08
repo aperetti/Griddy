@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react';
-import { 
-    Button, Group, Text, Stack, 
-    Box, Tooltip, 
-    Collapse, Select as MantineSelect 
+import {
+    Button, Group, Text, Stack,
+    Box, Tooltip, Switch,
+    Collapse, Select as MantineSelect
 } from '@mantine/core';
 import { Sparkles, Info } from 'lucide-react';
 import { RuleAssistant } from '../RuleAssistant/RuleAssistant';
@@ -20,6 +20,7 @@ export const CimRuleBuilder = ({ value, onChange }: CimRuleBuilderProps) => {
     const {
         conditions,
         setTargetClass,
+        setResolveViaConnectivityNode,
         setLogicalOp,
         addCondition,
         addFilledCondition,
@@ -61,6 +62,17 @@ export const CimRuleBuilder = ({ value, onChange }: CimRuleBuilderProps) => {
                     Assistant
                 </Button>
             </Group>
+
+            {conditions.target_class && (
+                <Switch
+                    label="Resolve symbol via ConnectivityNode"
+                    description="Traverses Terminal → ConnectivityNode to place the symbol at the bus node. Use when the target class is equipment not directly in the topology (e.g. PowerElectronicsConnection, BatteryUnit)."
+                    checked={!!conditions.resolve_via_connectivity_node}
+                    onChange={e => setResolveViaConnectivityNode(e.currentTarget.checked)}
+                    size="xs"
+                    mt="xs"
+                />
+            )}
 
             <Collapse in={showAssistant}>
                 <Box mb="md">

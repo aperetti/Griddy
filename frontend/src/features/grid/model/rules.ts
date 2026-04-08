@@ -44,6 +44,11 @@ export interface ConditionGroup {
 
 export interface MatchConditions extends ConditionGroup {
     target_class?: string;
+    /** When true, the rule query traverses target_class → Terminal → ConnectivityNode
+     *  and returns the ConnectivityNode mRID instead of the equipment mRID.
+     *  Use for equipment that has a Terminal but is not directly in the topology
+     *  (e.g. PowerElectronicsConnection, BatteryUnit). */
+    resolve_via_connectivity_node?: boolean;
 }
 
 /**

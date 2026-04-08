@@ -43,6 +43,10 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
         handleUpdate({ ...conditions, target_class: className || undefined });
     }, [conditions, handleUpdate]);
 
+    const setResolveViaConnectivityNode = useCallback((val: boolean) => {
+        handleUpdate({ ...conditions, resolve_via_connectivity_node: val || undefined });
+    }, [conditions, handleUpdate]);
+
     const setLogicalOp = useCallback((id: string, op: 'AND' | 'OR') => {
         const next = updateNode(conditions, id, (n) => ({ ...n, logical_op: op }));
         handleUpdate(next as MatchConditions);
@@ -87,6 +91,7 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
     return {
         conditions,
         setTargetClass,
+        setResolveViaConnectivityNode,
         setLogicalOp,
         addCondition,
         addFilledCondition,

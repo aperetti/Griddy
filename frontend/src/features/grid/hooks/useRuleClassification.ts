@@ -47,11 +47,14 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
 
     const refresh = useCallback(() => setRefreshVersion(v => v + 1), []);
 
-    // Collect all equipment mRIDs present in the active topology.
-    // These scope each rule query so Neo4j never scans the full graph.
+    // Collect all equipment mRIDs present in the active topology, plus topology
+    // node IDs (ConnectivityNode mRIDs).  Node IDs are needed so that rules using
+    // resolve_via_connectivity_node can scope their IN $activeMrids filter to the
+    // active topology without a full-graph scan.
     const activeMridsKey = useMemo(() => {
         const mrids = new Set<string>();
         for (const n of rawNodes) {
+            mrids.add(n.id);  // ConnectivityNode mRID — needed for CN-targeting rules
             for (const eq of n.attached_equipment || []) {
                 if (eq.mrid) mrids.add(eq.mrid);
             }
@@ -123,13 +126,18 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
     }, [activeMridsKey, refreshVersion]);
 
     // Apply rule display props to nodes.  First matching rule wins (sorted by priority DESC).
+    // Matches on either attached_equipment mRIDs (standard rules) or directly on node.id
+    // (rules that use resolve_via_connectivity_node to return ConnectivityNode mRIDs).
     const classifiedNodes = useMemo((): Node[] => {
         if (ruleMatches.length === 0) return rawNodes;
 
         return rawNodes.map(node => {
             const equipMrids = (node.attached_equipment || []).map(eq => eq.mrid);
             for (const rule of ruleMatches) {
-                if (equipMrids.some(mrid => rule.matchingMrids.has(mrid))) {
+                if (
+                    rule.matchingMrids.has(node.id) ||
+                    equipMrids.some(mrid => rule.matchingMrids.has(mrid))
+                ) {
                     return { ...node, ...buildDisplayProps(rule.config, rule.ruleId) };
                 }
             }

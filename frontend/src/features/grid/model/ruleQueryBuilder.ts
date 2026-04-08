@@ -58,6 +58,21 @@ export function buildRuleQuery(
     const targetClass = conditions.target_class;
     if (!targetClass) return null;
 
+    // When resolve_via_connectivity_node is set, traverse from the target equipment
+    // node to its parent ConnectivityNode via Terminal.  This handles equipment types
+    // (e.g. PowerElectronicsConnection) that are not loaded into the in-memory topology
+    // but whose grid position can be found by walking Terminal → ConnectivityNode.
+    if (conditions.resolve_via_connectivity_node) {
+        const activeMrids = options?.activeMrids;
+        const scopeClause = activeMrids && activeMrids.length > 0
+            ? `WHERE cn.\`IdentifiedObject.mRID\` IN $activeMrids\n`
+            : '';
+        return {
+            cypher: `MATCH (n:\`${targetClass}\`)\nMATCH (n)-[]-(t:Terminal)-[]-(cn:ConnectivityNode)\n${scopeClause}RETURN DISTINCT cn.\`IdentifiedObject.mRID\` AS mrid`,
+            params: activeMrids && activeMrids.length > 0 ? { activeMrids } : {},
+        };
+    }
+
     // NamedNode('n') creates the variable reference — labels go on the Pattern, not here.
     const n = new Cypher.NamedNode('n');
     const matchPattern = new Cypher.Pattern(n, { labels: [targetClass] });
