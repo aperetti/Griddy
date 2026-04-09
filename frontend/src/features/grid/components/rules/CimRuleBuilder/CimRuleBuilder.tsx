@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
     Button, Group, Text, Stack,
     Box, Tooltip, SegmentedControl, Fieldset,
@@ -84,16 +84,9 @@ export const CimRuleBuilder = ({ value, onChange }: CimRuleBuilderProps) => {
     const [showAssistant, setShowAssistant] = useState(false);
     const [explorerPathDetected, setExplorerPathDetected] = useState(false);
 
-    // Derive current mode values — with backward compat for legacy rules
-    const entityType: 'node' | 'edge' = conditions.entity_type ||
-        (conditions.resolve_via_connectivity_node ? 'node' : 'edge');
+    // Derive current mode values
+    const entityType: 'node' | 'edge' = conditions.entity_type || 'node';
     const ruleMode: 'guided' | 'custom_cypher' = conditions.rule_mode || 'guided';
-
-    const isLegacy = !conditions.entity_type && !conditions.path_steps && !conditions.rule_mode;
-
-    const allClasses = useMemo(() =>
-        Object.keys(schema).sort().map(c => ({ value: c, label: c })),
-    [schema]);
 
     const edgeClassOptions = EDGE_CLASSES.map(c => ({ value: c, label: c }));
 
@@ -211,22 +204,6 @@ export const CimRuleBuilder = ({ value, onChange }: CimRuleBuilderProps) => {
                         />
                     )}
 
-                    {/* Legacy fallback: target_class dropdown for old rules without entity_type */}
-                    {isLegacy && (
-                        <MantineSelect
-                            label="Target CIM Class"
-                            description="Legacy rule — consider recreating with the new path builder"
-                            placeholder="e.g. PowerTransformer"
-                            data={allClasses}
-                            value={conditions.target_class || null}
-                            onChange={setTargetClass}
-                            searchable
-                            clearable
-                            size="xs"
-                            comboboxProps={{ zIndex: 2000, withinPortal: true }}
-                        />
-                    )}
-
                     {/* Rule Assistant */}
                     <Group justify="flex-end">
                         <Button
@@ -251,26 +228,6 @@ export const CimRuleBuilder = ({ value, onChange }: CimRuleBuilderProps) => {
                             />
                         </Box>
                     </Collapse>
-
-                    {/* Legacy rules — single flat ConditionGroup */}
-                    {isLegacy && (
-                        <Box>
-                            <Group gap="xs" mb={4}>
-                                <Text size="xs" fw={700} c="dimmed">ATTRIBUTE CONDITIONS</Text>
-                            </Group>
-                            <ConditionGroup
-                                group={conditions}
-                                isRoot={true}
-                                onUpdateLogicalOp={setLogicalOp}
-                                onAddCondition={addCondition}
-                                onAddGroup={addGroup}
-                                onUpdateCondition={updateCondition}
-                                onRemoveNode={removeNodeItem}
-                                targetClass={effectiveTargetClass}
-                                schema={schema}
-                            />
-                        </Box>
-                    )}
 
                     {/* Edge conditions */}
                     {entityType === 'edge' && effectiveTargetClass && (

@@ -101,10 +101,6 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
         handleUpdate({ ...conditions, target_class: className || undefined });
     }, [conditions, handleUpdate]);
 
-    const setResolveViaConnectivityNode = useCallback((val: boolean) => {
-        handleUpdate({ ...conditions, resolve_via_connectivity_node: val || undefined });
-    }, [conditions, handleUpdate]);
-
     // ── Condition group operations ────────────────────────────────────────────
 
     const setLogicalOp = useCallback((id: string, op: 'AND' | 'OR') => {
@@ -168,9 +164,8 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
         addPathStep,
         updatePathStep,
         removePathStep,
-        // Legacy operations (still used by backward-compat path)
+        // Legacy: target_class for edge mode
         setTargetClass,
-        setResolveViaConnectivityNode,
         // Condition operations
         setLogicalOp,
         addCondition,

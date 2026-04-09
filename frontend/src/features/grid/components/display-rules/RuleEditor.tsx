@@ -19,11 +19,6 @@ import { EdgeStyleEditor } from './EdgeStyleEditor';
 import { type RuleTestResponse } from '../../../../shared/api';
 import { DEFAULT_TOOLTIP_CONFIG } from '../../model/rules';
 
-const EDGE_TARGET_CLASSES = new Set([
-    'ACLineSegment', 'PowerTransformer', 'Breaker', 'LoadBreakSwitch',
-    'Fuse', 'Disconnector', 'Recloser', 'TransformerTank',
-]);
-
 interface RuleEditorProps {
     rule: any;
     onChange: (val: any) => void;
@@ -75,12 +70,7 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
     }, [rule.match_conditions]);
 
     const targetClass: string | undefined = parsedConditions?.target_class;
-    // entity_type === 'edge' takes priority; fall back to EDGE_TARGET_CLASSES for legacy rules
-    const isEdgeRule = parsedConditions?.entity_type === 'edge'
-        ? true
-        : parsedConditions?.entity_type === 'node'
-            ? false
-            : (targetClass ? EDGE_TARGET_CLASSES.has(targetClass) : false);
+    const isEdgeRule = parsedConditions?.entity_type === 'edge';
 
     const handleTest = async () => {
         if (!onTest) return;
@@ -156,6 +146,7 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
                         <EdgeStyleEditor
                             config={rule.config || {}}
                             onChange={updateConfig}
+                            onOpenLiveEditor={onOpenLiveEditor}
                         />
                     ) : (
                         <VisualConfigEditor
