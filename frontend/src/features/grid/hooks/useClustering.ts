@@ -34,7 +34,10 @@ export function useClustering({ nodes, edges, viewState, dimensions }: UseCluste
         );
         return visibleEdges.flatMap(e => {
             if (!e.edge_type || !SWITCH_EDGE_TYPES.has(e.edge_type)) {
-                return [{ ...e, path: [e.sourcePosition, e.targetPosition] }];
+                const path = e.waypoints && e.waypoints.length > 1
+                    ? e.waypoints
+                    : [e.sourcePosition, e.targetPosition];
+                return [{ ...e, path }];
             }
             const mid = edgeMidpoint(e);
             const dx = (e.targetPosition[0] - e.sourcePosition[0]) * Math.cos((e.sourcePosition[1] * Math.PI) / 180);

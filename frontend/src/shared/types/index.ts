@@ -52,6 +52,9 @@ export interface Node {
         conditions: any;
         tooltip_config: { mode: 'basic' | 'advanced'; fields: Array<{ id: string; label: string; field: string }>; html_template: string };
     }>;
+    // Edge-specific display overrides from rules
+    display_line_weight?: number;
+    display_line_style?: 'solid' | 'dashed' | 'dotted';
 }
 
 
@@ -89,5 +92,6 @@ export interface Edge {
         conditions: any;
         tooltip_config: { mode: 'basic' | 'advanced'; fields: Array<{ id: string; label: string; field: string }>; html_template: string };
     }>;
+    waypoints?: [number, number][];  // ordered polyline points [lon, lat] for ACLineSegments
 }
 

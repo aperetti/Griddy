@@ -1,4 +1,4 @@
-import { Paper, Group, ActionIcon, Tooltip, Badge, Text, Divider, Transition } from '@mantine/core';
+import { Paper, Group, ActionIcon, Tooltip, Badge, Text, Divider, Transition, SegmentedControl } from '@mantine/core';
 import { X, Database, Settings } from 'lucide-react';
 import type { Node } from '../../../shared/types';
 import type { PluginDefinition } from '../../../plugins/types';
@@ -14,6 +14,8 @@ interface AnalysisToolbarProps {
     onOpenSettings: () => void;
     plugins?: PluginDefinition[];
     onRunPlugin?: (plugin: PluginDefinition) => void;
+    edgeColorBase?: 'circuit' | 'model';
+    onEdgeColorBaseChange?: (v: 'circuit' | 'model') => void;
 }
 
 export function AnalysisToolbar({
@@ -27,6 +29,8 @@ export function AnalysisToolbar({
     onOpenSettings,
     plugins = [],
     onRunPlugin,
+    edgeColorBase = 'circuit',
+    onEdgeColorBaseChange,
 }: AnalysisToolbarProps) {
     const count = selectedNodes.length + selectedEdgeCount;
 
@@ -114,6 +118,21 @@ export function AnalysisToolbar({
                             >
                                 <Database size={18} />
                             </ActionIcon>
+                        </Tooltip>
+
+                        <Divider orientation="vertical" />
+
+                        <Tooltip label="Edge color: by topological zone or by feeder model" position="bottom" color="dark" withArrow>
+                            <SegmentedControl
+                                size="xs"
+                                value={edgeColorBase}
+                                onChange={(v) => onEdgeColorBaseChange?.(v as 'circuit' | 'model')}
+                                data={[
+                                    { value: 'circuit', label: 'By Zone' },
+                                    { value: 'model',   label: 'By Feeder' },
+                                ]}
+                                styles={{ root: { background: 'rgba(255,255,255,0.05)' } }}
+                            />
                         </Tooltip>
 
                         <Divider orientation="vertical" />

@@ -24,7 +24,10 @@ class IndexBuilder:
         self.equipment_index: dict[str, tuple[str, Any]] = {}     # mRID → (cls_name, obj)
         self.equipment_types: dict[str, str] = {}                  # mRID → type label
         self.equipment_open: dict[str, bool] = {}                  # mRID → open state
-        self.eq_coords: dict[str, tuple[float, float]] = {}        # mRID → (lat, lon)
+        self.eq_coords: dict[str, tuple[float, float]] = {}        # mRID → (lat, lon) backward compat
+        self.eq_first_coord: dict[str, tuple[float, float]] = {}   # mRID → coord of seq=0 point
+        self.eq_last_coord: dict[str, tuple[float, float]] = {}    # mRID → coord of last point
+        self.eq_polyline: dict[str, list[tuple[float, float]]] = {} # mRID → all sorted points
         self.location_coords: dict[str, tuple[float, float]] = {}  # loc mRID → (lat, lon)
         self.eq_terminals: dict[str, list] = defaultdict(list)     # eq mRID → [(term, cn_mRID)]
         self.cn_equipment: dict[str, list] = defaultdict(list)     # cn mRID → [eq mRID]
@@ -110,7 +113,9 @@ RETURN
     REPLACE(eq.uri, 'urn:uuid:', '') AS eq_mrid,
     REPLACE(loc.uri, 'urn:uuid:', '') AS loc_mrid,
     pp.`PositionPoint.xPosition` AS x,
-    pp.`PositionPoint.yPosition` AS y
+    pp.`PositionPoint.yPosition` AS y,
+    coalesce(pp.`PositionPoint.sequenceNumber`, 0) AS seq
+ORDER BY eq_mrid, loc_mrid, seq
 """
         try:
             driver = GraphDatabase.driver(neo4j_url, auth=(username, password))
@@ -152,19 +157,40 @@ RETURN
                 lat = (y - min_y) / span_y * 0.1 + 34.0522
                 return lat, lon
 
-        # Populate both location_coords and eq_coords in one pass
+        # Group: eq_mrid → loc_mrid → [(seq, latlon), ...]
+        eq_loc_points: dict = defaultdict(lambda: defaultdict(list))
         for row in rows:
             x = _safe_float(row["x"])
             y = _safe_float(row["y"])
+            seq = int(row["seq"] or 0)
             eq_mrid = (row["eq_mrid"] or "").upper()
             loc_mrid = (row["loc_mrid"] or "").upper()
             if x is None or y is None or not eq_mrid:
                 continue
             latlon = _to_latlon(x, y)
-            if loc_mrid and loc_mrid not in self.location_coords:
-                self.location_coords[loc_mrid] = latlon
-            if eq_mrid not in self.eq_coords:
-                self.eq_coords[eq_mrid] = latlon
+            eq_loc_points[eq_mrid][loc_mrid].append((seq, latlon))
+
+        for eq_mrid, locs in eq_loc_points.items():
+            # When multiple Locations exist, prefer the one with fewest PositionPoints.
+            # A switch's 1-point Location wins over an adjacent ACLineSegment's 50-point polyline.
+            best_loc_mrid, best_points = min(locs.items(), key=lambda kv: len(kv[1]))
+
+            sorted_pts = sorted(best_points, key=lambda p: p[0])  # sort by seq
+            coords = [p[1] for p in sorted_pts]                   # [(lat, lon), ...]
+
+            self.eq_first_coord[eq_mrid] = coords[0]
+            self.eq_last_coord[eq_mrid] = coords[-1]
+            self.eq_coords[eq_mrid] = coords[0]   # backward compat
+            self.eq_polyline[eq_mrid] = coords     # full ordered polyline
+
+            if best_loc_mrid and best_loc_mrid not in self.location_coords:
+                self.location_coords[best_loc_mrid] = coords[0]
+
+            # Also store location_coords for all locations this eq touches
+            for loc_mrid, loc_pts in locs.items():
+                if loc_mrid and loc_mrid not in self.location_coords:
+                    first_pt = sorted(loc_pts, key=lambda p: p[0])[0][1]
+                    self.location_coords[loc_mrid] = first_pt
 
         logger.info(
             "  Coordinates: %d equipment geocoded from %d position points (geographic=%s)",
@@ -193,55 +219,34 @@ RETURN
         )
 
     def _classify_equipment(self):
-        cim = self.cim
-        graph = self.graph
+        """Populate equipment_types with descriptive labels and metadata."""
+        # Mapping for UI-friendly groupings (optional but helpful)
+        CATEGORY_OVERRIDE = {
+            "LinearShuntCompensator": "Capacitor",
+            "ShuntCompensator": "Capacitor",
+            "StepVoltageRegulator": "Regulator",
+            "TransformerTank": "PowerTransformer",
+        }
 
-        # We store (class_name, default_type_label)
-        type_map_configs = [
-            ("ACLineSegment", "ACLineSegment"),
-            ("PowerTransformer", "PowerTransformer"),
-            ("Breaker", "Breaker"),
-            ("LoadBreakSwitch", "LoadBreakSwitch"),
-            ("EnergyConsumer", "EnergyConsumer"),
-            ("EnergySource", "EnergySource"),
-            ("TransformerTank", "PowerTransformer"),
-            ("StepVoltageRegulator", "Regulator"),
-            ("Regulator", "Regulator"),
-            ("Fuse", "Fuse"),
-            ("Disconnector", "Disconnector"),
-            ("Recloser", "Recloser"),
-            ("LinearShuntCompensator", "Capacitor"),
-        ]
+        for mrid, (cls_name, eq) in self.equipment_index.items():
+            label = CATEGORY_OVERRIDE.get(cls_name, cls_name)
 
-        for cls_name, default_label in type_map_configs:
-            cls = getattr(cim, cls_name, None)
-            if not cls:
-                continue
-            
-            for _eid, eq in graph.get(cls, {}).items():
-                m = _mrid_str(eq)
-                if not m:
-                    continue
-                
-                label = default_label
-                # If it's a transformer but has a tap changer, it's functionally a Regulator
-                if cls_name in ("PowerTransformer", "TransformerTank"):
-                    if m in self.transformer_has_tap_changer:
-                        label = "Regulator"
-                
-                self.equipment_types[m] = label
-                
-                # Metadata for switches
-                if label in ("Breaker", "LoadBreakSwitch", "Fuse",
-                             "Disconnector", "Recloser"):
-                    is_open = getattr(eq, "normalOpen", None) or getattr(eq, "open", None)
-                    self.equipment_open[m] = bool(is_open) if is_open is not None else False
+            # Functional classification: Transformers with tap changers are Regulators
+            if cls_name in ("PowerTransformer", "TransformerTank"):
+                if mrid in self.transformer_has_tap_changer:
+                    label = "Regulator"
 
-        # Substation handling
-        for _sid, sub in graph.get(getattr(cim, "Substation", None), {}).items():
-            m = _mrid_str(sub)
-            if m:
-                self.equipment_types[m] = "Substation"
+            self.equipment_types[mrid] = label
+
+            # Switch state
+            if any(s in cls_name for s in ["Breaker", "Switch", "Fuse", "Disconnector", "Recloser"]):
+                is_open = getattr(eq, "normalOpen", None) or getattr(eq, "open", None)
+                if is_open is not None:
+                    self.equipment_open[mrid] = bool(is_open)
+
+            # Substation specific label
+            if cls_name == "Substation":
+                self.equipment_types[mrid] = "Substation"
 
     def _build_phase_index(self):
         """Build eq_phases: mRID → phase list from per-phase CIM objects.

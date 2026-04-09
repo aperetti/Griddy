@@ -322,8 +322,8 @@ class CimModelRegistry:
                     or clean_query in node_id
                     or clean_query in node_type
                 ):
-                    cim_type = node.get("node_type", "ConnectivityNode")
-                    if not lower_class or lower_class in cim_type.lower():
+                    cim_type = node.get("cim_class") or node.get("node_type", "ConnectivityNode")
+                    if not lower_class or lower_class in cim_type.lower() or lower_class in (node.get("node_type") or "").lower():
                         results.append(
                             {
                                 "id": node["node_id"],

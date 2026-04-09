@@ -108,6 +108,9 @@ export interface RuleConfig {
     }>;
     rotate_to_edge?: boolean;
     tooltip_config?: any;
+    // Edge-specific styling
+    line_weight?: number;
+    line_style?: 'solid' | 'dashed' | 'dotted';
 }
 
 export interface DisplayRule {

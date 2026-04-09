@@ -58,14 +58,19 @@ class TopologyBuilder:
         }
     """
 
-    # Equipment types that appear as attached (1-terminal) equipment in nodes
-    ATTACHED_TYPES = {"EnergyConsumer", "EnergySource", "Capacitor"}
+    # ------------------------------------------------------------------
+    # Classification Logic (Terminal-count driven)
+    # ------------------------------------------------------------------
 
-    # Equipment types that appear as edges (2-terminal) in the graph
-    EDGE_TYPES = {
-        "ACLineSegment", "PowerTransformer", "Breaker", "LoadBreakSwitch",
-        "Fuse", "Disconnector", "Recloser", "Regulator",
-    }
+    def _is_attached(self, eq_mrid: str) -> bool:
+        """Attached equipment has exactly 1 terminal."""
+        terminals = self.idx.eq_terminals.get(eq_mrid, [])
+        return len(terminals) == 1
+
+    def _is_edge(self, eq_mrid: str) -> bool:
+        """Edge equipment has exactly 2 terminals."""
+        terminals = self.idx.eq_terminals.get(eq_mrid, [])
+        return len(terminals) == 2
 
     def __init__(self, cim, graph, idx: IndexBuilder):
         self.cim = cim
@@ -116,17 +121,32 @@ class TopologyBuilder:
             attached_equipment: list[dict] = []
 
             eq_mrids = idx.cn_equipment.get(cn_mrid, [])
+            best_priority = 99
 
             for eq_mrid in eq_mrids:
-                # Coordinate lookup — iterate all equipment at this CN
-                if eq_mrid in idx.eq_coords and idx.eq_coords[eq_mrid] != (0.0, 0.0):
-                    lat, lon = idx.eq_coords[eq_mrid]
+                # Terminal-aware coordinate lookup: use first coord for terminal-1 CN,
+                # last coord for terminal-2 CN, so polyline endpoints map correctly.
+                term_list = idx.eq_terminals.get(eq_mrid, [])
+                if len(term_list) >= 2 and term_list[1][1] == cn_mrid:
+                    coord = idx.eq_last_coord.get(eq_mrid)
+                else:
+                    coord = idx.eq_first_coord.get(eq_mrid)
+
+                if coord and coord != (0.0, 0.0):
+                    # Prefer point devices (switches, transformers) over polyline equipment
+                    eq_type_check = idx.equipment_types.get(eq_mrid, "")
+                    priority = 0 if eq_type_check in (
+                        "Breaker", "LoadBreakSwitch", "Fuse", "Disconnector", "Recloser",
+                        "PowerTransformer", "Regulator", "TransformerTank"
+                    ) else 1
+                    if priority < best_priority:
+                        lat, lon = coord
+                        best_priority = priority
 
                 eq_type = idx.equipment_types.get(eq_mrid)
-                term_list = idx.eq_terminals.get(eq_mrid, [])
 
                 # Determine attached vs edge by terminal count
-                if len(term_list) == 1 and eq_type in self.ATTACHED_TYPES:
+                if self._is_attached(eq_mrid):
                     entry = idx.equipment_index.get(eq_mrid)
                     obj = entry[1] if entry else None
                     attached = self._build_attached_dict(eq_mrid, eq_type, obj)
@@ -163,6 +183,7 @@ class TopologyBuilder:
             self._nodes.append({
                 "node_id": cn_mrid,
                 "node_type": node_type,
+                "cim_class": "ConnectivityNode",
                 "name": cn_name,
                 "phases": phases,
                 "latitude": lat,
@@ -184,11 +205,7 @@ class TopologyBuilder:
 
             eq_type = idx.equipment_types.get(eq_mrid)
             
-            # If it's a transformer with a tap changer, treat it as a Regulator for labeling
-            if eq_type == "PowerTransformer" and idx.transformer_has_tap_changer.get(eq_mrid):
-                eq_type = "Regulator"
-
-            if eq_type not in self.EDGE_TYPES:
+            if not self._is_edge(eq_mrid):
                 continue
 
             cn1 = term_list[0][1]
@@ -227,9 +244,13 @@ class TopologyBuilder:
                 if eq_mrid in idx.transformer_tap_changers:
                     edge["ratio_tap_changer"] = idx.transformer_tap_changers[eq_mrid]
 
-            # Line length
+            # Line length + polyline waypoints
             if eq_type == "ACLineSegment" and obj is not None:
                 edge["length_m"] = _safe_float(getattr(obj, "length", None))
+                polyline = idx.eq_polyline.get(eq_mrid)
+                if polyline and len(polyline) > 2:
+                    # Convert (lat, lon) → [lon, lat] for GeoJSON/deck.gl convention
+                    edge["waypoints"] = [[lon, lat] for lat, lon in polyline]
 
             self._edges.append(edge)
 

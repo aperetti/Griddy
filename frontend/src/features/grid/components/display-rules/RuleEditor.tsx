@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
     Stack, Group, Text, Paper, Divider,
     Button, Alert, Fieldset, SegmentedControl, rem,
@@ -15,8 +15,14 @@ import { CimRuleBuilder } from '../rules/CimRuleBuilder/CimRuleBuilder';
 import { ConditionalSymbolList } from './ConditionalSymbolList';
 import { VisualConfigEditor } from './VisualConfigEditor';
 import { TooltipConfigEditor } from './TooltipConfigEditor';
+import { EdgeStyleEditor } from './EdgeStyleEditor';
 import { type RuleTestResponse } from '../../../../shared/api';
 import { DEFAULT_TOOLTIP_CONFIG } from '../../model/rules';
+
+const EDGE_TARGET_CLASSES = new Set([
+    'ACLineSegment', 'PowerTransformer', 'Breaker', 'LoadBreakSwitch',
+    'Fuse', 'Disconnector', 'Recloser', 'TransformerTank',
+]);
 
 interface RuleEditorProps {
     rule: any;
@@ -59,6 +65,17 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
             config: { ...(rule.config || {}), ...val }
         });
     };
+
+    const parsedConditions = useMemo(() => {
+        const mc = rule.match_conditions;
+        if (!mc) return {};
+        return typeof mc === 'string'
+            ? (() => { try { return JSON.parse(mc); } catch { return {}; } })()
+            : mc;
+    }, [rule.match_conditions]);
+
+    const targetClass: string | undefined = parsedConditions?.target_class;
+    const isEdgeRule = targetClass ? EDGE_TARGET_CLASSES.has(targetClass) : false;
 
     const handleTest = async () => {
         if (!onTest) return;
@@ -130,24 +147,24 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
                         />
                     </Fieldset>
 
-                    <VisualConfigEditor 
-                        config={rule.config || {}}
-                        onChange={updateConfig}
-                        onOpenLiveEditor={onOpenLiveEditor}
-                    />
+                    {isEdgeRule ? (
+                        <EdgeStyleEditor
+                            config={rule.config || {}}
+                            onChange={updateConfig}
+                        />
+                    ) : (
+                        <VisualConfigEditor
+                            config={rule.config || {}}
+                            onChange={updateConfig}
+                            onOpenLiveEditor={onOpenLiveEditor}
+                        />
+                    )}
 
                     <Fieldset legend="Tooltip Appearance" variant="default">
                         <TooltipConfigEditor
                             value={rule.config?.tooltip_config || DEFAULT_TOOLTIP_CONFIG}
                             onChange={(tc) => updateConfig({ tooltip_config: tc })}
-                            targetClass={(() => {
-                                const mc = rule.match_conditions;
-                                if (!mc) return undefined;
-                                const parsed = typeof mc === 'string'
-                                    ? (() => { try { return JSON.parse(mc); } catch { return {}; } })()
-                                    : mc;
-                                return parsed?.target_class;
-                            })()}
+                            targetClass={targetClass}
                         />
                     </Fieldset>
 
@@ -215,14 +232,7 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
                     symbols={rule.config?.svg_overrides || []}
                     onChange={(symbols) => updateConfig({ svg_overrides: symbols })}
                     onOpenLiveEditor={onOpenLiveEditor}
-                    targetClass={(() => {
-                        const mc = rule.match_conditions;
-                        if (!mc) return undefined;
-                        const parsed = typeof mc === 'string'
-                            ? (() => { try { return JSON.parse(mc); } catch { return {}; } })()
-                            : mc;
-                        return parsed?.target_class;
-                    })()}
+                    targetClass={targetClass}
                 />
             )}
 

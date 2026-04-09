@@ -83,6 +83,7 @@ async def get_topology(
             "is_open": e.get('is_open', False),
             "transformer_kva": e.get('transformer_kva'),
             "model_id": e.get('model_id', 'unknown'),
+            "waypoints": e.get('waypoints'),
         })
 
     return {"nodes": mapped_nodes, "edges": mapped_edges}

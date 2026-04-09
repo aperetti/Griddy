@@ -15,6 +15,7 @@ Internal responsibilities are delegated to:
 
 import os
 import logging
+import json
 from typing import Any, Optional
 
 from src.shared.cim.helpers import _mrid_str, _get_name, _safe_float
@@ -118,63 +119,42 @@ class CimModelManager:
                 f"Check that the feeder URI is correct and data is ingested."
             )
 
-        # Load all classes needed for topology and equipment catalog.
-        # With Neo4j, get_all_attributes() is the only way to populate network.graph;
-        # XML loading materializes everything automatically so these calls are no-ops there.
-        # NOTE: Terminal is intentionally excluded here. create_new_graph() sets
-        # Terminal.ConnectivityNode and Terminal.ConductingEquipment as proper objects.
-        # Calling get_all_attributes(Terminal) would overwrite those with raw UUID strings
-        # (cimgraph uses expand_graph=False), breaking the terminal index.
-        #
-        # Location MUST come before PositionPoint — equipment get_all_attributes calls
-        # add Location objects to the graph; only then can get_all_attributes(PositionPoint)
-        # find any UUIDs to fetch coordinates for.
-        logger.info("Loading CIM classes (topology + equipment catalog)...")
-        for cls_type in [
-            # Core topology attributes (not Terminal — see note above)
-            getattr(cim, "ConnectivityNode", None),
-            getattr(cim, "ACLineSegment", None),
-            getattr(cim, "Breaker", None),
-            getattr(cim, "LoadBreakSwitch", None),
-            getattr(cim, "Disconnector", None),
-            getattr(cim, "EnergyConsumer", None),
-            getattr(cim, "EnergySource", None),
-            getattr(cim, "Substation", None),
-            getattr(cim, "VoltageLevel", None),
-            # Phase detail
-            getattr(cim, "ACLineSegmentPhase", None),
-            getattr(cim, "EnergyConsumerPhase", None),
-            getattr(cim, "SwitchPhase", None),
-            getattr(cim, "ShuntCompensatorPhase", None),
-            # Location and PositionPoint are queried directly via Neo4j in IndexBuilder
-            # (cimgraph expand_graph=False prevents them from being added to graph here)
-            # Equipment catalog
-            getattr(cim, "TransformerTankInfo", None),
-            getattr(cim, "TransformerEndInfo", None),
-            getattr(cim, "PowerTransformerInfo", None),
-            getattr(cim, "Asset", None),
-            getattr(cim, "AssetInfo", None),
-            getattr(cim, "PowerTransformer", None),
-            getattr(cim, "PowerTransformerEnd", None),
-            getattr(cim, "TransformerTank", None),
-            getattr(cim, "TransformerTankEnd", None),
-            getattr(cim, "Fuse", None),
-            getattr(cim, "Recloser", None),
-            getattr(cim, "RatioTapChanger", None),
-            getattr(cim, "PhaseTapChanger", None),
-            getattr(cim, "TapChanger", None),
-            getattr(cim, "RatioTapChangerInfo", None),
-            getattr(cim, "TapChangerInfo", None),
-            getattr(cim, "OperationalLimitSet", None),
-            getattr(cim, "OperationalLimitValue", None),
-            getattr(cim, "LinearShuntCompensator", None),
-            getattr(cim, "CurrentLimit", None),
-            getattr(cim, "StepVoltageRegulator", None),
-            getattr(cim, "Regulator", None),
-        ]:
+        # Load all classes discovered in the database to ensure completeness
+        discovered_labels = self._discover_labels(feeder_uri)
+        logger.info(
+            "Feeder '%s' introspected: %d CIM classes found in database",
+            self.model_id,
+            len(discovered_labels),
+        )
+
+        # Priority and mandatory classes (Location must come before PositionPoint)
+        # Terminal is excluded because it is handled via self.network.create_new_graph()
+        # which preserves connectivity node objects.
+        load_sequence = []
+        
+        # Ensure core dependencies are loaded early
+        for pref in ["BaseVoltage", "Location", "PositionPoint", "ConnectivityNode"]:
+            if pref in discovered_labels:
+                load_sequence.append(pref)
+        
+        # Add the rest of the discovered labels
+        for label in sorted(discovered_labels):
+            if label not in load_sequence and label != "Terminal":
+                load_sequence.append(label)
+
+        logger.info("Loading discovered CIM classes into memory...")
+        for label in load_sequence:
+            cls_type = getattr(cim, label, None)
             if cls_type:
-                logger.info("  Fetching %s...", cls_type.__name__)
-                self.network.get_all_attributes(cls_type)
+                try:
+                    self.network.get_all_attributes(cls_type)
+                except Exception as e:
+                    # Some labels might not map to classes in the current profile or might fail loading
+                    logger.debug("Could not load attributes for %s: %s", label, e)
+
+        # Map to instance graph for easier consumption
+        self.graph = self.network.graph
+        self._loaded = True
 
         logger.info("CIM classes loaded:")
         for cls, objs in sorted(self.network.graph.items(), key=lambda x: x[0].__name__):
@@ -380,3 +360,43 @@ class CimModelManager:
                             "cim_class": class_name,
                         })
         return results
+
+    # ── Private Implementation ────────────────────────────────────────────────
+
+    def _discover_labels(self, feeder_uri: str) -> list[str]:
+        """Query Neo4j for all unique labels (classes) present in this feeder."""
+        from neo4j import GraphDatabase
+
+        url = os.getenv("CIMG_URL")
+        username = os.getenv("CIMG_USERNAME", "neo4j")
+        password = os.getenv("CIMG_PASSWORD", "password123")
+        database = os.getenv("CIMG_DATABASE", "neo4j")
+
+        # Normalize URI
+        if not feeder_uri.startswith("urn:uuid:"):
+            feeder_uri = f"urn:uuid:{feeder_uri}"
+
+        # Labels found on equipment belonging to this feeder or its container
+        query = """
+        MATCH (f:Feeder {uri: $uri})
+        MATCH (n)-[:`Equipment.EquipmentContainer`|MemberOf*0..6]-(f)
+        UNWIND labels(n) as label
+        RETURN DISTINCT label
+        """
+        
+        labels = []
+        try:
+            driver = GraphDatabase.driver(url, auth=(username, password))
+            with driver.session(database=database) as session:
+                result = session.run(query, uri=feeder_uri)
+                labels = [row["label"] for row in result]
+            driver.close()
+        except Exception as e:
+            logger.error("Failed to discover labels in Neo4j for feeder %s: %s", feeder_uri, e)
+            # Fallback to a bare-minimum set to prevent total failure
+            return [
+                "ConnectivityNode", "ACLineSegment", "EnergyConsumer", 
+                "PowerTransformer", "Location", "PositionPoint", "BaseVoltage"
+            ]
+
+        return labels

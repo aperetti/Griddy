@@ -33,6 +33,7 @@ interface GridMapProps {
     onViewStateChange?: (viewState: any) => void;
     goToLocation?: { longitude: number; latitude: number; zoom?: number } | null;
     spriteVersion?: number;
+    edgeColorBase?: 'circuit' | 'model';
 }
 
 export const GridMap = React.memo((props: GridMapProps) => {
@@ -54,6 +55,7 @@ export const GridMap = React.memo((props: GridMapProps) => {
         onViewStateChange,
         goToLocation,
         spriteVersion = 0,
+        edgeColorBase = 'circuit',
     } = props;
 
     const selectedNodeIdsSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
@@ -80,6 +82,7 @@ export const GridMap = React.memo((props: GridMapProps) => {
         hoveredNodeId, hoveredEdgeId, highlightedNodes, highlightedEdges, selectedNodeIdsSet,
         nodeAverages, edgeAverages, voltageScale, isDraggingRef,
         onNodeClick, onEdgeClick, setHoveredNodeId, setHoveredEdgeId, onTooltipHover, setViewState,
+        edgeColorBase,
     });
 
     useEffect(() => {

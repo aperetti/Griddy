@@ -37,6 +37,8 @@ function buildDisplayProps(config: RuleConfig, ruleId: number) {
         display_max_zoom: config.max_zoom ?? 24.0,
         display_rotate_to_edge: config.rotate_to_edge ?? false,
         display_tooltip: config.tooltip_config ?? undefined,
+        display_line_weight: config.line_weight ?? undefined,
+        display_line_style: config.line_style ?? undefined,
     };
 }
 

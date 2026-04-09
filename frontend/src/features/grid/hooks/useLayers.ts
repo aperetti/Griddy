@@ -27,6 +27,7 @@ interface UseLayersParams {
     setHoveredEdgeId: (id: string | null) => void;
     onTooltipHover: (obj: Node | Edge | null, x: number, y: number) => void;
     setViewState: (updater: (prev: any) => any) => void;
+    edgeColorBase?: 'circuit' | 'model';
 }
 
 export function useLayers(p: UseLayersParams) {
@@ -160,9 +161,18 @@ export function useLayers(p: UseLayersParams) {
                 if (isHighlighted) return [255, 200, 50, 255]; // Amber/Yellow selection color
                 if (p.hoveredEdgeId === (d.id || `${d.source}-${d.target}`)) return [255, 255, 255, 255];
 
-                // 4. Default Circuit Colors
-                return d.circuit_id && d.circuit_id !== 'unknown' 
-                    ? [...stringToColor(d.circuit_id), 120] as [number, number, number, number] 
+                // 4. Rule-assigned fixed color
+                if (d.display_color) {
+                    const hex = d.display_color.replace('#', '');
+                    if (hex.length === 6)
+                        return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16), 220] as [number, number, number, number];
+                }
+
+                // 5. Base color strategy (global toggle: by zone or by feeder)
+                const edgeColorBase = p.edgeColorBase ?? 'circuit';
+                const baseId = edgeColorBase === 'model' ? (d.model_id ?? d.circuit_id) : d.circuit_id;
+                return baseId && baseId !== 'unknown'
+                    ? [...stringToColor(baseId), 120] as [number, number, number, number]
                     : [150, 150, 150, 150];
             },
             getWidth: (d: Edge) => {
@@ -171,6 +181,8 @@ export function useLayers(p: UseLayersParams) {
                 const isHighlighted = p.highlightedEdges.has(d.id || '') || p.highlightedEdges.has(edgeKey);
 
                 if (isHovered) return 4;
+                if (d.display_line_weight !== undefined)
+                    return d.display_line_weight + (isHighlighted ? 2 : 0);
                 const realPhases = d.phases ? d.phases.filter(ph => !['N', 'Neutral'].includes(ph)) : ['A', 'B', 'C'];
                 let width = 1 + (Math.max(1, realPhases.length) - 1) * 0.75;
                 if (p.nodeAverages && p.nodeAverages[d.target] !== undefined) width += 1;
@@ -180,6 +192,9 @@ export function useLayers(p: UseLayersParams) {
             },
             widthUnits: 'pixels',
             getDashArray: (d: Edge) => {
+                if (d.display_line_style === 'solid')  return [0, 0];
+                if (d.display_line_style === 'dashed') return [8, 4];
+                if (d.display_line_style === 'dotted') return [2, 4];
                 const count = d.phases ? d.phases.length : 3;
                 if (count === 1) return [4, 4];
                 if (count === 2) return [12, 6];
@@ -189,7 +204,7 @@ export function useLayers(p: UseLayersParams) {
             extensions: [new PathStyleExtension({ dash: true })],
             pickable: false,
             updateTriggers: {
-                getColor: [p.highlightedEdges, p.nodeAverages, p.edgeAverages, p.voltageScale, p.hoveredEdgeId, propagatedNodeAverages],
+                getColor: [p.highlightedEdges, p.nodeAverages, p.edgeAverages, p.voltageScale, p.hoveredEdgeId, propagatedNodeAverages, p.edgeColorBase],
                 getWidth: [p.highlightedEdges, p.hoveredEdgeId, p.nodeAverages, p.edgeAverages],
             },
         }),

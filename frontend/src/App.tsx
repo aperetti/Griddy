@@ -71,6 +71,7 @@ export default function App() {
   // Hooks
   const topology = useTopology();
   const [spriteVersion, setSpriteVersion] = useState(0);
+  const [edgeColorBase, setEdgeColorBase] = useState<'circuit' | 'model'>('circuit');
   const { classifiedNodes, classifiedEdges, refresh: refreshRules, loading: rulesLoading } = useRuleClassification(
     topology.nodes,
     topology.edges,
@@ -408,6 +409,7 @@ export default function App() {
             goToLocation={targetLocation}
             fitHighlightedNodesTrigger={fitTrigger}
             spriteVersion={spriteVersion}
+            edgeColorBase={edgeColorBase}
           />
 
           {!isMobile && (
@@ -502,6 +504,8 @@ export default function App() {
               onOpenSettings={() => setSettingsOpen(true)}
               plugins={applicablePlugins}
               onRunPlugin={(plugin: PluginDefinition) => plugin.handleRun(pluginCtx)}
+              edgeColorBase={edgeColorBase}
+              onEdgeColorBaseChange={setEdgeColorBase}
             />
           </Box>
 
