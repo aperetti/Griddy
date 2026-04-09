@@ -4,6 +4,7 @@ import {
     TextInput, Select, ActionIcon, Badge, Collapse, Tooltip,
     Loader, Anchor, Breadcrumbs,
 } from '@mantine/core';
+import { useMediaQuery } from '@mantine/hooks';
 import { Plus, Trash2, ChevronDown, ChevronUp, MessageSquare, Code2, RotateCcw, ChevronRight } from 'lucide-react';
 import { type TooltipConfig, type TooltipField, genId } from '../../model/rules';
 import { useSchema } from '../../context/SchemaContext';
@@ -198,6 +199,8 @@ function FieldRow({
     onChange: (f: TooltipField) => void;
     onRemove: () => void;
 }) {
+    const isMobile = useMediaQuery('(max-width: 768px)');
+
     // Build attribute options from schema of the target class
     const attrs = targetClass
         ? (schema[targetClass]?.attributes ?? [])
@@ -216,6 +219,35 @@ function FieldRow({
     ];
     const knownNames = new Set(attrs.map((a: any) => a.value));
     const combined = [...attrs, ...extra.filter(e => !knownNames.has(e.value))];
+
+    if (isMobile) {
+        return (
+            <Stack gap={4} p="xs" style={{ border: '1px solid rgba(255,255,255,0.06)', borderRadius: 6 }}>
+                <Group gap="xs" wrap="nowrap">
+                    <TextInput
+                        style={{ flex: 1 }}
+                        size="xs"
+                        placeholder="Label"
+                        value={field.label}
+                        onChange={(e) => onChange({ ...field, label: e.currentTarget.value })}
+                    />
+                    <ActionIcon variant="subtle" color="red" size="sm" onClick={onRemove}>
+                        <Trash2 size={14} />
+                    </ActionIcon>
+                </Group>
+                <Select
+                    size="xs"
+                    placeholder="Field / path"
+                    value={field.field || null}
+                    onChange={(v) => onChange({ ...field, field: v || '' })}
+                    data={combined}
+                    comboboxProps={{ zIndex: 2100, withinPortal: true }}
+                    searchable
+                    allowDeselect={false}
+                />
+            </Stack>
+        );
+    }
 
     return (
         <Group gap="xs" wrap="nowrap">

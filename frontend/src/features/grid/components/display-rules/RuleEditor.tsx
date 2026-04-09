@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { 
-    Stack, Group, Text, Paper, Divider, 
+import {
+    Stack, Group, Text, Paper, Divider,
     Button, Alert, Fieldset, SegmentedControl, rem,
-    TextInput, NumberInput, Switch, Grid, Badge, 
+    TextInput, NumberInput, Switch, Grid, Badge,
     Code, Collapse, Tooltip, ActionIcon, Loader
 } from '@mantine/core';
+import { useMediaQuery } from '@mantine/hooks';
 import {
     Info, ListOrdered,
     Type, ZoomIn, LayoutGrid, Play,
@@ -41,7 +42,8 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
     const [isTesting, setIsTesting] = useState(false);
     const [showQuery, setShowQuery] = useState(false);
     const [copied, setCopied] = useState(false);
-    
+    const isMobile = useMediaQuery('(max-width: 768px)');
+
     // Auto-clear test results when conditions change
     const [lastConditions, setLastConditions] = useState('');
     const currentConditionsStr = JSON.stringify(rule.match_conditions);
@@ -232,19 +234,20 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
 
             <Paper withBorder p="sm" bg="rgba(0, 0, 0, 0.15)">
                 <Stack gap="xs">
-                    <Group justify="space-between">
+                    <Group justify="space-between" wrap="wrap" gap="xs">
                         <Group gap="xs">
-                            <Button 
-                                variant="light" 
-                                color="teal" 
-                                size="xs" 
+                            <Button
+                                variant="light"
+                                color="teal"
+                                size="xs"
+                                fullWidth={isMobile}
                                 leftSection={isTesting ? <Loader size={14} /> : <Play size={14} />}
                                 onClick={handleTest}
                                 loading={isTesting}
                             >
                                 Test Rule Match
                             </Button>
-                            
+
                             {testResults && (
                                 <Badge color={testResults.match_count > 0 ? 'green' : 'gray'} variant="filled">
                                     {testResults.match_count} Matches Found
@@ -253,10 +256,11 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
                         </Group>
 
                         {testResults && (
-                            <Button 
-                                variant="subtle" 
-                                size="xs" 
-                                color="gray" 
+                            <Button
+                                variant="subtle"
+                                size="xs"
+                                color="gray"
+                                fullWidth={isMobile}
                                 rightSection={showQuery ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                                 onClick={() => setShowQuery(!showQuery)}
                             >
@@ -334,9 +338,9 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
 
             <Divider my="md" />
 
-            <Group justify="flex-end">
-                <Button variant="subtle" color="gray" onClick={onCancel}>Cancel</Button>
-                <Button variant="filled" color="blue" onClick={onSave}>Save Rule</Button>
+            <Group justify={isMobile ? 'stretch' : 'flex-end'} grow={isMobile}>
+                <Button variant="subtle" color="gray" fullWidth={isMobile} onClick={onCancel}>Cancel</Button>
+                <Button variant="filled" color="blue" fullWidth={isMobile} onClick={onSave}>Save Rule</Button>
             </Group>
         </Stack>
     );

@@ -1,8 +1,9 @@
-import { 
-    Stack, Group, Text, TextInput, NumberInput, 
-    Select, Grid, Paper, Tooltip, ActionIcon, 
+import {
+    Stack, Group, Text, TextInput, NumberInput,
+    Select, Grid, Paper, Tooltip, ActionIcon,
     FileButton, ColorInput, Fieldset, Button
 } from '@mantine/core';
+import { useMediaQuery } from '@mantine/hooks';
 import { 
     Upload, Maximize2, 
     Circle as CircleIcon, Square as SquareIcon, Triangle as TriangleIcon, Star 
@@ -94,6 +95,8 @@ export const VisualConfigEditor: React.FC<VisualConfigEditorProps> = ({
     onOpenLiveEditor,
     legend = "Visual Appearance"
 }) => {
+    const isMobile = useMediaQuery('(max-width: 768px)');
+
     const handleFileUpload = (file: File | null) => {
         if (!file) return;
         const reader = new FileReader();
@@ -152,32 +155,32 @@ export const VisualConfigEditor: React.FC<VisualConfigEditorProps> = ({
                                         <FileButton onChange={handleFileUpload} accept="image/svg+xml">
                                             {(props) => (
                                                 <Tooltip label="Upload SVG">
-                                                    <ActionIcon {...props} variant="light" size="lg">
-                                                        <Upload size={18} />
+                                                    <ActionIcon {...props} variant="light" size={isMobile ? 'md' : 'lg'}>
+                                                        <Upload size={isMobile ? 14 : 18} />
                                                     </ActionIcon>
                                                 </Tooltip>
                                             )}
                                         </FileButton>
                                         <Tooltip label="Open in Live Editor">
-                                            <ActionIcon 
-                                                variant="light" 
-                                                size="lg" 
+                                            <ActionIcon
+                                                variant="light"
+                                                size={isMobile ? 'md' : 'lg'}
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     onOpenLiveEditor?.(config.icon || '', (val) => onChange({ icon: val }));
                                                 }}
                                             >
-                                                <Maximize2 size={18} />
+                                                <Maximize2 size={isMobile ? 14 : 18} />
                                             </ActionIcon>
                                         </Tooltip>
                                     </Group>
-                                    <Group gap={4}>
+                                    <Group gap={4} wrap="wrap">
                                         <Text size="xs" c="dimmed" mr={4}>Templates:</Text>
                                         {templates.map(t => (
-                                            <Button 
+                                            <Button
                                                 key={t.name}
-                                                variant="subtle" 
-                                                size="compact-xs" 
+                                                variant="subtle"
+                                                size="compact-xs"
                                                 leftSection={t.icon}
                                                 onClick={() => onChange({ icon: t.content })}
                                             >

@@ -62,14 +62,30 @@ export function buildRuleQuery(
     // node to its parent ConnectivityNode via Terminal.  This handles equipment types
     // (e.g. PowerElectronicsConnection) that are not loaded into the in-memory topology
     // but whose grid position can be found by walking Terminal → ConnectivityNode.
+    //
+    // Conditions are applied to the equipment node (n), not the ConnectivityNode.
+    // activeMrids are ConnectivityNode mRIDs (from topology), so we do NOT scope
+    // equipment by activeMrids — only the resulting ConnectivityNode is scoped.
     if (conditions.resolve_via_connectivity_node) {
+        const equipQuery = buildRuleQuery(
+            { ...conditions, resolve_via_connectivity_node: false },
+            undefined, // no mRID scoping on equipment — activeMrids are CN mRIDs
+        );
+        if (!equipQuery) return null;
+
+        // Strip the RETURN clause from the equipment query, then append CN traversal
+        const returnIdx = equipQuery.cypher.lastIndexOf('RETURN');
+        const equipPortion = equipQuery.cypher.slice(0, returnIdx).trimEnd();
+
         const activeMrids = options?.activeMrids;
-        const scopeClause = activeMrids && activeMrids.length > 0
-            ? `WHERE cn.\`IdentifiedObject.mRID\` IN $activeMrids\n`
+        const cnScopeLine = activeMrids?.length
+            ? `\nWHERE cn.\`IdentifiedObject.mRID\` IN $activeMrids`
             : '';
+        const cnParams = activeMrids?.length ? { activeMrids } : {};
+
         return {
-            cypher: `MATCH (n:\`${targetClass}\`)\nMATCH (n)-[]-(t:Terminal)-[]-(cn:ConnectivityNode)\n${scopeClause}RETURN DISTINCT cn.\`IdentifiedObject.mRID\` AS mrid`,
-            params: activeMrids && activeMrids.length > 0 ? { activeMrids } : {},
+            cypher: `${equipPortion}\nMATCH (n)-[]-(t:Terminal)-[]-(cn:ConnectivityNode)${cnScopeLine}\nRETURN DISTINCT cn.\`IdentifiedObject.mRID\` AS mrid`,
+            params: { ...equipQuery.params, ...cnParams },
         };
     }
 

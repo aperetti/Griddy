@@ -1,12 +1,19 @@
 import React, { useState, Fragment, useMemo } from 'react';
 import { useMediaQuery } from '@mantine/hooks';
-import { Plus, Trash2, Copy, Lock, Filter, ArrowDownAZ, ListOrdered, FileDown, FileUp, MoreVertical, CheckCircle2, Pencil } from 'lucide-react';
+import { Plus, Trash2, Copy, Lock, Filter, ArrowDownAZ, ListOrdered, FileDown, FileUp, MoreVertical, CheckCircle2, Pencil, CircleDashed } from 'lucide-react';
 import { 
     Table, Button, Group, ActionIcon, Stack, Text, 
     Badge, Select, TextInput, Paper,
     Box, Tooltip, Menu, rem, PasswordInput
 } from '@mantine/core';
 import { AnalysisWindow } from '../../analytics/components/AnalysisWindow';
+
+function constrainSvg(content: string): string {
+    return content
+        .replace(/\s+width="[^"]*"/g, '')
+        .replace(/\s+height="[^"]*"/g, '')
+        .replace('<svg', '<svg height="20"');
+}
 import { type DisplayRule } from '../../../shared/api';
 import { useDisplayRules } from '../hooks/useDisplayRules';
 import { RuleEditor } from './display-rules/RuleEditor';
@@ -367,9 +374,9 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                 <Table verticalSpacing="xs">
                                     <Table.Thead>
                                         <Table.Tr>
+                                            <Table.Th style={{ width: rem(40) }}>Icon</Table.Th>
                                             <Table.Th>Name</Table.Th>
                                             <Table.Th>Priority</Table.Th>
-                                            <Table.Th>Type</Table.Th>
                                             <Table.Th>Status</Table.Th>
                                             <Table.Th style={{ width: rem(120) }}>Actions</Table.Th>
                                         </Table.Tr>
@@ -393,20 +400,37 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                                                     >
                                                         <Table.Td>
-                                                            <Group gap="xs">
-                                                                <Box style={{ 
-                                                                    width: 14, height: 14, borderRadius: '50%', 
-                                                                    backgroundColor: rule.config?.color_hex || '#ccc' 
+                                                            {rule.config?.icon && rule.config.icon.includes('<svg') ? (
+                                                                <Box
+                                                                    style={{
+                                                                        height: 20,
+                                                                        color: rule.config?.color_hex || '#ccc',
+                                                                        filter: 'drop-shadow(0 0 1px rgba(0,0,0,0.4))',
+                                                                        lineHeight: 0,
+                                                                    }}
+                                                                    dangerouslySetInnerHTML={{ __html: constrainSvg(rule.config.icon) }}
+                                                                />
+                                                            ) : (
+                                                                <Box style={{
+                                                                    width: 14, height: 14, borderRadius: '50%',
+                                                                    backgroundColor: rule.config?.color_hex || '#ccc'
                                                                 }} />
-                                                                <Text size="sm" fw={500}>{rule.name}</Text>
-                                                            </Group>
+                                                            )}
+                                                        </Table.Td>
+                                                        <Table.Td>
+                                                            <Text size="sm" fw={500}>{rule.name}</Text>
                                                         </Table.Td>
                                                         <Table.Td><Text size="xs">{rule.priority}</Text></Table.Td>
-                                                        <Table.Td><Badge size="xs" variant="light">{rule.config?.visual_type || 'Custom'}</Badge></Table.Td>
                                                         <Table.Td>
-                                                            <Badge color={rule.enabled ? 'green' : 'gray'} size="xs" variant="dot">
-                                                                {rule.enabled ? 'Active' : 'Disabled'}
-                                                            </Badge>
+                                                            {isMobile ? (
+                                                                rule.enabled
+                                                                    ? <CheckCircle2 size={16} color="var(--mantine-color-green-5)" />
+                                                                    : <CircleDashed size={16} color="var(--mantine-color-gray-5)" />
+                                                            ) : (
+                                                                <Badge color={rule.enabled ? 'green' : 'gray'} size="xs" variant="dot">
+                                                                    {rule.enabled ? 'Active' : 'Disabled'}
+                                                                </Badge>
+                                                            )}
                                                         </Table.Td>
                                                         <Table.Td>
                                                             <Group gap={8}>

@@ -64,14 +64,21 @@ export const CimRuleBuilder = ({ value, onChange }: CimRuleBuilderProps) => {
             </Group>
 
             {conditions.target_class && (
-                <Switch
-                    label="Resolve symbol via ConnectivityNode"
-                    description="Traverses Terminal → ConnectivityNode to place the symbol at the bus node. Use when the target class is equipment not directly in the topology (e.g. PowerElectronicsConnection, BatteryUnit)."
-                    checked={!!conditions.resolve_via_connectivity_node}
-                    onChange={e => setResolveViaConnectivityNode(e.currentTarget.checked)}
-                    size="xs"
-                    mt="xs"
-                />
+                <>
+                    <Switch
+                        label="Resolve symbol via ConnectivityNode"
+                        description="Traverses Terminal → ConnectivityNode to place the symbol at the bus node. Use when the target class is equipment not directly in the topology (e.g. PowerElectronicsConnection, BatteryUnit)."
+                        checked={!!conditions.resolve_via_connectivity_node}
+                        onChange={e => setResolveViaConnectivityNode(e.currentTarget.checked)}
+                        size="xs"
+                        mt="xs"
+                    />
+                    {conditions.resolve_via_connectivity_node && (
+                        <Text size="xs" c="dimmed" fs="italic" mt={4}>
+                            Conditions below filter <strong>{conditions.target_class}</strong> equipment. The symbol is placed at the connected bus (ConnectivityNode).
+                        </Text>
+                    )}
+                </>
             )}
 
             <Collapse in={showAssistant}>
@@ -101,6 +108,8 @@ export const CimRuleBuilder = ({ value, onChange }: CimRuleBuilderProps) => {
                     onAddGroup={addGroup}
                     onUpdateCondition={updateCondition}
                     onRemoveNode={removeNodeItem}
+                    targetClass={conditions.target_class}
+                    schema={schema}
                 />
             </Box>
 
