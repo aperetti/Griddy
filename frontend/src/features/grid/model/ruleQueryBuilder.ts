@@ -16,7 +16,7 @@
  */
 
 import * as Cypher from '@neo4j/cypher-builder';
-import type { MatchConditions, Condition, ConditionGroup, GraphPathStep } from './rules';
+import type { MatchConditions, Condition, ConditionGroup, GraphPathStep, PathStep } from './rules';
 
 // CIM base/mixin classes whose properties are stored directly on equipment nodes
 const INHERITED_CLASSES = new Set([
@@ -123,6 +123,104 @@ export function buildRuleQuery(
     }
 
     return { cypher, params };
+}
+
+/**
+ * Entry point for the new rule builder modes.
+ *
+ * - custom_cypher: passes the raw Cypher through as-is
+ * - path_steps present: builds a CN-anchored traversal query
+ * - fallback: delegates to buildRuleQuery (legacy target_class mode)
+ */
+export function buildPathQuery(
+    conditions: MatchConditions,
+    options?: BuildRuleQueryOptions,
+): BuiltQuery | null {
+    // Custom Cypher pass-through
+    if (conditions.rule_mode === 'custom_cypher') {
+        const cypher = (conditions.custom_cypher || '').trim();
+        if (!cypher) return null;
+        return { cypher, params: {} };
+    }
+
+    // Path-based guided node rule
+    const steps = conditions.path_steps;
+    if (steps && steps.length > 0) {
+        return _buildFromPathSteps(conditions, steps, options);
+    }
+
+    // Legacy fallback
+    return buildRuleQuery(conditions, options);
+}
+
+function _buildFromPathSteps(
+    conditions: MatchConditions,
+    steps: PathStep[],
+    options?: BuildRuleQueryOptions,
+): BuiltQuery | null {
+    if (steps.length < 1) return null;
+
+    // Assign aliases: ConnectivityNode → cn, Terminal → t, rest → n (first user step), n1, n2…
+    const aliases: string[] = [];
+    let userIdx = 0;
+    for (const step of steps) {
+        if (step.fixed) {
+            aliases.push(step.class === 'ConnectivityNode' ? 'cn' : 't');
+        } else {
+            aliases.push(userIdx === 0 ? 'n' : `n${userIdx}`);
+            userIdx++;
+        }
+    }
+
+    // MATCH pattern: (cn:ConnectivityNode)-[]-(t:Terminal)-[]-(n:TargetClass)
+    const patternParts = [`(${aliases[0]}:${steps[0].class})`];
+    for (let i = 1; i < steps.length; i++) {
+        patternParts.push(`-[]-(${aliases[i]}:${steps[i].class})`);
+    }
+    const matchClause = `MATCH ${patternParts.join('')}`;
+
+    // Target = last non-fixed step
+    const targetClass = steps[steps.length - 1].class;
+    const targetAlias = aliases[aliases.length - 1];
+
+    // Reuse the WHERE building logic from the legacy path by building a sub-query on
+    // the target node, then extracting the WHERE fragment from the result.
+    // We synthesise a fake MatchConditions targeting the last step's class.
+    const legacyConditions: MatchConditions = {
+        ...conditions,
+        target_class: targetClass,
+        resolve_via_connectivity_node: false,
+        rule_mode: 'guided',
+        path_steps: undefined,
+    };
+    const legacyResult = buildRuleQuery(legacyConditions, undefined);
+    if (!legacyResult) return null;
+
+    // Replace "MATCH (n:TargetClass)" and "RETURN n.mRID" with our path pattern
+    let cypher = legacyResult.cypher;
+
+    // Strip the legacy MATCH clause and rewrite the RETURN
+    const whereIdx = cypher.search(/WHERE/i);
+    const returnIdx = cypher.lastIndexOf('RETURN');
+
+    let wherePart = '';
+    if (whereIdx > -1 && whereIdx < returnIdx) {
+        wherePart = cypher.slice(whereIdx, returnIdx).trimEnd();
+        // Replace 'n.' references with the target alias if different
+        if (targetAlias !== 'n') {
+            wherePart = wherePart.replace(/\bn\./g, `${targetAlias}.`);
+            wherePart = wherePart.replace(/\(n:/g, `(${targetAlias}:`);
+        }
+    }
+
+    const returnPart = `RETURN DISTINCT cn.\`IdentifiedObject.mRID\` AS mrid`;
+
+    const parts = [matchClause];
+    if (wherePart) parts.push(wherePart);
+    parts.push(returnPart);
+    cypher = parts.join('\n');
+
+    return { cypher, params: legacyResult.params };
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────────────

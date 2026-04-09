@@ -10,9 +10,13 @@ interface GraphExplorerProps {
     onSelectAttribute: (path: string, value: any, operator?: string, graphPath?: GraphPathStep[]) => void;
     schema: Record<string, any>;
     isMobile: boolean;
+    /** Called whenever the selected node changes. Receives the ordered CIM class chain
+     *  from the root node to the selected node, e.g. ['ConnectivityNode','Terminal','PowerElectronicsConnection'].
+     *  Use this to auto-populate path steps in the rule builder. */
+    onNodePathChange?: (cimClassChain: string[]) => void;
 }
 
-export function GraphExplorer({ rootId, onSelectAttribute, schema, isMobile }: GraphExplorerProps) {
+export function GraphExplorer({ rootId, onSelectAttribute, schema, isMobile, onNodePathChange }: GraphExplorerProps) {
     const graphRef = useRef<GraphCanvasRef | null>(null);
     const modalGraphRef = useRef<GraphCanvasRef | null>(null);
     const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -33,6 +37,23 @@ export function GraphExplorer({ rootId, onSelectAttribute, schema, isMobile }: G
     useEffect(() => {
         if (rootId) loadRoot(rootId);
     }, [rootId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Fire onNodePathChange whenever the selected node changes so consumers
+    // (e.g. PathStepBuilder) can auto-populate the graph path.
+    useEffect(() => {
+        if (!onNodePathChange) return;
+        const rootNode = nodes.find(n => n.data?.isRoot);
+        if (!rootNode) return;
+        const rootClass = rootNode.data?.cimType ?? rootNode.label ?? '';
+        if (!selectedId || selectedId === rootNode.id) {
+            onNodePathChange([rootClass]);
+            return;
+        }
+        const hops = getPathTo(selectedId);
+        if (hops) {
+            onNodePathChange([rootClass, ...hops.map(h => h.label)]);
+        }
+    }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const { selections, actives, onNodeClick, onCanvasClick } = useSelection({
         ref: graphRef,

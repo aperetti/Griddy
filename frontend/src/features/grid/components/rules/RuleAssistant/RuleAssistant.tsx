@@ -11,9 +11,12 @@ interface RuleAssistantProps {
     onSelectAttribute: (path: string, value: any, operator?: string, graphPath?: GraphPathStep[]) => void;
     targetClass?: string;
     zIndex?: number;
+    /** Called whenever the user navigates to a node in the explorer.
+     *  Receives the ordered CIM class chain from the root to the selected node. */
+    onNodePathChange?: (cimClassChain: string[]) => void;
 }
 
-export const RuleAssistant: React.FC<RuleAssistantProps> = ({ onSelectAttribute, targetClass }) => {
+export const RuleAssistant: React.FC<RuleAssistantProps> = ({ onSelectAttribute, targetClass, onNodePathChange }) => {
     const isMobile = useMediaQuery('(max-width: 768px)') || false;
     const [selectedRootId, setSelectedRootId] = useState<string | null>(null);
 
@@ -66,6 +69,7 @@ export const RuleAssistant: React.FC<RuleAssistantProps> = ({ onSelectAttribute,
                     onSelectAttribute={onSelectAttribute}
                     schema={schema}
                     isMobile={isMobile}
+                    onNodePathChange={onNodePathChange}
                 />
             )}
         </Paper>

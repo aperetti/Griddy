@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildRuleQuery } from './ruleQueryBuilder';
+import { buildRuleQuery, buildPathQuery } from './ruleQueryBuilder';
 import type { MatchConditions } from './rules';
 
 function makeConditions(overrides: Partial<MatchConditions> = {}): MatchConditions {
@@ -134,6 +134,88 @@ describe('buildRuleQuery', () => {
 
         it('returns null when target_class is missing', () => {
             const result = buildRuleQuery(makeConditions({ resolve_via_connectivity_node: true }));
+            expect(result).toBeNull();
+        });
+    });
+
+    describe('buildPathQuery — legacy fallback', () => {
+        it('falls through to buildRuleQuery when no path_steps', () => {
+            const result = buildPathQuery(makeConditions({ target_class: 'PowerTransformer' }));
+            expect(result).not.toBeNull();
+            expect(result!.cypher).toMatch(/MATCH \(n:PowerTransformer\)/);
+        });
+    });
+
+    describe('buildPathQuery — guided node rule with path_steps', () => {
+        it('builds CN-anchored MATCH from path steps', () => {
+            const result = buildPathQuery(makeConditions({
+                rule_mode: 'guided',
+                entity_type: 'node',
+                path_steps: [
+                    { class: 'ConnectivityNode', fixed: true },
+                    { class: 'Terminal', fixed: true },
+                    { class: 'PowerElectronicsConnection' },
+                ],
+            }));
+            expect(result).not.toBeNull();
+            expect(result!.cypher).toMatch(/MATCH \(cn:ConnectivityNode\)-\[]-\(t:Terminal\)-\[]-\(n:PowerElectronicsConnection\)/);
+            expect(result!.cypher).toMatch(/RETURN DISTINCT cn\.`IdentifiedObject\.mRID` AS mrid/);
+        });
+
+        it('includes WHERE clause from conditions', () => {
+            const result = buildPathQuery(makeConditions({
+                rule_mode: 'guided',
+                entity_type: 'node',
+                path_steps: [
+                    { class: 'ConnectivityNode', fixed: true },
+                    { class: 'Terminal', fixed: true },
+                    { class: 'EnergyConsumer' },
+                ],
+                conditions: [{ id: 'c1', path: 'EnergyConsumer.p', op: '>', value: 1000 }],
+            }));
+            expect(result).not.toBeNull();
+            expect(result!.cypher).toMatch(/WHERE/i);
+            expect(result!.cypher).toMatch(/EnergyConsumer\.p/);
+            expect(result!.cypher).toMatch(/RETURN DISTINCT cn\.`IdentifiedObject\.mRID` AS mrid/);
+        });
+
+        it('handles multi-hop path with 4 steps', () => {
+            const result = buildPathQuery(makeConditions({
+                rule_mode: 'guided',
+                entity_type: 'node',
+                path_steps: [
+                    { class: 'ConnectivityNode', fixed: true },
+                    { class: 'Terminal', fixed: true },
+                    { class: 'PowerElectronicsConnection' },
+                    { class: 'PowerElectronicsUnit' },
+                ],
+            }));
+            expect(result).not.toBeNull();
+            expect(result!.cypher).toMatch(/ConnectivityNode/);
+            expect(result!.cypher).toMatch(/Terminal/);
+            expect(result!.cypher).toMatch(/PowerElectronicsConnection/);
+            expect(result!.cypher).toMatch(/PowerElectronicsUnit/);
+            expect(result!.cypher).toMatch(/RETURN DISTINCT cn\.`IdentifiedObject\.mRID` AS mrid/);
+        });
+    });
+
+    describe('buildPathQuery — custom_cypher mode', () => {
+        it('passes custom Cypher through as-is', () => {
+            const cypher = "MATCH (cn:ConnectivityNode) RETURN cn.`IdentifiedObject.mRID` AS mrid";
+            const result = buildPathQuery(makeConditions({
+                rule_mode: 'custom_cypher',
+                custom_cypher: cypher,
+            }));
+            expect(result).not.toBeNull();
+            expect(result!.cypher).toBe(cypher);
+            expect(result!.params).toEqual({});
+        });
+
+        it('returns null when custom Cypher is empty', () => {
+            const result = buildPathQuery(makeConditions({
+                rule_mode: 'custom_cypher',
+                custom_cypher: '',
+            }));
             expect(result).toBeNull();
         });
     });

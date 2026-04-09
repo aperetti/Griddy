@@ -384,7 +384,7 @@ async def test_display_rule(request: RuleTestRequest, username: str = Depends(ge
         builder = CypherRuleBuilder()
         query, params, warnings = builder.build_rule_query(request.match_conditions, request.target_class)
 
-        count_query = re.sub(r'RETURN\s+.*\s+as\s+mrid$', 'RETURN count(n) as count', query, flags=re.IGNORECASE)
+        count_query = re.sub(r'RETURN\s+.*\s+as\s+mrid', 'RETURN count(*) as count', query, flags=re.IGNORECASE | re.DOTALL)
 
         match_count = 0
         neo4j_url = os.getenv("CIMG_URL")

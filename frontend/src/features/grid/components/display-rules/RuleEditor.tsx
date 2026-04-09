@@ -75,7 +75,12 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
     }, [rule.match_conditions]);
 
     const targetClass: string | undefined = parsedConditions?.target_class;
-    const isEdgeRule = targetClass ? EDGE_TARGET_CLASSES.has(targetClass) : false;
+    // entity_type === 'edge' takes priority; fall back to EDGE_TARGET_CLASSES for legacy rules
+    const isEdgeRule = parsedConditions?.entity_type === 'edge'
+        ? true
+        : parsedConditions?.entity_type === 'node'
+            ? false
+            : (targetClass ? EDGE_TARGET_CLASSES.has(targetClass) : false);
 
     const handleTest = async () => {
         if (!onTest) return;

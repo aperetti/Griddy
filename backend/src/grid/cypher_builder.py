@@ -77,11 +77,36 @@ class CypherRuleBuilder:
         rule_config: Dict[str, Any],
         cim_class: str,
     ) -> Tuple[str, Dict[str, Any], List[str]]:
-        """Return (cypher, params, warnings) for the given rule conditions."""
+        """Return (cypher, params, warnings) for the given rule conditions.
+
+        Dispatches to path-based or legacy generation based on rule_mode / path_steps.
+        """
         self.params = {}
         self._idx = 0
         self.warnings = []
 
+        rule_mode = rule_config.get("rule_mode", "guided")
+
+        # ── Custom Cypher pass-through ────────────────────────────────────────
+        if rule_mode == "custom_cypher":
+            cypher = (rule_config.get("custom_cypher") or "").strip()
+            if not cypher:
+                self.warnings.append("No custom Cypher provided.")
+                return "", self.params, self.warnings
+            if "RETURN" not in cypher.upper():
+                self.warnings.append("Query must include a RETURN clause.")
+            if "as mrid" not in cypher.lower():
+                self.warnings.append("Query should RETURN ... AS mrid for the rule engine to use results.")
+            if rule_config.get("entity_type") == "node" and "ConnectivityNode" not in cypher:
+                self.warnings.append("Node rules should reference ConnectivityNode in the query.")
+            return cypher, self.params, self.warnings
+
+        # ── Path-based (guided node rule with path_steps) ─────────────────────
+        path_steps = rule_config.get("path_steps")
+        if path_steps and len(path_steps) > 0:
+            return self._build_path_query(rule_config, path_steps)
+
+        # ── Legacy fallback (target_class + optional resolve_via_connectivity_node) ──
         where = self._build_group(rule_config, cim_class)
         mrid_expr = f"n.`{_MRID_KEY}`"
 
@@ -89,6 +114,52 @@ class CypherRuleBuilder:
             query = f"MATCH (n:{cim_class}) WHERE {where} RETURN {mrid_expr} AS mrid"
         else:
             query = f"MATCH (n:{cim_class}) RETURN {mrid_expr} AS mrid"
+
+        return query, self.params, self.warnings
+
+    def _build_path_query(
+        self,
+        rule_config: Dict[str, Any],
+        path_steps: List[Dict[str, Any]],
+    ) -> Tuple[str, Dict[str, Any], List[str]]:
+        """Build a CN-anchored traversal query from path_steps.
+
+        path_steps example:
+          [{"class": "ConnectivityNode", "fixed": True},
+           {"class": "Terminal", "fixed": True},
+           {"class": "PowerElectronicsConnection"}]
+
+        Generates:
+          MATCH (cn:ConnectivityNode)-[]-(t:Terminal)-[]-(n:PowerElectronicsConnection)
+          WHERE toFloat(n.`PowerElectronicsConnection.ratedS`) > $p0
+          RETURN DISTINCT cn.`IdentifiedObject.mRID` AS mrid
+        """
+        # Assign aliases: ConnectivityNode → cn, Terminal → t, rest → n0..nN
+        aliases: List[str] = []
+        user_idx = 0
+        for step in path_steps:
+            cls = step.get("class", "")
+            if step.get("fixed"):
+                aliases.append("cn" if cls == "ConnectivityNode" else "t")
+            else:
+                aliases.append(f"n{user_idx}" if user_idx > 0 else "n")
+                user_idx += 1
+
+        # Build MATCH pattern
+        parts = [f"({aliases[0]}:{path_steps[0]['class']})"]
+        for i in range(1, len(path_steps)):
+            parts.append(f"-[]-({aliases[i]}:{path_steps[i]['class']})")
+        match_str = "MATCH " + "".join(parts)
+
+        # The target for conditions is the last non-fixed step
+        target_alias = aliases[-1]
+        target_class = path_steps[-1]["class"]
+
+        where = self._build_group(rule_config, target_class, node_alias=target_alias)
+        if where:
+            query = f"{match_str}\nWHERE {where}\nRETURN DISTINCT cn.`{_MRID_KEY}` AS mrid"
+        else:
+            query = f"{match_str}\nRETURN DISTINCT cn.`{_MRID_KEY}` AS mrid"
 
         return query, self.params, self.warnings
 
@@ -100,23 +171,23 @@ class CypherRuleBuilder:
         self.params[key] = value
         return f"${key}"
 
-    def _build_group(self, group: Dict[str, Any], cim_class: str) -> str:
+    def _build_group(self, group: Dict[str, Any], cim_class: str, node_alias: str = "n") -> str:
         logical_op = group.get("logical_op", "AND").upper()
         parts: List[str] = []
 
         for cond in group.get("conditions", []):
             if "logical_op" in cond:
-                sub = self._build_group(cond, cim_class)
+                sub = self._build_group(cond, cim_class, node_alias=node_alias)
                 if sub:
                     parts.append(f"({sub})")
             else:
-                leaf = self._build_leaf(cond, cim_class)
+                leaf = self._build_leaf(cond, cim_class, node_alias=node_alias)
                 if leaf:
                     parts.append(leaf)
 
         return f" {logical_op} ".join(parts)
 
-    def _build_leaf(self, cond: Dict[str, Any], cim_class: str) -> str:
+    def _build_leaf(self, cond: Dict[str, Any], cim_class: str, node_alias: str = "n") -> str:
         # ── Field Device Classifier shorthand ─────────────────────────────────
         # Condition shape: {"type": "field_device_classifier", "classifier_name": "Recloser"}
         # Emits a verbatim EXISTS { <exists_pattern> } fragment from the registry.
@@ -146,7 +217,7 @@ class CypherRuleBuilder:
         )
 
         if is_direct:
-            raw_prop = f"n.`{path}`" if dot > -1 else f"n.{path}"
+            raw_prop = f"{node_alias}.`{path}`" if dot > -1 else f"{node_alias}.{path}"
             # n10s stores all RDF literals as strings; wrap in toFloat() for ordered comparisons
             prop_expr = f"toFloat({raw_prop})" if cypher_op in _NUMERIC_OPS else raw_prop
             return _comparison(prop_expr, cypher_op, self._param(coerced) if cypher_op not in ("IS NOT NULL", "IS NULL") else None)
@@ -158,7 +229,7 @@ class CypherRuleBuilder:
         e_prop = f"toFloat({raw_e_prop})" if cypher_op in _NUMERIC_OPS else raw_e_prop
 
         if cypher_op in ("IS NOT NULL", "IS NULL"):
-            return f"EXISTS {{ (n:{cim_class}){traversal} WHERE {raw_e_prop} {cypher_op} }}"
+            return f"EXISTS {{ ({node_alias}:{cim_class}){traversal} WHERE {raw_e_prop} {cypher_op} }}"
 
         param_name = self._param(coerced)
         if cypher_op == "=" and isinstance(coerced, (int, float)):
@@ -167,7 +238,7 @@ class CypherRuleBuilder:
             inner = f"({raw_e_prop} {cypher_op} {param_name} OR {raw_e_prop} {cypher_op} {str_param})"
         else:
             inner = f"{e_prop} {cypher_op} {param_name}"
-        return f"EXISTS {{ (n:{cim_class}){traversal} WHERE {inner} }}"
+        return f"EXISTS {{ ({node_alias}:{cim_class}){traversal} WHERE {inner} }}"
 
     def _build_classifier_exists(self, cond: Dict[str, Any], cim_class: str) -> str:
         """Build an EXISTS fragment from a named FieldDeviceClassifier.

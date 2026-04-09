@@ -22,10 +22,10 @@ class CimProfileService:
         
         # Mapping of common classes we want to ensure are ALWAYS in the baseline
         self.TARGET_CLASSES = {
-            "PowerTransformer", "TransformerTank", "Fuse", "Recloser", 
-            "Breaker", "LoadBreakSwitch", "Disconnector", "EnergyConsumer", 
-            "EnergySource", "LinearShuntCompensator", "ACLineSegment", 
-            "ConnectivityNode", "Asset", "AssetInfo"
+            "PowerTransformer", "TransformerTank", "Fuse", "Recloser",
+            "Breaker", "LoadBreakSwitch", "Disconnector", "EnergyConsumer",
+            "EnergySource", "LinearShuntCompensator", "ACLineSegment",
+            "ConnectivityNode", "Terminal", "Asset", "AssetInfo"
         }
 
     @classmethod
@@ -65,10 +65,17 @@ class CimProfileService:
                         
                         # Ensure mRID is always top of the list
                         clean_attrs = ["mRID"] + clean_attrs
-                        
+
+                        # Store as objects (same shape as manager.get_cim_schema)
+                        # so ConnectivityNode / Terminal / etc. work in the frontend
+                        attr_objects = [
+                            {"name": a, "type": "string", "is_complex": False}
+                            for a in clean_attrs
+                        ]
+
                         self.schema[name] = {
                             "class": name,
-                            "attributes": clean_attrs,
+                            "attributes": attr_objects,
                             "count": 0 # Default for baseline
                         }
                     except Exception:
@@ -88,6 +95,24 @@ class CimProfileService:
         if not self._initialized:
             self.initialize()
         return self.schema
+
+    def get_conducting_equipment_classes(self) -> List[str]:
+        """Return all CIM classes that are subclasses of ConductingEquipment in the profile.
+
+        These are the classes that connect to the grid topology via Terminal nodes
+        and are valid as the first user-defined hop after ConnectivityNode → Terminal.
+        """
+        if not self._initialized:
+            self.initialize()
+        result = []
+        for name, cls_obj in self.classes.items():
+            try:
+                mro_names = {c.__name__ for c in cls_obj.__mro__}
+                if "ConductingEquipment" in mro_names and name != "ConductingEquipment":
+                    result.append(name)
+            except Exception:
+                continue
+        return sorted(result)
 
     def get_static_connections(self, class_name: str) -> List[str]:
         """Returns types that are commonly associated with the given class.

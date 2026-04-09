@@ -167,6 +167,14 @@ async def get_cim_schema():
     return registry.get_cim_schema()
 
 
+@router.get("/conducting-equipment")
+async def get_conducting_equipment_classes():
+    """Return CIM classes that subclass ConductingEquipment (i.e. connect via Terminal)."""
+    from src.shared.cim.profile import CimProfileService
+    svc = CimProfileService.get_instance()
+    return {"classes": svc.get_conducting_equipment_classes()}
+
+
 @router.get("/connections/{class_name}")
 async def get_class_connections(class_name: str):
     """List all CIM classes that can be directly attached to the given class."""

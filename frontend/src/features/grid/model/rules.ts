@@ -42,6 +42,13 @@ export interface ConditionGroup {
     conditions: (Condition | ConditionGroup)[];
 }
 
+export interface PathStep {
+    /** CIM class name at this hop (e.g. "ConnectivityNode", "Terminal", "PowerElectronicsConnection") */
+    class: string;
+    /** When true this step is auto-populated and cannot be removed by the user */
+    fixed?: boolean;
+}
+
 export interface MatchConditions extends ConditionGroup {
     target_class?: string;
     /** When true, the rule query traverses target_class → Terminal → ConnectivityNode
@@ -49,6 +56,14 @@ export interface MatchConditions extends ConditionGroup {
      *  Use for equipment that has a Terminal but is not directly in the topology
      *  (e.g. PowerElectronicsConnection, BatteryUnit). */
     resolve_via_connectivity_node?: boolean;
+    /** 'guided' = path builder UI; 'custom_cypher' = raw Cypher textarea. Defaults to 'guided'. */
+    rule_mode?: 'guided' | 'custom_cypher';
+    /** 'node' = CN-centred symbol rule; 'edge' = topology edge styling rule. */
+    entity_type?: 'node' | 'edge';
+    /** Ordered path steps for guided node rules: CN (fixed) → Terminal (fixed) → user-defined hops */
+    path_steps?: PathStep[];
+    /** Raw Cypher for custom_cypher mode */
+    custom_cypher?: string;
 }
 
 /**

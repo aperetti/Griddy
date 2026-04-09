@@ -108,11 +108,19 @@ class DisplayRuleEngine:
                 config = rule.get('config', {})
                 conditions = rule.get('match_conditions', {})
                 target_class = conditions.get('target_class')
+                path_steps = conditions.get('path_steps')
+                rule_mode = conditions.get('rule_mode', 'guided')
 
-                if not target_class:
+                # Path-based or custom_cypher rules don't need target_class
+                if not target_class and not path_steps and rule_mode != 'custom_cypher':
                     continue
 
-                query, params, _warnings = builder.build_rule_query(conditions, target_class)
+                # For path-based/custom rules, derive a placeholder target_class for the builder
+                effective_target = target_class or (
+                    path_steps[-1]['class'] if path_steps else 'ConnectivityNode'
+                )
+
+                query, params, _warnings = builder.build_rule_query(conditions, effective_target)
                 logger.debug("Executing bulk classification query for rule %s: %s", rule.get('id'), query)
                 
                 results = cim_manager.execute_cypher(query, params)
