@@ -43,15 +43,9 @@ export interface Node {
     display_min_zoom?: number;
     display_max_zoom?: number;
     display_rotate_to_edge?: boolean;
-    display_tooltip?: {
-        mode: 'basic' | 'advanced';
-        fields: Array<{ id: string; label: string; field: string }>;
-        html_template: string;
-    };
-    display_tooltip_overrides?: Array<{
-        conditions: any;
-        tooltip_config: { mode: 'basic' | 'advanced'; fields: Array<{ id: string; label: string; field: string }>; html_template: string };
-    }>;
+    display_tooltip?: Record<string, any>;
+    display_tooltip_data?: Record<string, any>;
+    display_tooltip_overrides?: Array<{ conditions: any; tooltip_config: Record<string, any> }>;
     // Edge-specific display overrides from rules
     display_line_weight?: number;
     display_line_style?: 'solid' | 'dashed' | 'dotted';
@@ -83,15 +77,8 @@ export interface Edge {
     display_min_zoom?: number;
     display_max_zoom?: number;
     display_rotate_to_edge?: boolean;
-    display_tooltip?: {
-        mode: 'basic' | 'advanced';
-        fields: Array<{ id: string; label: string; field: string }>;
-        html_template: string;
-    };
-    display_tooltip_overrides?: Array<{
-        conditions: any;
-        tooltip_config: { mode: 'basic' | 'advanced'; fields: Array<{ id: string; label: string; field: string }>; html_template: string };
-    }>;
+    display_tooltip?: Record<string, any>;
+    display_tooltip_data?: Record<string, any>;
+    display_tooltip_overrides?: Array<{ conditions: any; tooltip_config: Record<string, any> }>;
     waypoints?: [number, number][];  // ordered polyline points [lon, lat] for ACLineSegments
 }
-

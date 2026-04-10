@@ -70,6 +70,7 @@ export const CimRuleBuilder = ({ value, onChange }: CimRuleBuilderProps) => {
         setCustomCypher,
         addPathStep,
         updatePathStep,
+        updatePathStepAttrs,
         removePathStep,
         setTargetClass,
         setLogicalOp,
@@ -175,6 +176,7 @@ export const CimRuleBuilder = ({ value, onChange }: CimRuleBuilderProps) => {
                                 ]}
                                 onAddStep={addPathStep}
                                 onUpdateStep={updatePathStep}
+                                onUpdateStepAttrs={updatePathStepAttrs}
                                 onRemoveStep={(idx: number) => {
                                     removePathStep(idx);
                                     setExplorerPathDetected(false);

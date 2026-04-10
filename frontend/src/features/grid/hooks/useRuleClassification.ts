@@ -20,9 +20,11 @@ interface RuleMatch {
     priority: number;
     config: RuleConfig;
     matchingMrids: Set<string>;
+    /** Per-mRID projected tooltip attribute values (keyed by alias, stripped of `tp_` prefix) */
+    tooltipData: Map<string, Record<string, any>>;
 }
 
-function buildDisplayProps(config: RuleConfig, ruleId: number) {
+function buildDisplayProps(config: RuleConfig, ruleId: number, tooltipData?: Record<string, any>) {
     return {
         display_type: config.visual_type,
         display_icon: `rule_${ruleId}`,
@@ -37,6 +39,7 @@ function buildDisplayProps(config: RuleConfig, ruleId: number) {
         display_max_zoom: config.max_zoom ?? 24.0,
         display_rotate_to_edge: config.rotate_to_edge ?? false,
         display_tooltip: config.tooltip_config ?? undefined,
+        display_tooltip_data: tooltipData && Object.keys(tooltipData).length > 0 ? tooltipData : undefined,
         display_line_weight: config.line_weight ?? undefined,
         display_line_style: config.line_style ?? undefined,
     };
@@ -100,12 +103,22 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
                             if (!res.ok || cancelled) return null;
 
                             const data = await res.json();
-                            const matchingMrids = new Set<string>(
-                                (data.rows || []).map((r: any) => r.mrid).filter(Boolean),
-                            );
+                            const matchingMrids = new Set<string>();
+                            const tooltipData = new Map<string, Record<string, any>>();
+                            for (const row of (data.rows || []) as any[]) {
+                                if (!row.mrid) continue;
+                                matchingMrids.add(row.mrid);
+                                const extras: Record<string, any> = {};
+                                for (const [k, v] of Object.entries(row)) {
+                                    if (k !== 'mrid' && k.startsWith('tp_') && v != null) {
+                                        extras[k.slice(3)] = v;
+                                    }
+                                }
+                                if (Object.keys(extras).length > 0) tooltipData.set(row.mrid, extras);
+                            }
                             if (matchingMrids.size === 0) return null;
 
-                            return { ruleId: rule.id, priority: rule.priority, config: rule.config, matchingMrids };
+                            return { ruleId: rule.id, priority: rule.priority, config: rule.config, matchingMrids, tooltipData };
                         } catch {
                             return null;
                         }
@@ -136,11 +149,11 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
         return rawNodes.map(node => {
             const equipMrids = (node.attached_equipment || []).map(eq => eq.mrid);
             for (const rule of ruleMatches) {
-                if (
-                    rule.matchingMrids.has(node.id) ||
-                    equipMrids.some(mrid => rule.matchingMrids.has(mrid))
-                ) {
-                    return { ...node, ...buildDisplayProps(rule.config, rule.ruleId) };
+                const matchMrid = rule.matchingMrids.has(node.id)
+                    ? node.id
+                    : equipMrids.find(mrid => rule.matchingMrids.has(mrid));
+                if (matchMrid) {
+                    return { ...node, ...buildDisplayProps(rule.config, rule.ruleId, rule.tooltipData.get(matchMrid)) };
                 }
             }
             return node;
@@ -156,7 +169,7 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
             for (const rule of ruleMatches) {
                 if (rule.matchingMrids.has(edge.id)) {
                     const { cluster_enabled, cluster_radius, cluster_max_zoom, cluster_min_points, ...edgeProps } =
-                        buildDisplayProps(rule.config, rule.ruleId);
+                        buildDisplayProps(rule.config, rule.ruleId, rule.tooltipData.get(edge.id));
                     return { ...edge, ...edgeProps };
                 }
             }

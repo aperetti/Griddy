@@ -10,17 +10,20 @@ export interface TooltipField {
     field: string;
 }
 
-/** A named attribute exposed as a {{alias}} token in the HTML template. */
+/** A named attribute exposed as a {{alias}} token in the HTML template, or a label-value row in easy mode. */
 export interface TooltipAttribute {
     id: string;
     alias: string;   // Token name used in template: "ratedS" → {{ratedS}}
     path: string;    // CIM property path, e.g. "IdentifiedObject.name", "container.name"
+    label?: string;  // Human-readable label for easy mode display (e.g. "Rated Power (kVA)")
 }
 
 export interface TooltipConfig {
+    /** 'easy' = auto-rendered label-value table; 'html' = custom HTML template. Defaults to 'html'. */
+    tooltip_mode?: 'easy' | 'html';
     /** Attribute definitions — maps alias tokens to CIM property paths. */
     attributes: TooltipAttribute[];
-    /** HTML template with {{alias}} tokens. */
+    /** HTML template with {{alias}} tokens (html mode only). */
     html_template: string;
     /** @deprecated Legacy fields — kept for backward compat. */
     mode?: 'basic' | 'advanced';
@@ -29,6 +32,7 @@ export interface TooltipConfig {
 }
 
 export const DEFAULT_TOOLTIP_CONFIG: TooltipConfig = {
+    tooltip_mode: 'easy',
     attributes: [],
     html_template: '',
 };
@@ -59,6 +63,8 @@ export interface PathStep {
     class: string;
     /** When true this step is auto-populated and cannot be removed by the user */
     fixed?: boolean;
+    /** CIM property paths from this class to project into tooltip data (e.g. "PowerTransformer.ratedS") */
+    tooltip_attributes?: Array<{ attr: string; alias: string }>;
 }
 
 export interface MatchConditions extends ConditionGroup {

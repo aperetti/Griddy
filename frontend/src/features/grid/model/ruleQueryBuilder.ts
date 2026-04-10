@@ -226,7 +226,22 @@ function _buildFromPathSteps(
     const logicalOp = conditions.logical_op === 'OR' ? ' OR ' : ' AND ';
     const parts = [matchClause];
     if (whereParts.length > 0) parts.push(`WHERE ${whereParts.join(logicalOp)}`);
-    parts.push(`RETURN DISTINCT cn.\`IdentifiedObject.mRID\` AS mrid`);
+
+    // Project tooltip_attributes from each step as tp_{alias} return columns
+    const tooltipProjections: string[] = [];
+    for (const step of steps) {
+        if (!step.tooltip_attributes?.length) continue;
+        const alias = classToAlias.get(step.class);
+        if (!alias) continue;
+        for (const { attr, alias: col } of step.tooltip_attributes) {
+            // Sanitize alias to a safe identifier: alphanumeric + underscore only
+            const safeCol = col.replace(/[^a-zA-Z0-9_]/g, '_');
+            tooltipProjections.push(`${alias}.\`${attr}\` AS tp_${safeCol}`);
+        }
+    }
+
+    const returnCols = [`cn.\`IdentifiedObject.mRID\` AS mrid`, ...tooltipProjections].join(', ');
+    parts.push(`RETURN DISTINCT ${returnCols}`);
 
     return { cypher: parts.join('\n'), params };
 }

@@ -165,6 +165,7 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
                             value={rule.config?.tooltip_config || DEFAULT_TOOLTIP_CONFIG}
                             onChange={(tc) => updateConfig({ tooltip_config: tc })}
                             targetClass={targetClass}
+                            pathSteps={parsedConditions?.path_steps}
                         />
                     </Fieldset>
 

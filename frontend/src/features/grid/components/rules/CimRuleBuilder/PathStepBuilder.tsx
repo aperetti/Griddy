@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Group, Badge, Select, ActionIcon, Text, Stack, Tooltip, Paper, Divider, Button, Loader } from '@mantine/core';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, Tag } from 'lucide-react';
 import { fetchAdjacentClasses } from '../../../../../shared/api';
 import { ConditionRow } from './ConditionRow';
 import type { PathStep, Condition } from '../../../model/rules';
@@ -9,6 +9,7 @@ interface PathStepBuilderProps {
     steps: PathStep[];
     onAddStep: (className: string) => void;
     onUpdateStep: (index: number, className: string) => void;
+    onUpdateStepAttrs: (index: number, attrs: Array<{ attr: string; alias: string }>) => void;
     onRemoveStep: (index: number) => void;
     conditions: Condition[];
     onAddConditionForClass: (className: string) => void;
@@ -36,10 +37,85 @@ function useAdjacentClasses(parentClass: string | null) {
     return { classes, loading };
 }
 
+// ── Tooltip attribute picker per step ───────────────────────────────────────
+
+function TooltipAttrPicker({
+    cls,
+    schema,
+    attrs,
+    onChange,
+}: {
+    cls: string;
+    schema: Record<string, any>;
+    attrs: Array<{ attr: string; alias: string }>;
+    onChange: (attrs: Array<{ attr: string; alias: string }>) => void;
+}) {
+    const attrOptions = useMemo(() => {
+        if (!schema[cls]) return [];
+        return (schema[cls].attributes as { name: string; is_complex?: boolean }[])
+            .filter(a => !a.is_complex && a.name)
+            .map(a => ({ value: `${cls}.${a.name}`, label: a.name }));
+    }, [cls, schema]);
+
+    const addAttr = (fullPath: string | null) => {
+        if (!fullPath) return;
+        const alias = fullPath.split('.').pop() ?? fullPath;
+        if (attrs.some(a => a.attr === fullPath)) return; // already added
+        onChange([...attrs, { attr: fullPath, alias }]);
+    };
+
+    const removeAttr = (attr: string) => onChange(attrs.filter(a => a.attr !== attr));
+
+    return (
+        <Stack gap={4} mt={6}>
+            <Divider opacity={0.1} />
+            <Group gap={4} align="center">
+                <Tag size={10} style={{ opacity: 0.5 }} />
+                <Text size="10px" c="dimmed" fw={600} tt="uppercase">Tooltip fields</Text>
+            </Group>
+            {attrs.length > 0 && (
+                <Group gap={4} wrap="wrap">
+                    {attrs.map(a => (
+                        <Badge
+                            key={a.attr}
+                            variant="dot"
+                            color="teal"
+                            size="xs"
+                            radius="sm"
+                            style={{ fontFamily: 'monospace' }}
+                            rightSection={
+                                <ActionIcon size={10} variant="transparent" color="gray" onClick={() => removeAttr(a.attr)}>
+                                    <X size={8} />
+                                </ActionIcon>
+                            }
+                        >
+                            {a.alias}
+                        </Badge>
+                    ))}
+                </Group>
+            )}
+            <Select
+                size="xs"
+                placeholder="Expose attribute…"
+                data={attrOptions.filter(o => !attrs.some(a => a.attr === o.value))}
+                value={null}
+                onChange={addAttr}
+                searchable
+                clearable
+                disabled={attrOptions.length === 0}
+                comboboxProps={{ withinPortal: false, zIndex: 2000 }}
+                nothingFoundMessage="No attributes"
+                leftSection={<Plus size={10} />}
+            />
+        </Stack>
+    );
+}
+
 export function PathStepBuilder({
     steps,
     onAddStep,
     onUpdateStep,
+    onUpdateStepAttrs,
     onRemoveStep,
     conditions,
     onAddConditionForClass,
@@ -180,6 +256,16 @@ export function PathStepBuilder({
                             >
                                 Add condition
                             </Button>
+
+                            {/* Tooltip attribute projection — only on non-fixed steps */}
+                            {!step.fixed && (
+                                <TooltipAttrPicker
+                                    cls={cls}
+                                    schema={schema}
+                                    attrs={step.tooltip_attributes ?? []}
+                                    onChange={(attrs) => onUpdateStepAttrs(idx, attrs)}
+                                />
+                            )}
                         </Paper>
 
                         {/* Arrow connector — shown between steps and before "add step" */}

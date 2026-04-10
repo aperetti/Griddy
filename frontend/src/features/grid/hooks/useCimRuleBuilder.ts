@@ -89,6 +89,12 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
         handleUpdate({ ...conditions, path_steps: current });
     }, [conditions, handleUpdate]);
 
+    const updatePathStepAttrs = useCallback((index: number, attrs: Array<{ attr: string; alias: string }>) => {
+        const current = [...(conditions.path_steps || DEFAULT_NODE_PATH)];
+        current[index] = { ...current[index], tooltip_attributes: attrs };
+        handleUpdate({ ...conditions, path_steps: current });
+    }, [conditions, handleUpdate]);
+
     const removePathStep = useCallback((index: number) => {
         const current = conditions.path_steps || DEFAULT_NODE_PATH;
         if (current[index]?.fixed) return; // cannot remove fixed steps
@@ -163,6 +169,7 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
         setCustomCypher,
         addPathStep,
         updatePathStep,
+        updatePathStepAttrs,
         removePathStep,
         // Legacy: target_class for edge mode
         setTargetClass,

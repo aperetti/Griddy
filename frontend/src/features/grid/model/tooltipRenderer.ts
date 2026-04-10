@@ -51,25 +51,61 @@ export function evaluateConditions(group: any, data: any): boolean {
 
 // ── Tooltip config renderer ───────────────────────────────────────────────────
 
+function coerceValue(v: any): string {
+    if (v == null || v === '') return '';
+    if (Array.isArray(v)) return v.map(coerceValue).filter(Boolean).join(', ');
+    if (typeof v === 'number') return v % 1 === 0 ? String(v) : v.toFixed(2);
+    return String(v);
+}
+
 function resolvePath(merged: any, path: string): string {
-    // Try flat n10s key first ("IdentifiedObject.name" stored as a single property key)
+    // 1. Try exact flat key ("IdentifiedObject.name" stored as a single property key in n10s)
     if (Object.prototype.hasOwnProperty.call(merged, path) && merged[path] != null) {
-        const v = merged[path];
-        if (Array.isArray(v)) return v.join(', ');
-        if (typeof v === 'number') return v % 1 === 0 ? String(v) : v.toFixed(2);
-        return String(v);
+        return coerceValue(merged[path]);
     }
-    // Fall back to nested traversal ("container.name" → merged.container.name)
+
+    // 2. Nested dot traversal ("container.name" → merged.container.name)
     const parts = path.split('.');
     let val: any = merged;
     for (const p of parts) {
         if (val == null) break;
         val = Array.isArray(val) ? val[parseInt(p, 10)] : val[p];
     }
-    if (val == null || val === '') return '';
-    if (Array.isArray(val)) return val.join(', ');
-    if (typeof val === 'number') return val % 1 === 0 ? String(val) : val.toFixed(2);
-    return String(val);
+    if (val != null && val !== '') return coerceValue(val);
+
+    // 3. Strip CIM class prefix — API returns unqualified property names
+    //    ("IdentifiedObject.name" → try "name"; "PowerTransformer.ratedS" → try "ratedS")
+    if (parts.length >= 2) {
+        const unqualified = parts.slice(1).join('.');
+        if (Object.prototype.hasOwnProperty.call(merged, unqualified) && merged[unqualified] != null) {
+            return coerceValue(merged[unqualified]);
+        }
+        // Also traverse unqualified as a nested path
+        let uval: any = merged;
+        for (const p of parts.slice(1)) {
+            if (uval == null) break;
+            uval = Array.isArray(uval) ? uval[parseInt(p, 10)] : uval[p];
+        }
+        if (uval != null && uval !== '') return coerceValue(uval);
+    }
+
+    return '';
+}
+
+function renderEasyRows(attrs: Array<{ alias: string; path: string; label?: string }>, merged: any): string | null {
+    if (!attrs.length) return null;
+    const rows = attrs
+        .filter(a => a.path && !a.path.endsWith('.'))
+        .map(a => {
+            const val = resolvePath(merged, a.path);
+            if (!val) return '';
+            const displayLabel = a.label || a.alias || a.path.split('.').pop() || a.path;
+            return `<div style="font-size:12px;margin-bottom:2px;"><strong>${displayLabel}:</strong> ${val}</div>`;
+        })
+        .filter(Boolean)
+        .join('');
+    if (!rows) return null;
+    return `<div class="grid-map-tooltip" style="padding:10px;background:#1A1B1E;border:1px solid #373A40;border-radius:8px;color:#fff;box-shadow:0 4px 15px rgba(0,0,0,0.5);min-width:150px;pointer-events:auto;">${rows}</div>`;
 }
 
 function renderTooltipConfig(cfg: any, merged: any): string | null {
@@ -84,12 +120,22 @@ function renderTooltipConfig(cfg: any, merged: any): string | null {
         return resolvePath(merged, path);
     };
 
-    // New format: HTML template with {{alias}} tokens
-    if (cfg.html_template) {
+    // Determine effective mode:
+    //   explicit tooltip_mode takes priority;
+    //   legacy fallback: html_template present → html, fields present → legacy, attributes present → easy
+    const explicitMode: string | undefined = cfg.tooltip_mode;
+    const effectiveMode = explicitMode ?? (cfg.html_template ? 'html' : cfg.fields?.length ? 'legacy' : 'easy');
+
+    if (effectiveMode === 'easy') {
+        return renderEasyRows(cfg.attributes ?? [], merged);
+    }
+
+    if (effectiveMode === 'html' || cfg.html_template) {
+        if (!cfg.html_template) return null;
         return cfg.html_template.replace(/\{\{([\w.]+)\}\}/g, (_: string, f: string) => resolve(f));
     }
 
-    // Legacy basic-mode fallback
+    // Legacy basic-mode fallback (fields array)
     const fields: Array<{ id: string; label: string; field: string }> = cfg.fields || [];
     if (!fields.length) return null;
     const rows = fields
@@ -118,7 +164,14 @@ export function renderRuleTooltip(obj: any, cimData?: any): string | null {
     const cfg = obj.display_tooltip;
     if (!cfg) return null;
 
-    const merged = cimData ? { ...obj, ...cimData } : obj;
+    // display_tooltip_data holds pre-projected values from the rule's path traversal
+    // (e.g. TransformerTankEndInfo.ratedS fetched at rule-match time).
+    // It takes highest priority so aliased tokens always resolve.
+    const merged = {
+        ...obj,
+        ...(cimData ?? {}),
+        ...(obj.display_tooltip_data ?? {}),
+    };
 
     // Check per-override tooltip configs first — use the first whose conditions match
     const overrides: Array<{ conditions: any; tooltip_config: any }> = obj.display_tooltip_overrides ?? [];
