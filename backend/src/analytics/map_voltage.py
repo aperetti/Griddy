@@ -3,6 +3,12 @@ from typing import Dict, Any, Optional
 import duckdb
 from src.shared.graph_engine import GraphEngine
 
+def _safe_parquet_path(path: str) -> str:
+    """Return a SQL-safe parquet directory path or raise ValueError."""
+    if "'" in path or '"' in path:
+        raise ValueError(f"PARQUET_DIR contains invalid characters: {path!r}")
+    return path.replace("\\", "/")
+
 class MapVoltageUseCase:
     """Calculates voltage aggregations (min, max, median) for map visualization."""
     
@@ -25,9 +31,11 @@ class MapVoltageUseCase:
             nodes_list_filter = f"AND node_id IN ({placeholders})"
             query_params.extend(nodes_to_query)
 
+        safe_dir = _safe_parquet_path(self.parquet_dir)
+
         prefetch_query = f"""
             SELECT COUNT(*) as estimated_rows
-            FROM read_parquet('{self.parquet_dir}/*.parquet')
+            FROM read_parquet('{safe_dir}/*.parquet')
             WHERE timestamp >= CAST(? AS TIMESTAMP)
               AND timestamp <= CAST(? AS TIMESTAMP)
               AND (voltage_a IS NOT NULL OR voltage_b IS NOT NULL OR voltage_c IS NOT NULL)
@@ -78,6 +86,8 @@ class MapVoltageUseCase:
             # DuckDB median
             agg_func = "MEDIAN"
             
+        safe_dir = _safe_parquet_path(self.parquet_dir)
+
         # Use parameterized queries to prevent SQL injection
         node_avg_query = f"""
             SELECT 
@@ -86,7 +96,7 @@ class MapVoltageUseCase:
                 AVG(current_a) as ia,
                 AVG(current_b) as ib,
                 AVG(current_c) as ic
-            FROM read_parquet('{self.parquet_dir}/*.parquet')
+            FROM read_parquet('{safe_dir}/*.parquet')
             WHERE timestamp >= CAST(? AS TIMESTAMP)
               AND timestamp <= CAST(? AS TIMESTAMP)
               AND (voltage_a IS NOT NULL OR voltage_b IS NOT NULL OR voltage_c IS NOT NULL)
@@ -96,7 +106,7 @@ class MapVoltageUseCase:
         
         prefetch_query = f"""
             SELECT COUNT(*) as estimated_rows
-            FROM read_parquet('{self.parquet_dir}/*.parquet')
+            FROM read_parquet('{safe_dir}/*.parquet')
             WHERE timestamp >= CAST(? AS TIMESTAMP)
               AND timestamp <= CAST(? AS TIMESTAMP)
               AND (voltage_a IS NOT NULL OR voltage_b IS NOT NULL OR voltage_c IS NOT NULL)
