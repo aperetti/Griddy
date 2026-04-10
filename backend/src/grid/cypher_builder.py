@@ -124,26 +124,28 @@ class CypherRuleBuilder:
     ) -> Tuple[str, Dict[str, Any], List[str]]:
         """Build a CN-anchored traversal query from path_steps.
 
-        path_steps example:
-          [{"class": "ConnectivityNode", "fixed": True},
-           {"class": "Terminal", "fixed": True},
-           {"class": "PowerElectronicsConnection"}]
+        Conditions are routed to the correct step alias based on the class prefix
+        of each condition's path — so a condition on 'PowerElectronicsConnection.ratedS'
+        targets the PowerElectronicsConnection alias even when it is an intermediate step.
 
-        Generates:
-          MATCH (cn:ConnectivityNode)-[]-(t:Terminal)-[]-(n:PowerElectronicsConnection)
+        Generates e.g.:
+          MATCH (cn:ConnectivityNode)-[]-(t:Terminal)-[]-(n:PowerElectronicsConnection)-[]-(n1:BatteryUnit)
           WHERE toFloat(n.`PowerElectronicsConnection.ratedS`) > $p0
           RETURN DISTINCT cn.`IdentifiedObject.mRID` AS mrid
         """
-        # Assign aliases: ConnectivityNode → cn, Terminal → t, rest → n0..nN
+        # Assign aliases: ConnectivityNode → cn, Terminal → t, rest → n, n1, n2…
         aliases: List[str] = []
+        class_to_alias: Dict[str, str] = {}
         user_idx = 0
         for step in path_steps:
             cls = step.get("class", "")
             if step.get("fixed"):
-                aliases.append("cn" if cls == "ConnectivityNode" else "t")
+                alias = "cn" if cls == "ConnectivityNode" else "t"
             else:
-                aliases.append(f"n{user_idx}" if user_idx > 0 else "n")
+                alias = "n" if user_idx == 0 else f"n{user_idx}"
                 user_idx += 1
+            aliases.append(alias)
+            class_to_alias[cls] = alias
 
         # Build MATCH pattern
         parts = [f"({aliases[0]}:{path_steps[0]['class']})"]
@@ -151,11 +153,34 @@ class CypherRuleBuilder:
             parts.append(f"-[]-({aliases[i]}:{path_steps[i]['class']})")
         match_str = "MATCH " + "".join(parts)
 
-        # The target for conditions is the last non-fixed step
-        target_alias = aliases[-1]
-        target_class = path_steps[-1]["class"]
+        # Last non-fixed step is the fallback target for inherited/unknown class prefixes
+        last_user_step = next((s for s in reversed(path_steps) if not s.get("fixed")), path_steps[-1])
+        main_class = last_user_step["class"]
+        main_alias = class_to_alias[main_class]
 
-        where = self._build_group(rule_config, target_class, node_alias=target_alias)
+        # Build WHERE — each condition routes to the matching step alias
+        where_parts: List[str] = []
+        for cond in rule_config.get("conditions", []):
+            if "logical_op" in cond:
+                continue  # skip nested groups for now (path rules use flat conditions)
+            path = cond.get("path", "")
+            dot = path.find(".")
+            class_prefix = path[:dot] if dot > -1 else None
+
+            if class_prefix and class_prefix in class_to_alias:
+                cond_alias = class_to_alias[class_prefix]
+                cond_class = class_prefix
+            else:
+                cond_alias = main_alias
+                cond_class = main_class
+
+            fragment = self._build_leaf({**cond}, cond_class, node_alias=cond_alias)
+            if fragment:
+                where_parts.append(fragment)
+
+        logical_op = rule_config.get("logical_op", "AND").upper()
+        where = f" {logical_op} ".join(where_parts)
+
         if where:
             query = f"{match_str}\nWHERE {where}\nRETURN DISTINCT cn.`{_MRID_KEY}` AS mrid"
         else:

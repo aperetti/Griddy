@@ -1,5 +1,5 @@
 import type { Node, Edge } from "../types";
-import { buildRuleQuery } from '../../features/grid/model/ruleQueryBuilder';
+import { buildPathQuery } from '../../features/grid/model/ruleQueryBuilder';
 
 export interface TopologyResponse {
     nodes: Node[];
@@ -295,10 +295,14 @@ export const testDisplayRule = async (match_conditions: any, target_class: strin
         }
     }
 
-    // Build Cypher client-side using @neo4j/cypher-builder
-    const built = buildRuleQuery({ ...conditions, target_class });
+    // Build Cypher client-side — use buildPathQuery so path_steps / custom_cypher rules work.
+    // For legacy rules that need target_class, merge it in; path-based rules already have path_steps.
+    const builtConditions = conditions.path_steps || conditions.rule_mode === 'custom_cypher'
+        ? conditions
+        : { ...conditions, target_class };
+    const built = buildPathQuery(builtConditions);
     if (!built) {
-        return { query: '', params: {}, match_count: 0, warnings: ['No target class or empty conditions'] };
+        return { query: '', params: {}, match_count: 0, warnings: ['No target class, path steps, or Cypher defined'] };
     }
 
     const res = await fetch(`${API_BASE}/cim/query`, {

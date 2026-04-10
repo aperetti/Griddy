@@ -80,7 +80,11 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
                 ? JSON.parse(rule.match_conditions) 
                 : rule.match_conditions;
             
-            const targetClass = conds?.target_class || 'PowerSystemResource';
+            // For path-based rules derive target from last path step; legacy rules use target_class
+            const pathSteps = conds?.path_steps;
+            const targetClass = pathSteps?.length
+                ? pathSteps[pathSteps.length - 1].class
+                : (conds?.target_class || 'PowerSystemResource');
             const res = await onTest(conds, targetClass);
             setTestResults(res);
         } catch (err) {

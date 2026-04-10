@@ -160,67 +160,111 @@ function _buildFromPathSteps(
 ): BuiltQuery | null {
     if (steps.length < 1) return null;
 
-    // Assign aliases: ConnectivityNode → cn, Terminal → t, rest → n (first user step), n1, n2…
+    // Assign aliases: ConnectivityNode → cn, Terminal → t, rest → n, n1, n2…
     const aliases: string[] = [];
+    const classToAlias = new Map<string, string>();
     let userIdx = 0;
     for (const step of steps) {
+        let alias: string;
         if (step.fixed) {
-            aliases.push(step.class === 'ConnectivityNode' ? 'cn' : 't');
+            alias = step.class === 'ConnectivityNode' ? 'cn' : 't';
         } else {
-            aliases.push(userIdx === 0 ? 'n' : `n${userIdx}`);
+            alias = userIdx === 0 ? 'n' : `n${userIdx}`;
             userIdx++;
         }
+        aliases.push(alias);
+        classToAlias.set(step.class, alias);
     }
 
-    // MATCH pattern: (cn:ConnectivityNode)-[]-(t:Terminal)-[]-(n:TargetClass)
+    // MATCH pattern: (cn:ConnectivityNode)-[]-(t:Terminal)-[]-(n:TargetClass)…
     const patternParts = [`(${aliases[0]}:${steps[0].class})`];
     for (let i = 1; i < steps.length; i++) {
         patternParts.push(`-[]-(${aliases[i]}:${steps[i].class})`);
     }
     const matchClause = `MATCH ${patternParts.join('')}`;
 
-    // Target = last non-fixed step
-    const targetClass = steps[steps.length - 1].class;
-    const targetAlias = aliases[aliases.length - 1];
+    // Last non-fixed step is the main target (for inherited-class fallback)
+    const lastUserStep = [...steps].reverse().find(s => !s.fixed);
+    const mainClass = lastUserStep?.class || steps[steps.length - 1].class;
+    const mainAlias = classToAlias.get(mainClass) ?? aliases[aliases.length - 1];
 
-    // Reuse the WHERE building logic from the legacy path by building a sub-query on
-    // the target node, then extracting the WHERE fragment from the result.
-    // We synthesise a fake MatchConditions targeting the last step's class.
-    const legacyConditions: MatchConditions = {
-        ...conditions,
-        target_class: targetClass,
-        resolve_via_connectivity_node: false,
-        rule_mode: 'guided',
-        path_steps: undefined,
+    // Build WHERE directly — route each condition to the correct step alias
+    const params: Record<string, unknown> = {};
+    let paramIdx = 0;
+    const addParam = (val: unknown): string => {
+        const key = `p${paramIdx++}`;
+        params[key] = val;
+        return `$${key}`;
     };
-    const legacyResult = buildRuleQuery(legacyConditions, undefined);
-    if (!legacyResult) return null;
 
-    // Replace "MATCH (n:TargetClass)" and "RETURN n.mRID" with our path pattern
-    let cypher = legacyResult.cypher;
+    const flatConditions = (conditions.conditions as any[]).filter(c => !('logical_op' in c)) as Condition[];
+    const whereParts: string[] = [];
 
-    // Strip the legacy MATCH clause and rewrite the RETURN
-    const whereIdx = cypher.search(/WHERE/i);
-    const returnIdx = cypher.lastIndexOf('RETURN');
+    for (const cond of flatConditions) {
+        if (!cond.path || !cond.op) continue;
+        const dotIdx = cond.path.indexOf('.');
+        const classPrefix = dotIdx > -1 ? cond.path.slice(0, dotIdx) : null;
 
-    let wherePart = '';
-    if (whereIdx > -1 && whereIdx < returnIdx) {
-        wherePart = cypher.slice(whereIdx, returnIdx).trimEnd();
-        // Replace 'n.' references with the target alias if different
-        if (targetAlias !== 'n') {
-            wherePart = wherePart.replace(/\bn\./g, `${targetAlias}.`);
-            wherePart = wherePart.replace(/\(n:/g, `(${targetAlias}:`);
-        }
+        // Route to the step that owns this class; inherited classes go to the main target
+        const alias = classPrefix && classToAlias.has(classPrefix)
+            ? classToAlias.get(classPrefix)!
+            : mainAlias;
+        const nodeClass = classPrefix && classToAlias.has(classPrefix)
+            ? classPrefix
+            : mainClass;
+
+        const fragment = _buildConditionStr(cond, alias, nodeClass, addParam);
+        if (fragment) whereParts.push(fragment);
     }
 
-    const returnPart = `RETURN DISTINCT cn.\`IdentifiedObject.mRID\` AS mrid`;
+    // Scope to active ConnectivityNode mRIDs when provided
+    if (options?.activeMrids?.length) {
+        params['activeMrids'] = options.activeMrids;
+        whereParts.push(`cn.\`IdentifiedObject.mRID\` IN $activeMrids`);
+    }
 
+    const logicalOp = conditions.logical_op === 'OR' ? ' OR ' : ' AND ';
     const parts = [matchClause];
-    if (wherePart) parts.push(wherePart);
-    parts.push(returnPart);
-    cypher = parts.join('\n');
+    if (whereParts.length > 0) parts.push(`WHERE ${whereParts.join(logicalOp)}`);
+    parts.push(`RETURN DISTINCT cn.\`IdentifiedObject.mRID\` AS mrid`);
 
-    return { cypher, params: legacyResult.params };
+    return { cypher: parts.join('\n'), params };
+}
+
+const _NUMERIC_OPS = new Set(['>', '<', '>=', '<=', 'gt', 'lt', 'gte', 'lte']);
+
+function _buildConditionStr(
+    cond: Condition,
+    alias: string,
+    nodeClass: string,
+    addParam: (v: unknown) => string,
+): string {
+    const { path, op } = cond;
+    const value = coerceValue(cond.value);
+    if (!path || !op) return '';
+
+    const cyOp: Record<string, string> = {
+        '==': '=', 'eq': '=', '!=': '<>', 'neq': '<>',
+        '>': '>', 'gt': '>', '<': '<', 'lt': '<',
+        '>=': '>=', 'gte': '>=', '<=': '<=', 'lte': '<=',
+        'contains': 'CONTAINS', 'starts_with': 'STARTS WITH', 'ends_with': 'ENDS WITH',
+        'exists': 'IS NOT NULL', 'not_exists': 'IS NULL',
+    };
+    const sqlOp = cyOp[op];
+    if (!sqlOp) return '';
+
+    const raw = `${alias}.\`${path}\``;
+    const prop = _NUMERIC_OPS.has(op) ? `toFloat(${raw})` : raw;
+
+    if (sqlOp === 'IS NOT NULL' || sqlOp === 'IS NULL') return `${raw} ${sqlOp}`;
+
+    const p = addParam(value);
+    if ((op === '==' || op === 'eq') && typeof value === 'number') {
+        // n10s may store numbers as strings — match both
+        const ps = addParam(String(value));
+        return `(${raw} = ${p} OR ${raw} = ${ps})`;
+    }
+    return `${prop} ${sqlOp} ${p}`;
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────────────

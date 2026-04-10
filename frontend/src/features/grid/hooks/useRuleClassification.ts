@@ -13,7 +13,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Node, Edge } from '../../../shared/types';
 import type { RuleConfig } from '../../../shared/api';
 import { fetchActiveDisplayRules } from '../../../shared/api';
-import { buildRuleQuery } from '../model/ruleQueryBuilder';
+import { buildPathQuery } from '../model/ruleQueryBuilder';
 
 interface RuleMatch {
     ruleId: number;
@@ -89,7 +89,7 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
                                 ? JSON.parse(rule.match_conditions)
                                 : rule.match_conditions;
 
-                            const built = buildRuleQuery(conditions, { activeMrids });
+                            const built = buildPathQuery(conditions, { activeMrids });
                             if (!built) return null;
 
                             const res = await fetch('/api/cim/query', {
