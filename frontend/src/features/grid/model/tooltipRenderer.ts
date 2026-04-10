@@ -51,22 +51,45 @@ export function evaluateConditions(group: any, data: any): boolean {
 
 // ── Tooltip config renderer ───────────────────────────────────────────────────
 
-function renderTooltipConfig(cfg: any, merged: any): string | null {
-    const resolve = (field: string): string => {
-        const parts = field.split('.');
-        let val: any = merged;
-        for (const p of parts) val = val?.[p];
-        if (Array.isArray(val)) return val.join(', ');
-        if (val == null || val === '') return '';
-        if (typeof val === 'number') return val % 1 === 0 ? String(val) : val.toFixed(2);
-        return String(val);
-    };
+function resolvePath(merged: any, path: string): string {
+    // Try flat n10s key first ("IdentifiedObject.name" stored as a single property key)
+    if (Object.prototype.hasOwnProperty.call(merged, path) && merged[path] != null) {
+        const v = merged[path];
+        if (Array.isArray(v)) return v.join(', ');
+        if (typeof v === 'number') return v % 1 === 0 ? String(v) : v.toFixed(2);
+        return String(v);
+    }
+    // Fall back to nested traversal ("container.name" → merged.container.name)
+    const parts = path.split('.');
+    let val: any = merged;
+    for (const p of parts) {
+        if (val == null) break;
+        val = Array.isArray(val) ? val[parseInt(p, 10)] : val[p];
+    }
+    if (val == null || val === '') return '';
+    if (Array.isArray(val)) return val.join(', ');
+    if (typeof val === 'number') return val % 1 === 0 ? String(val) : val.toFixed(2);
+    return String(val);
+}
 
-    if (cfg.mode === 'advanced') {
-        if (!cfg.html_template) return null;
-        return cfg.html_template.replace(/\{\{(\w+(?:\.\w+)*)\}\}/g, (_: string, f: string) => resolve(f));
+function renderTooltipConfig(cfg: any, merged: any): string | null {
+    // Build alias→path map from new attributes array
+    const attrMap: Record<string, string> = {};
+    for (const a of (cfg.attributes ?? [])) {
+        if (a.alias && a.path) attrMap[a.alias] = a.path;
     }
 
+    const resolve = (token: string): string => {
+        const path = attrMap[token] ?? token;
+        return resolvePath(merged, path);
+    };
+
+    // New format: HTML template with {{alias}} tokens
+    if (cfg.html_template) {
+        return cfg.html_template.replace(/\{\{([\w.]+)\}\}/g, (_: string, f: string) => resolve(f));
+    }
+
+    // Legacy basic-mode fallback
     const fields: Array<{ id: string; label: string; field: string }> = cfg.fields || [];
     if (!fields.length) return null;
     const rows = fields

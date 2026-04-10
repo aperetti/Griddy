@@ -3,21 +3,33 @@
  * Following Clean Architecture: Pure functions and domain interfaces.
  */
 
+/** @deprecated use TooltipAttribute */
 export interface TooltipField {
     id: string;
-    label: string;   // Display label shown in tooltip
-    field: string;   // Node/edge property path, e.g. "name", "base_voltage_kv"
+    label: string;
+    field: string;
+}
+
+/** A named attribute exposed as a {{alias}} token in the HTML template. */
+export interface TooltipAttribute {
+    id: string;
+    alias: string;   // Token name used in template: "ratedS" → {{ratedS}}
+    path: string;    // CIM property path, e.g. "IdentifiedObject.name", "container.name"
 }
 
 export interface TooltipConfig {
-    mode: 'basic' | 'advanced';
-    fields: TooltipField[];
+    /** Attribute definitions — maps alias tokens to CIM property paths. */
+    attributes: TooltipAttribute[];
+    /** HTML template with {{alias}} tokens. */
     html_template: string;
+    /** @deprecated Legacy fields — kept for backward compat. */
+    mode?: 'basic' | 'advanced';
+    /** @deprecated Legacy fields — kept for backward compat. */
+    fields?: TooltipField[];
 }
 
 export const DEFAULT_TOOLTIP_CONFIG: TooltipConfig = {
-    mode: 'basic',
-    fields: [],
+    attributes: [],
     html_template: '',
 };
 
