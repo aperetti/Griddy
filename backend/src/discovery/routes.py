@@ -175,6 +175,36 @@ async def get_conducting_equipment_classes():
     return {"classes": svc.get_conducting_equipment_classes()}
 
 
+@router.get("/adjacent-classes/{class_name}")
+async def get_adjacent_classes(class_name: str):
+    """Return CIM classes adjacent to class_name via UML associations.
+
+    Filtered to topology-relevant classes (Equipment + ConnectivityNode + Terminal
+    subclasses) to avoid noise from Measurement/Control/Location/AssetInfo types.
+    """
+    from src.shared.cim.profile import CimProfileService
+    svc = CimProfileService.get_instance()
+
+    adjacent = svc.get_adjacent_classes(class_name)
+
+    # Filter to topology-relevant superclasses — excludes measurement, control,
+    # fault, location, and info classes that are not useful path hops.
+    _TOPOLOGY_ROOTS = frozenset({
+        "Equipment", "ConductingEquipment", "ConnectivityNode", "Terminal",
+        "BusNameMarker", "RegulatingControl", "TransformerEnd",
+    })
+    filtered: list[str] = []
+    for name in adjacent:
+        cls = svc.classes.get(name)
+        if not cls:
+            continue
+        mro_names = {c.__name__ for c in getattr(cls, "__mro__", [])}
+        if mro_names & _TOPOLOGY_ROOTS:
+            filtered.append(name)
+
+    return {"class": class_name, "adjacent": sorted(filtered)}
+
+
 @router.get("/connections/{class_name}")
 async def get_class_connections(class_name: str):
     """List all CIM classes that can be directly attached to the given class."""

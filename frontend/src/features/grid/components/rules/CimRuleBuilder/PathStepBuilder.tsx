@@ -1,8 +1,7 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Group, Badge, Select, ActionIcon, Text, Stack, Tooltip, Paper, Divider, Button, Loader } from '@mantine/core';
 import { Plus, X } from 'lucide-react';
-import { fetchConductingEquipmentClasses } from '../../../../../shared/api';
-import { useSchema } from '../../../context/SchemaContext';
+import { fetchAdjacentClasses } from '../../../../../shared/api';
 import { ConditionRow } from './ConditionRow';
 import type { PathStep, Condition } from '../../../model/rules';
 
@@ -18,6 +17,25 @@ interface PathStepBuilderProps {
     schema: Record<string, any>;
 }
 
+/** Fetch and cache adjacent classes for a given parent class. */
+function useAdjacentClasses(parentClass: string | null) {
+    const [classes, setClasses] = useState<string[]>([]);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        if (!parentClass) { setClasses([]); return; }
+        let cancelled = false;
+        setLoading(true);
+        fetchAdjacentClasses(parentClass)
+            .then(result => { if (!cancelled) setClasses(result); })
+            .catch(() => { if (!cancelled) setClasses([]); })
+            .finally(() => { if (!cancelled) setLoading(false); });
+        return () => { cancelled = true; };
+    }, [parentClass]);
+
+    return { classes, loading };
+}
+
 export function PathStepBuilder({
     steps,
     onAddStep,
@@ -29,30 +47,33 @@ export function PathStepBuilder({
     onRemoveCondition,
     schema,
 }: PathStepBuilderProps) {
-    const { schema: ctxSchema } = useSchema();
-    const [conductingClasses, setConductingClasses] = useState<string[]>([]);
-    const [classesLoading, setClassesLoading] = useState(true);
     const [addingStep, setAddingStep] = useState(false);
     const [editingIdx, setEditingIdx] = useState<number | null>(null);
 
-    useEffect(() => {
-        fetchConductingEquipmentClasses()
-            .then((cls) => { setConductingClasses(cls); setClassesLoading(false); })
-            .catch(() => {
-                setConductingClasses(Object.keys(ctxSchema).sort());
-                setClassesLoading(false);
-            });
-    }, []);
+    // Parent class for the "add step" dropdown = last step in the list
+    const addParentClass = steps.length > 0 ? steps[steps.length - 1].class : null;
+    const { classes: addClasses, loading: addLoading } = useAdjacentClasses(addingStep ? addParentClass : null);
 
-    // Memoize so the array reference stays stable across renders — prevents Mantine
-    // Select from resetting its internal search state when the parent re-renders.
-    const selectableClasses = useMemo(
-        () => conductingClasses.map(c => ({ value: c, label: c })),
-        [conductingClasses]
+    // Parent class for editing step at editingIdx = step before it
+    const editParentClass = editingIdx !== null && editingIdx > 0
+        ? steps[editingIdx - 1].class
+        : null;
+    const { classes: editClasses, loading: editLoading } = useAdjacentClasses(editingIdx !== null ? editParentClass : null);
+
+    const addSelectData = useMemo(
+        () => addClasses.map(c => ({ value: c, label: c })),
+        [addClasses],
     );
 
-    const conditionsForClass = (cls: string) =>
-        conditions.filter(c => c.path.startsWith(cls + '.'));
+    const editSelectData = useMemo(
+        () => editClasses.map(c => ({ value: c, label: c })),
+        [editClasses],
+    );
+
+    const conditionsForClass = useCallback(
+        (cls: string) => conditions.filter(c => c.path.startsWith(cls + '.')),
+        [conditions],
+    );
 
     return (
         <Stack gap={0}>
@@ -80,21 +101,22 @@ export function PathStepBuilder({
                                     <Select
                                         size="xs"
                                         value={cls || null}
-                                        data={selectableClasses}
+                                        data={editSelectData}
                                         onChange={(v) => {
                                             if (v) { onUpdateStep(idx, v); setEditingIdx(null); }
                                         }}
                                         searchable
                                         autoFocus
-                                        placeholder={classesLoading ? 'Loading…' : 'Select class…'}
-                                        disabled={classesLoading}
-                                        rightSection={classesLoading ? <Loader size={12} /> : undefined}
+                                        placeholder={editLoading ? 'Loading…' : 'Select class…'}
+                                        disabled={editLoading}
+                                        rightSection={editLoading ? <Loader size={12} /> : undefined}
                                         style={{ flex: 1 }}
                                         comboboxProps={{ withinPortal: false, zIndex: 2000 }}
+                                        nothingFoundMessage={editLoading ? 'Loading…' : 'No matching classes'}
                                     />
                                 ) : (
                                     <Tooltip
-                                        label={step.fixed ? cls : 'Tap to change class'}
+                                        label={step.fixed ? cls : 'Click to change class'}
                                         openDelay={400}
                                         disabled={step.fixed}
                                     >
@@ -176,14 +198,15 @@ export function PathStepBuilder({
                     <Group gap={6}>
                         <Select
                             size="xs"
-                            data={selectableClasses}
-                            placeholder={classesLoading ? 'Loading…' : 'Select class…'}
-                            disabled={classesLoading}
-                            rightSection={classesLoading ? <Loader size={12} /> : undefined}
+                            data={addSelectData}
+                            placeholder={addLoading ? 'Loading…' : addClasses.length === 0 ? 'No adjacent classes found' : 'Select class…'}
+                            disabled={addLoading}
+                            rightSection={addLoading ? <Loader size={12} /> : undefined}
                             searchable
                             autoFocus
                             style={{ flex: 1 }}
                             comboboxProps={{ withinPortal: false, zIndex: 2000 }}
+                            nothingFoundMessage={addLoading ? 'Loading…' : 'No matching classes'}
                             onChange={(v) => {
                                 if (v) {
                                     setEditingIdx(null);

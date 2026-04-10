@@ -1,5 +1,7 @@
 import logging
 import inspect
+import sys
+import typing
 from typing import Dict, List, Set, Any, Optional
 import os
 
@@ -19,6 +21,8 @@ class CimProfileService:
         self.classes: Dict[str, Any] = {} # class_name -> class_obj
         self.schema: Dict[str, Dict[str, Any]] = {} # baseline schema for UI
         self._initialized = False
+        # class_name -> set of adjacent class names (forward + reverse UML associations)
+        self._adjacency: Dict[str, Set[str]] = {}
         
         # Mapping of common classes we want to ensure are ALWAYS in the baseline
         self.TARGET_CLASSES = {
@@ -83,12 +87,69 @@ class CimProfileService:
                         continue
                 
             logger.info("CIM Profile loaded: %d classes parsed.", len(self.schema))
+            self._build_adjacency_index()
             self._initialized = True
             
         except ImportError as e:
             logger.error("Failed to load CIM profile: %s", e)
         except Exception as e:
             logger.error("Error during CIM profile initialization: %s", e)
+
+    def _build_adjacency_index(self) -> None:
+        """Build forward + reverse UML association index from cimgraph type hints.
+
+        Only considers classes that subclass IdentifiedObject (actual graph nodes),
+        which excludes CIMUnit quantity types and enums.
+        """
+        node_classes: Set[str] = {
+            name for name, cls in self.classes.items()
+            if any(c.__name__ == "IdentifiedObject" for c in getattr(cls, "__mro__", []))
+        }
+
+        # Forward: class → classes it directly references
+        forward: Dict[str, Set[str]] = {name: set() for name in node_classes}
+        for name, cls in self.classes.items():
+            if name not in node_classes:
+                continue
+            try:
+                module = sys.modules.get(cls.__module__)
+                globalns = vars(module) if module else {}
+                hints = typing.get_type_hints(cls, globalns=globalns)
+                for fname, ftype in hints.items():
+                    if fname.startswith("_"):
+                        continue
+                    for arg in (typing.get_args(ftype) or [ftype]):
+                        ref_name = getattr(arg, "__name__", None)
+                        if ref_name and ref_name in node_classes and ref_name != name:
+                            forward[name].add(ref_name)
+                            # Also expand to subclasses: if PEC references PowerElectronicsUnit,
+                            # include BatteryUnit/PhotoVoltaicUnit etc. (polymorphic subtypes)
+                            for sub_name, sub_cls in self.classes.items():
+                                if sub_name not in node_classes or sub_name == name:
+                                    continue
+                                if any(c.__name__ == ref_name for c in sub_cls.__mro__[1:]):
+                                    forward[name].add(sub_name)
+            except Exception:
+                continue
+
+        # Build symmetric adjacency (A adjacent B ↔ B adjacent A)
+        self._adjacency = {name: set() for name in node_classes}
+        for name, targets in forward.items():
+            for target in targets:
+                self._adjacency[name].add(target)
+                self._adjacency.setdefault(target, set()).add(name)
+
+        logger.info("CIM adjacency index built: %d node classes.", len(self._adjacency))
+
+    def get_adjacent_classes(self, class_name: str) -> List[str]:
+        """Return CIM classes adjacent to class_name via UML associations.
+
+        Uses the pre-built schema index so this is O(1) after initialization.
+        Returns an empty list for unknown classes.
+        """
+        if not self._initialized:
+            self.initialize()
+        return sorted(self._adjacency.get(class_name, set()))
 
     def get_baseline_schema(self) -> Dict[str, Dict[str, Any]]:
         """Returns the full schema metadata extracted from the profile."""
