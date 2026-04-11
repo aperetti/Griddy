@@ -22,12 +22,41 @@ interface RuleMatch {
     matchingMrids: Set<string>;
     /** Per-mRID projected tooltip attribute values (keyed by alias, stripped of `tp_` prefix) */
     tooltipData: Map<string, Record<string, any>>;
+    /** Array mapping override indices to their matching MRIDs */
+    overridesData?: Array<{ index: number; mrids: Set<string> }>;
 }
 
-function buildDisplayProps(config: RuleConfig, ruleId: number, tooltipData?: Record<string, any>) {
+/** DJB2 hash function to match backend SpriteGenerator (using stable delimited string) */
+function calculateOverrideHash(overrides: Array<{ svg?: string; icon?: string; mode: string }>): string {
+    if (overrides.length === 0) return '';
+    
+    // 1. Normalize and Sort
+    const normalized = overrides.map(o => {
+        const content = o.svg || o.icon || '';
+        const mode = o.mode || 'add';
+        return `${content}|${mode}`;
+    });
+    normalized.sort();
+    
+    // 2. DJB2 Hash
+    const combinedStr = normalized.join('||');
+    let hash = 5381;
+    for (let i = 0; i < combinedStr.length; i++) {
+        hash = ((hash << 5) + hash) + combinedStr.charCodeAt(i);
+    }
+    return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function buildDisplayProps(config: RuleConfig, ruleId: number, tooltipData?: Record<string, any>, activeOverrides?: any[]) {
+    let iconId = `rule_${ruleId}`;
+    if (activeOverrides && activeOverrides.length > 0) {
+        const hash = calculateOverrideHash(activeOverrides);
+        if (hash) iconId = `rule_${ruleId}_${hash}`;
+    }
+
     return {
         display_type: config.visual_type,
-        display_icon: `rule_${ruleId}`,
+        display_icon: iconId,
         display_color: config.color_hex ?? undefined,
         display_size: config.size ?? 1.0,
         display_label: config.label ?? '',
@@ -118,7 +147,52 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
                             }
                             if (matchingMrids.size === 0) return null;
 
-                            return { ruleId: rule.id, priority: rule.priority, config: rule.config, matchingMrids, tooltipData };
+                            const overridesData: Array<{ index: number; mrids: Set<string> }> = [];
+                            if (rule.config.svg_overrides && rule.config.svg_overrides.length > 0) {
+                                await Promise.all(rule.config.svg_overrides.map(async (override: any, idx: number) => {
+                                    if (!override.conditions) return;
+                                    try {
+                                        const parsedConds = typeof override.conditions === 'string'
+                                            ? JSON.parse(override.conditions)
+                                            : override.conditions;
+                                        
+                                        const oConditions = (parsedConds?.path_steps?.length > 0)
+                                            ? parsedConds
+                                            : {
+                                                ...(rule.match_conditions || {}),
+                                                logical_op: 'AND',
+                                                conditions: [
+                                                    ...(rule.match_conditions?.conditions || []),
+                                                    ...(parsedConds?.conditions || [])
+                                                ]
+                                            };
+                                        
+                                        const oBuilt = buildPathQuery(oConditions, { activeMrids: Array.from(matchingMrids) });
+                                        if (!oBuilt) return;
+
+                                        const oRes = await fetch('/api/cim/query', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ cypher: oBuilt.cypher, params: oBuilt.params }),
+                                        });
+
+                                        if (oRes.ok) {
+                                            const oData = await oRes.json();
+                                            const oMrids = new Set<string>();
+                                            for (const oRow of (oData.rows || []) as any[]) {
+                                                if (oRow.mrid) oMrids.add(oRow.mrid);
+                                            }
+                                            if (oMrids.size > 0) {
+                                                overridesData.push({ index: idx, mrids: oMrids });
+                                            }
+                                        }
+                                    } catch (err) {
+                                        console.warn(`Failed evaluating override ${idx} for rule ${rule.id}`, err);
+                                    }
+                                }));
+                            }
+
+                            return { ruleId: rule.id, priority: rule.priority, config: rule.config, matchingMrids, tooltipData, overridesData };
                         } catch {
                             return null;
                         }
@@ -153,7 +227,43 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
                     ? node.id
                     : equipMrids.find(mrid => rule.matchingMrids.has(mrid));
                 if (matchMrid) {
-                    return { ...node, ...buildDisplayProps(rule.config, rule.ruleId, rule.tooltipData.get(matchMrid)) };
+                    let finalConfig = { ...rule.config };
+                    const activeOverrides: any[] = [];
+                    
+                    // Apply override config if node matches an override
+                    if (rule.overridesData && finalConfig.svg_overrides) {
+                        for (const over of rule.overridesData) {
+                            if (over.mrids.has(matchMrid) && finalConfig.svg_overrides) {
+                                const ovData = finalConfig.svg_overrides[over.index];
+                                activeOverrides.push(ovData);
+                                
+                                finalConfig = {
+                                    ...finalConfig,
+                                    // merge visual properties if override mode is "replace"
+                                    ...(ovData.mode === 'replace' ? {
+                                        visual_type: ovData.visual_type ?? finalConfig.visual_type,
+                                        color_hex: ovData.color_hex ?? finalConfig.color_hex,
+                                        size: ovData.size ?? finalConfig.size,
+                                        icon: (ovData.icon || ovData.svg) ?? finalConfig.icon
+                                    } : {}),
+                                    tooltip_config: ovData.tooltip_config !== undefined ? ovData.tooltip_config : finalConfig.tooltip_config
+                                };
+                                // if override is 'replace', we stop at the first matching override to replace the base
+                                // if 'add', we continue to accumulate overlays
+                                if (ovData.mode === 'replace') break;
+                            }
+                        }
+                    }
+
+                    return { 
+                        ...node, 
+                        ...buildDisplayProps(
+                            finalConfig, 
+                            rule.ruleId, 
+                            rule.tooltipData.get(matchMrid),
+                            activeOverrides
+                        ) 
+                    };
                 }
             }
             return node;
@@ -169,7 +279,7 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
             for (const rule of ruleMatches) {
                 if (rule.matchingMrids.has(edge.id)) {
                     const { cluster_enabled, cluster_radius, cluster_max_zoom, cluster_min_points, ...edgeProps } =
-                        buildDisplayProps(rule.config, rule.ruleId, rule.tooltipData.get(edge.id));
+                        buildDisplayProps(rule.config, rule.ruleId, rule.tooltipData.get(edge.id), []);
                     return { ...edge, ...edgeProps };
                 }
             }

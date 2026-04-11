@@ -122,21 +122,10 @@ class CypherRuleBuilder:
         rule_config: Dict[str, Any],
         path_steps: List[Dict[str, Any]],
     ) -> Tuple[str, Dict[str, Any], List[str]]:
-        """Build a CN-anchored traversal query from path_steps.
-
-        Conditions are routed to the correct step alias based on the class prefix
-        of each condition's path — so a condition on 'PowerElectronicsConnection.ratedS'
-        targets the PowerElectronicsConnection alias even when it is an intermediate step.
-
-        Generates e.g.:
-          MATCH (cn:ConnectivityNode)-[]-(t:Terminal)-[]-(n:PowerElectronicsConnection)-[]-(n1:BatteryUnit)
-          WHERE toFloat(n.`PowerElectronicsConnection.ratedS`) > $p0
-          RETURN DISTINCT cn.`IdentifiedObject.mRID` AS mrid
-        """
-        # Assign aliases: ConnectivityNode → cn, Terminal → t, rest → n, n1, n2…
-        aliases: List[str] = []
+        aliases: Dict[str, str] = {}
         class_to_alias: Dict[str, str] = {}
         user_idx = 0
+        
         for step in path_steps:
             cls = step.get("class", "")
             if step.get("fixed"):
@@ -144,49 +133,167 @@ class CypherRuleBuilder:
             else:
                 alias = "n" if user_idx == 0 else f"n{user_idx}"
                 user_idx += 1
-            aliases.append(alias)
+            if "id" in step:
+                aliases[step["id"]] = alias
             class_to_alias[cls] = alias
 
-        # Build MATCH pattern
-        parts = [f"({aliases[0]}:{path_steps[0]['class']})"]
-        for i in range(1, len(path_steps)):
-            parts.append(f"-[]-({aliases[i]}:{path_steps[i]['class']})")
-        match_str = "MATCH " + "".join(parts)
+        pattern_parts: List[str] = []
+        defined_nodes = set()
+        
+        for i, step in enumerate(path_steps):
+            alias = aliases.get(step.get("id")) or class_to_alias.get(step.get("class"))
+            if not alias:
+                continue
+                
+            child_def = alias if alias in defined_nodes else f"{alias}:{step.get('class')}"
+            defined_nodes.add(alias)
+            
+            parent_id = step.get("parent_id")
+            parent_alias = None
+            parent_step = None
+            
+            if parent_id and parent_id in aliases:
+                parent_alias = aliases[parent_id]
+                parent_step = next((s for s in path_steps if s.get("id") == parent_id), None)
+            elif i > 0:
+                # Legacy support: if no parent_id, chain from the previous step
+                prev_step = path_steps[i - 1]
+                parent_alias = aliases.get(prev_step.get("id")) or class_to_alias.get(prev_step.get("class"))
+                parent_step = prev_step
 
-        # Last non-fixed step is the fallback target for inherited/unknown class prefixes
+            if parent_alias and parent_step:
+                parent_cls = parent_step.get("class", "")
+                parent_def = parent_alias if parent_alias in defined_nodes else f"{parent_alias}:{parent_cls}"
+                defined_nodes.add(parent_alias)
+                pattern_parts.append(f"({parent_def})-[]-({child_def})")
+            else:
+                pattern_parts.append(f"({child_def})")
+                
+        match_str = ""
+        if pattern_parts:
+            match_str = "MATCH " + ", ".join(pattern_parts)
+
         last_user_step = next((s for s in reversed(path_steps) if not s.get("fixed")), path_steps[-1])
-        main_class = last_user_step["class"]
-        main_alias = class_to_alias[main_class]
+        main_class = last_user_step.get("class", "")
+        if last_user_step.get("id") and last_user_step["id"] in aliases:
+            main_alias = aliases[last_user_step["id"]]
+        else:
+            main_alias = class_to_alias.get(main_class, list(aliases.values())[-1] if aliases else "n")
 
-        # Build WHERE — each condition routes to the matching step alias
         where_parts: List[str] = []
         for cond in rule_config.get("conditions", []):
             if "logical_op" in cond:
-                continue  # skip nested groups for now (path rules use flat conditions)
-            path = cond.get("path", "")
-            dot = path.find(".")
-            class_prefix = path[:dot] if dot > -1 else None
-
-            if class_prefix and class_prefix in class_to_alias:
-                cond_alias = class_to_alias[class_prefix]
-                cond_class = class_prefix
+                continue
+            
+            step_id = cond.get("step_id")
+            if step_id and step_id in aliases:
+                cond_alias = aliases[step_id]
             else:
-                cond_alias = main_alias
-                cond_class = main_class
-
-            fragment = self._build_leaf({**cond}, cond_class, node_alias=cond_alias)
+                path = cond.get("path", "")
+                dot = path.find(".")
+                class_prefix = path[:dot] if dot > -1 else None
+                if class_prefix and class_prefix in class_to_alias:
+                    cond_alias = class_to_alias[class_prefix]
+                else:
+                    cond_alias = main_alias
+            
+            fragment = self._build_condition_str(cond, cond_alias, aliases, class_to_alias)
             if fragment:
                 where_parts.append(fragment)
 
         logical_op = rule_config.get("logical_op", "AND").upper()
         where = f" {logical_op} ".join(where_parts)
 
+        # Project tooltips from each step as tp_{alias} return columns
+        tooltip_projections: List[str] = []
+        for step in path_steps:
+            attrs = step.get("tooltip_attributes")
+            if not attrs:
+                continue
+            
+            # Robust alias lookup: try step_id then class name
+            step_id = step.get("id")
+            alias = aliases.get(step_id) if step_id else None
+            if not alias:
+                alias = class_to_alias.get(step.get("class"))
+            
+            if not alias:
+                continue
+
+            for attr_obj in attrs:
+                attr = attr_obj.get("attr")
+                col = attr_obj.get("alias")
+                if not attr or not col:
+                    continue
+                # Sanitize alias: alphanumeric + underscore only
+                safe_col = "".join(c if c.isalnum() or c == "_" else "_" for c in col)
+                tooltip_projections.append(f"{alias}.`{attr}` AS tp_{safe_col}")
+
+        return_cols = [f"cn.`{_MRID_KEY}` AS mrid"] + tooltip_projections
+        return_str = ", ".join(return_cols)
+
         if where:
-            query = f"{match_str}\nWHERE {where}\nRETURN DISTINCT cn.`{_MRID_KEY}` AS mrid"
+            query = f"{match_str}\nWHERE {where}\nRETURN DISTINCT {return_str}"
         else:
-            query = f"{match_str}\nRETURN DISTINCT cn.`{_MRID_KEY}` AS mrid"
+            query = f"{match_str}\nRETURN DISTINCT {return_str}"
 
         return query, self.params, self.warnings
+
+    def _build_condition_str(
+        self,
+        cond: Dict[str, Any],
+        alias: str,
+        aliases_map: Dict[str, str],
+        class_to_alias: Dict[str, str] = None,
+    ) -> str:
+        """Equivalent to _buildConditionStr in TS for path queries."""
+        path = cond.get("path", "")
+        op_str = cond.get("op", "")
+        value_type = cond.get("value_type", "literal")
+        
+        if not path or not op_str:
+            return ""
+
+        cypher_op = _OPS.get(op_str)
+        if not cypher_op:
+            return ""
+
+        raw_prop = f"{alias}.`{path}`"
+        prop_expr = f"toFloat({raw_prop})" if cypher_op in _NUMERIC_OPS else raw_prop
+
+        if cypher_op in ("IS NOT NULL", "IS NULL"):
+            return f"{raw_prop} {cypher_op}"
+
+        if value_type == "property":
+            compare_step_id = cond.get("compare_step_id")
+            compare_path = cond.get("compare_path")
+            if not compare_path:
+                return ""
+                
+            compare_alias = None
+            if compare_step_id and compare_step_id in aliases_map:
+                compare_alias = aliases_map[compare_step_id]
+            elif class_to_alias:
+                # Fallback to class-based routing if step_id is missing or unknown
+                dot = compare_path.find(".")
+                prefix = compare_path[:dot] if dot > -1 else None
+                if prefix and prefix in class_to_alias:
+                    compare_alias = class_to_alias[prefix]
+            
+            if compare_alias:
+                compare_raw = f"{compare_alias}.`{compare_path}`"
+                compare_prop_expr = f"toFloat({compare_raw})" if cypher_op in _NUMERIC_OPS else compare_raw
+                return f"{prop_expr} {cypher_op} {compare_prop_expr}"
+            return ""
+
+        coerced = _coerce(cond.get("value"))
+        param_name = self._param(coerced)
+        
+        if cypher_op == "=" and isinstance(coerced, (int, float)):
+            str_param = self._param(str(int(coerced)) if coerced == int(coerced) else str(coerced))
+            return f"({raw_prop} = {param_name} OR {raw_prop} = {str_param})"
+            
+        return f"{prop_expr} {cypher_op} {param_name}"
 
     # ── Internal helpers ─────────────────────────────────────────────────────
 

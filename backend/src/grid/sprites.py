@@ -154,15 +154,30 @@ class SpriteGenerator:
             return Image.new("RGBA", (self.item_size, self.item_size), (255, 0, 0, 100))
 
     def _calculate_override_hash(self, overrides: List[Dict[str, Any]]) -> str:
-        """Calculates a unique 8-char hash for a specific combination of overrides.
-        Matches the logic in DisplayRuleEngine.
+        """Calculates a unique stable 8-char hash for a specific combination of overrides.
+        Uses DJB2 on a simplified delimited string to ensure cross-language stability.
         """
         if not overrides:
             return ""
-        # Sort by SVG content to ensure deterministic hashing regardless of order
-        sorted_overrides = sorted(overrides, key=lambda x: x.get('svg', ''))
-        override_str = json.dumps(sorted_overrides, sort_keys=True)
-        return hashlib.md5(override_str.encode()).hexdigest()[:8]
+        
+        # 1. Normalize and Sort
+        normalized = []
+        for o in overrides:
+            # We only care about the visual impact: content and mode
+            content = o.get('svg') or o.get('icon') or ''
+            mode = o.get('mode', 'add')
+            normalized.append(f"{content}|{mode}")
+        
+        normalized.sort()
+        
+        # 2. Hash the joined string
+        combined_str = "||".join(normalized)
+        
+        hash_val = 5381
+        for char in combined_str:
+            hash_val = ((hash_val << 5) + hash_val) + ord(char)
+        
+        return hex(hash_val & 0xFFFFFFFF)[2:].zfill(8)
 
     def generate(self) -> Tuple[bytes, Dict[str, Any]]:
         """Generate sprite sheet and metadata."""

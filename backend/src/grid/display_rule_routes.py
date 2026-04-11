@@ -15,7 +15,8 @@ router = APIRouter(prefix="/api/display-rules", tags=["display-rules"])
 # ── Models ────────────────────────────────────────────────────────
 class SVGOverride(BaseModel):
     conditions: Any = {}
-    svg: str = ""
+    svg: Optional[str] = ""
+    icon: Optional[str] = None
     mode: str = "add"
     tooltip_config: Optional[Dict[str, Any]] = None
 
@@ -387,6 +388,7 @@ async def test_display_rule(request: RuleTestRequest, username: str = Depends(ge
         count_query = re.sub(r'RETURN\s+.*\s+as\s+mrid', 'RETURN count(*) as count', query, flags=re.IGNORECASE | re.DOTALL)
 
         match_count = 0
+        mrids = []
         neo4j_url = os.getenv("CIMG_URL")
         if not neo4j_url:
             warnings.append("CIMG_URL is not set — cannot execute query against Neo4j.")
@@ -397,8 +399,17 @@ async def test_display_rule(request: RuleTestRequest, username: str = Depends(ge
             try:
                 driver = GraphDatabase.driver(neo4j_url, auth=(username, password))
                 with driver.session(database=database) as session:
-                    result = session.run(count_query, **params)
-                    row = result.single()
+                    # Execute counts and mrids
+                    # We limit mrids to 1000 for diagnostic purposes to avoid huge payloads
+                    mrid_query = query + " LIMIT 1000"
+                    res = session.run(mrid_query, **params)
+                    for record in res:
+                        if record["mrid"]:
+                            mrids.append(record["mrid"])
+                    
+                    # Also get full count if list was truncated
+                    count_res = session.run(count_query, **params)
+                    row = count_res.single()
                     if row:
                         match_count = row["count"]
                 driver.close()
@@ -409,6 +420,7 @@ async def test_display_rule(request: RuleTestRequest, username: str = Depends(ge
             "query": query,
             "params": params,
             "match_count": match_count,
+            "mrids": mrids,
             "warnings": warnings
         }
         

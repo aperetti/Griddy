@@ -271,7 +271,10 @@ async def execute_cim_query(request: CypherQueryRequest):
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Neo4j query error: {exc}")
 
-        return {"columns": keys, "rows": records, "count": len(records)}
+        # Extract mRIDs if the query returned them
+        mrids = [row.get('mrid') for row in records if isinstance(row, dict) and row.get('mrid')]
+        
+        return {"columns": keys, "rows": records, "count": len(records), "mrids": mrids}
 
     return await run_in_threadpool(_run)
 

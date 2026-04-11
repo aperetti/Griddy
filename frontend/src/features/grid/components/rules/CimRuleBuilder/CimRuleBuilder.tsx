@@ -11,7 +11,7 @@ import { ConditionGroup } from './ConditionGroup';
 import { PathStepBuilder } from './PathStepBuilder';
 import { CustomCypherEditor } from './CustomCypherEditor';
 import { useSchema } from '../../../context/SchemaContext';
-import type { PathStep, Condition } from '../../../model/rules';
+import { genId, type PathStep, type Condition } from '../../../model/rules';
 
 // Edge classes for the edge-mode target class selector
 const EDGE_CLASSES = [
@@ -37,10 +37,19 @@ function derivePathStepsFromChain(chain: string[]): PathStep[] | null {
 
     if (cnIdx === -1 || tIdx === -1) return null;
 
+    const buildSteps = (clsChain: string[]) => {
+        let parentId: string | undefined = undefined;
+        return clsChain.map((cls, i) => {
+            const id = genId();
+            const step: PathStep = { id, class: cls, fixed: i < 2, parent_id: parentId };
+            parentId = id;
+            return step;
+        });
+    };
+
     // Forward: CN first
     if (cnIdx < tIdx) {
-        const forward = chain.slice(cnIdx);
-        return forward.map((cls, i) => ({ class: cls, fixed: i < 2 }));
+        return buildSteps(chain.slice(cnIdx));
     }
 
     // Reverse: CN comes after Terminal — flip so CN is first
@@ -48,8 +57,7 @@ function derivePathStepsFromChain(chain: string[]): PathStep[] | null {
     const rCnIdx = reversed.indexOf('ConnectivityNode');
     const rTIdx = reversed.indexOf('Terminal');
     if (rCnIdx < rTIdx) {
-        const forward = reversed.slice(rCnIdx);
-        return forward.map((cls, i) => ({ class: cls, fixed: i < 2 }));
+        return buildSteps(reversed.slice(rCnIdx));
     }
 
     return null;
@@ -111,9 +119,10 @@ export const CimRuleBuilder = ({ value, onChange }: CimRuleBuilderProps) => {
         }
         // Only update if it differs from the current path (avoid infinite loops)
         const current = conditions.path_steps ?? [];
-        const derivedJson = JSON.stringify(derived);
-        const currentJson = JSON.stringify(current);
-        if (derivedJson !== currentJson) {
+        const currentClasses = current.map(s => s.class).join('->');
+        const derivedClasses = derived.map(s => s.class).join('->');
+
+        if (derivedClasses !== currentClasses) {
             handleUpdate({ ...conditions, path_steps: derived });
             setExplorerPathDetected(true);
         }

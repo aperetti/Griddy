@@ -54,9 +54,10 @@ class TestGetActiveAlarmsUseCase(unittest.TestCase):
             is_active=True
         )
 
-        # Default mock repo behavior
-        self.mock_repo.get_active_alarms.return_value = [
-            self.alarm1, self.alarm2, self.alarm3, self.alarm4
+        # Default mock repo behavior - use side_effect to filter by node_ids
+        all_alarms = [self.alarm1, self.alarm2, self.alarm3, self.alarm4]
+        self.mock_repo.get_active_alarms_by_nodes.side_effect = lambda node_ids: [
+            a for a in all_alarms if a.node_id in node_ids
         ]
 
     def test_get_alarms_without_downstream(self):
@@ -66,7 +67,7 @@ class TestGetActiveAlarmsUseCase(unittest.TestCase):
 
         # Assertions
         self.mock_graph.find_downstream.assert_not_called()
-        self.mock_repo.get_active_alarms.assert_called_once()
+        self.mock_repo.get_active_alarms_by_nodes.assert_called_once()
 
         # Should only return alarms for NODE-1
         self.assertEqual(len(result), 2)
@@ -85,7 +86,7 @@ class TestGetActiveAlarmsUseCase(unittest.TestCase):
 
         # Assertions
         self.mock_graph.find_downstream.assert_called_once_with("NODE-1")
-        self.mock_repo.get_active_alarms.assert_called_once()
+        self.mock_repo.get_active_alarms_by_nodes.assert_called_once()
 
         # Should return alarms for NODE-1 and NODE-2
         # (NODE-4 has no active alarms in our mock repo)
@@ -125,7 +126,8 @@ class TestGetActiveAlarmsUseCase(unittest.TestCase):
     def test_get_alarms_filtering_repo_empty(self):
         """Test behavior when the repository has no active alarms at all."""
         # Setup mock repo to return empty
-        self.mock_repo.get_active_alarms.return_value = []
+        self.mock_repo.get_active_alarms_by_nodes.side_effect = None
+        self.mock_repo.get_active_alarms_by_nodes.return_value = []
 
         # Execute
         result = self.use_case.execute(node_id="NODE-1", include_downstream=True)

@@ -161,9 +161,10 @@ function _buildFromPathSteps(
     if (steps.length < 1) return null;
 
     // Assign aliases: ConnectivityNode → cn, Terminal → t, rest → n, n1, n2…
-    const aliases: string[] = [];
-    const classToAlias = new Map<string, string>();
+    const aliases = new Map<string, string>(); // step.id -> alias
+    const classToAlias = new Map<string, string>(); // Legacy support
     let userIdx = 0;
+    
     for (const step of steps) {
         let alias: string;
         if (step.fixed) {
@@ -172,21 +173,53 @@ function _buildFromPathSteps(
             alias = userIdx === 0 ? 'n' : `n${userIdx}`;
             userIdx++;
         }
-        aliases.push(alias);
+        if (step.id) {
+            aliases.set(step.id, alias);
+        }
         classToAlias.set(step.class, alias);
     }
 
-    // MATCH pattern: (cn:ConnectivityNode)-[]-(t:Terminal)-[]-(n:TargetClass)…
-    const patternParts = [`(${aliases[0]}:${steps[0].class})`];
-    for (let i = 1; i < steps.length; i++) {
-        patternParts.push(`-[]-(${aliases[i]}:${steps[i].class})`);
+    // MATCH pattern: Build a comma-separated list of relationships
+    // e.g. MATCH (cn:ConnectivityNode), (cn)-[]-(t:Terminal)...
+    const patternParts: string[] = [];
+    const definedNodes = new Set<string>();
+
+    for (let i = 0; i < steps.length; i++) {
+        const step = steps[i];
+        const alias = step.id ? aliases.get(step.id) : classToAlias.get(step.class);
+        if (!alias) continue;
+
+        const childDef = definedNodes.has(alias) ? alias : `${alias}:${step.class}`;
+        definedNodes.add(alias);
+
+        let parentAlias: string | undefined = undefined;
+        let parentStep: PathStep | undefined = undefined;
+
+        if (step.parent_id && aliases.has(step.parent_id)) {
+            parentAlias = aliases.get(step.parent_id)!;
+            parentStep = steps.find(s => s.id === step.parent_id);
+        } else if (i > 0) {
+            // Legacy support: if no parent_id, chain from the previous step
+            const prevStep = steps[i - 1];
+            parentAlias = prevStep.id ? aliases.get(prevStep.id) : classToAlias.get(prevStep.class);
+            parentStep = prevStep;
+        }
+
+        if (parentAlias && parentStep) {
+            const parentDef = definedNodes.has(parentAlias) ? parentAlias : `${parentAlias}:${parentStep.class || ''}`;
+            definedNodes.add(parentAlias);
+            patternParts.push(`(${parentDef})-[]-(${childDef})`);
+        } else {
+            patternParts.push(`(${childDef})`);
+        }
     }
-    const matchClause = `MATCH ${patternParts.join('')}`;
+    
+    const matchClause = patternParts.length > 0 ? `MATCH ${patternParts.join(', ')}` : '';
 
     // Last non-fixed step is the main target (for inherited-class fallback)
     const lastUserStep = [...steps].reverse().find(s => !s.fixed);
     const mainClass = lastUserStep?.class || steps[steps.length - 1].class;
-    const mainAlias = classToAlias.get(mainClass) ?? aliases[aliases.length - 1];
+    const mainAlias = lastUserStep?.id ? aliases.get(lastUserStep.id)! : (classToAlias.get(mainClass) ?? Array.from(aliases.values()).pop()!);
 
     // Build WHERE directly — route each condition to the correct step alias
     const params: Record<string, unknown> = {};
@@ -202,18 +235,21 @@ function _buildFromPathSteps(
 
     for (const cond of flatConditions) {
         if (!cond.path || !cond.op) continue;
-        const dotIdx = cond.path.indexOf('.');
-        const classPrefix = dotIdx > -1 ? cond.path.slice(0, dotIdx) : null;
+        
+        // Find the node alias to attach this condition to
+        let alias = mainAlias;
+        if (cond.step_id && aliases.has(cond.step_id)) {
+            alias = aliases.get(cond.step_id)!;
+        } else {
+            // Legacy path routing fallback
+            const dotIdx = cond.path.indexOf('.');
+            const classPrefix = dotIdx > -1 ? cond.path.slice(0, dotIdx) : null;
+            if (classPrefix && classToAlias.has(classPrefix)) {
+                alias = classToAlias.get(classPrefix)!;
+            }
+        }
 
-        // Route to the step that owns this class; inherited classes go to the main target
-        const alias = classPrefix && classToAlias.has(classPrefix)
-            ? classToAlias.get(classPrefix)!
-            : mainAlias;
-        const nodeClass = classPrefix && classToAlias.has(classPrefix)
-            ? classPrefix
-            : mainClass;
-
-        const fragment = _buildConditionStr(cond, alias, nodeClass, addParam);
+        const fragment = _buildConditionStr(cond, alias, addParam, aliases, classToAlias);
         if (fragment) whereParts.push(fragment);
     }
 
@@ -231,7 +267,7 @@ function _buildFromPathSteps(
     const tooltipProjections: string[] = [];
     for (const step of steps) {
         if (!step.tooltip_attributes?.length) continue;
-        const alias = classToAlias.get(step.class);
+        const alias = (step.id && aliases.get(step.id)) || classToAlias.get(step.class);
         if (!alias) continue;
         for (const { attr, alias: col } of step.tooltip_attributes) {
             // Sanitize alias to a safe identifier: alphanumeric + underscore only
@@ -251,11 +287,11 @@ const _NUMERIC_OPS = new Set(['>', '<', '>=', '<=', 'gt', 'lt', 'gte', 'lte']);
 function _buildConditionStr(
     cond: Condition,
     alias: string,
-    nodeClass: string,
     addParam: (v: unknown) => string,
+    aliases: Map<string, string>,
+    classToAlias?: Map<string, string>,
 ): string {
-    const { path, op } = cond;
-    const value = coerceValue(cond.value);
+    const { path, op, value_type, compare_step_id, compare_path } = cond;
     if (!path || !op) return '';
 
     const cyOp: Record<string, string> = {
@@ -273,6 +309,24 @@ function _buildConditionStr(
 
     if (sqlOp === 'IS NOT NULL' || sqlOp === 'IS NULL') return `${raw} ${sqlOp}`;
 
+    if (value_type === 'property') {
+        if (!compare_path) return '';
+        let compareAlias = compare_step_id ? aliases.get(compare_step_id) : undefined;
+        if (!compareAlias && classToAlias) {
+            const dotIdx = compare_path.indexOf('.');
+            const classPrefix = dotIdx > -1 ? compare_path.slice(0, dotIdx) : null;
+            if (classPrefix && classToAlias.has(classPrefix)) {
+                compareAlias = classToAlias.get(classPrefix);
+            }
+        }
+        if (!compareAlias) return '';
+
+        const compareRaw = `${compareAlias}.\`${compare_path}\``;
+        const compareProp = _NUMERIC_OPS.has(op) ? `toFloat(${compareRaw})` : compareRaw;
+        return `${prop} ${sqlOp} ${compareProp}`;
+    }
+
+    const value = coerceValue(cond.value);
     const p = addParam(value);
     if ((op === '==' || op === 'eq') && typeof value === 'number') {
         // n10s may store numbers as strings — match both

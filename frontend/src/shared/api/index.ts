@@ -103,8 +103,13 @@ export interface RuleConfig {
     max_zoom?: number;
     svg_overrides?: Array<{
         conditions: any;
-        svg: string;
+        visual_type?: string;
+        icon?: string;
+        svg?: string;
+        color_hex?: string;
+        size?: number;
         mode: 'replace' | 'add';
+        tooltip_config?: any;
     }>;
     rotate_to_edge?: boolean;
     tooltip_config?: any;
@@ -282,6 +287,7 @@ export interface RuleTestResponse {
     query: string;
     params: Record<string, any>;
     match_count: number;
+    mrids?: string[];
     warnings: string[];
 }
 
@@ -321,6 +327,7 @@ export const testDisplayRule = async (match_conditions: any, target_class: strin
         query: built.cypher,
         params: built.params as Record<string, any>,
         match_count: data.count ?? 0,
+        mrids: data.mrids || [],
         warnings: [],
     };
 };

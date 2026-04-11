@@ -15,6 +15,7 @@ interface VisualConfigEditorProps {
         color_hex?: string;
         size?: number;
         icon?: string;
+        svg?: string;
     };
     onChange: (val: any) => void;
     onOpenLiveEditor?: (initialValue: string, onSave: (val: string) => void) => void;
@@ -97,13 +98,18 @@ export const VisualConfigEditor: React.FC<VisualConfigEditorProps> = ({
 }) => {
     const isMobile = useMediaQuery('(max-width: 768px)');
 
+    // Conditional symbols use 'svg', base rules use 'icon'.
+    // Use whichever key is present in the current config.
+    const svgKey = ('svg' in config) ? 'svg' : 'icon';
+    const currentSvg = config.svg || config.icon || '';
+
     const handleFileUpload = (file: File | null) => {
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (e) => {
             const content = e.target?.result as string;
             if (content.includes('<svg')) {
-                onChange({ icon: content });
+                onChange({ [svgKey]: content });
             }
         };
         reader.readAsText(file);
@@ -149,8 +155,8 @@ export const VisualConfigEditor: React.FC<VisualConfigEditorProps> = ({
                                         <TextInput
                                             style={{ flex: 1, fontFamily: 'monospace' }}
                                             placeholder="<svg>...</svg> content"
-                                            value={config.icon || ''}
-                                            onChange={(e) => onChange({ icon: e.currentTarget.value })}
+                                            value={currentSvg}
+                                            onChange={(e) => onChange({ [svgKey]: e.currentTarget.value })}
                                         />
                                         <FileButton onChange={handleFileUpload} accept="image/svg+xml">
                                             {(props) => (
@@ -167,7 +173,7 @@ export const VisualConfigEditor: React.FC<VisualConfigEditorProps> = ({
                                                 size={isMobile ? 'md' : 'lg'}
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    onOpenLiveEditor?.(config.icon || '', (val) => onChange({ icon: val }));
+                                                    onOpenLiveEditor?.(currentSvg, (val) => onChange({ [svgKey]: val }));
                                                 }}
                                             >
                                                 <Maximize2 size={isMobile ? 14 : 18} />
@@ -182,7 +188,7 @@ export const VisualConfigEditor: React.FC<VisualConfigEditorProps> = ({
                                                 variant="subtle"
                                                 size="compact-xs"
                                                 leftSection={t.icon}
-                                                onClick={() => onChange({ icon: t.content })}
+                                                onClick={() => onChange({ [svgKey]: t.content })}
                                             >
                                                 {t.name}
                                             </Button>
@@ -191,7 +197,7 @@ export const VisualConfigEditor: React.FC<VisualConfigEditorProps> = ({
                                 </Stack>
                             </Grid.Col>
                             <Grid.Col span={{ base: 12, md: 4 }}>
-                                <SVGPreview content={config.icon || ''} color={config.color_hex} />
+                                <SVGPreview content={currentSvg} color={config.color_hex} />
                             </Grid.Col>
                         </Grid>
                     </Stack>

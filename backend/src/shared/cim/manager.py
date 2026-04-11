@@ -379,7 +379,7 @@ class CimModelManager:
         # Labels found on equipment belonging to this feeder or its container
         query = """
         MATCH (f:Feeder {uri: $uri})
-        MATCH (n)-[:`Equipment.EquipmentContainer`|MemberOf*0..6]-(f)
+        MATCH (n)-[:`Equipment.EquipmentContainer`|MemberOf*0..10]-(f)
         UNWIND labels(n) as label
         RETURN DISTINCT label
         """

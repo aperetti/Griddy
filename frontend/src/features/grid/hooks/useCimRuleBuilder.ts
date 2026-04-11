@@ -12,16 +12,35 @@ import type {
     PathStep,
 } from '../model/rules';
 
-const DEFAULT_NODE_PATH: PathStep[] = [
-    { class: 'ConnectivityNode', fixed: true },
-    { class: 'Terminal', fixed: true },
-];
+const getDefaultNodePath = (): PathStep[] => {
+    const cnId = genId();
+    const tId = genId();
+    return [
+        { id: cnId, class: 'ConnectivityNode', fixed: true },
+        { id: tId, parent_id: cnId, class: 'Terminal', fixed: true },
+    ];
+};
 
 export function useCimRuleBuilder(value: string | any, onChange: (value: string) => void) {
     const parseValue = (val: any): MatchConditions => {
         try {
             const parsed = typeof val === 'string' ? JSON.parse(val || '{}') : val;
-            return ensureIds(parsed?.logical_op ? parsed : { ...parsed, logical_op: 'AND', conditions: parsed?.conditions || [] });
+            const migrated = ensureIds(parsed?.logical_op ? parsed : { ...parsed, logical_op: 'AND', conditions: parsed?.conditions || [] });
+
+            // Migrate path_steps to ensure they have IDs and parent_ids
+            if (migrated.path_steps && Array.isArray(migrated.path_steps)) {
+                migrated.path_steps = migrated.path_steps.map((step: any, index: number, arr: any[]) => {
+                    const newStep = { ...step, id: step.id || genId() };
+                    // Apply ID to the original array element so subsequent steps can reference it
+                    arr[index] = newStep; 
+                    if (!newStep.parent_id && index > 0) {
+                        newStep.parent_id = arr[index - 1].id;
+                    }
+                    return newStep;
+                });
+            }
+
+            return migrated;
         } catch (e) {
             return { id: genId(), logical_op: 'AND', conditions: [] };
         }
@@ -52,7 +71,7 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
             // Switch to guided node mode — initialise path if not already set
             update.rule_mode = conditions.rule_mode || 'guided';
             if (!conditions.path_steps?.length) {
-                update.path_steps = DEFAULT_NODE_PATH;
+                update.path_steps = getDefaultNodePath();
             }
             update.target_class = undefined;
         } else {
@@ -67,7 +86,7 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
     const setRuleMode = useCallback((mode: 'guided' | 'custom_cypher') => {
         const update: Partial<MatchConditions> = { rule_mode: mode };
         if (mode === 'guided' && conditions.entity_type === 'node' && !conditions.path_steps?.length) {
-            update.path_steps = DEFAULT_NODE_PATH;
+            update.path_steps = getDefaultNodePath();
         }
         handleUpdate({ ...conditions, ...update });
     }, [conditions, handleUpdate]);
@@ -78,27 +97,43 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
 
     // ── Path management ──────────────────────────────────────────────────────
 
-    const addPathStep = useCallback((className: string) => {
-        const current = conditions.path_steps || DEFAULT_NODE_PATH;
-        handleUpdate({ ...conditions, path_steps: [...current, { class: className }] });
+    const addPathStep = useCallback((className: string, parentId?: string) => {
+        const current = conditions.path_steps || getDefaultNodePath();
+        const pId = parentId || (current.length > 0 ? current[current.length - 1].id : undefined);
+        handleUpdate({ ...conditions, path_steps: [...current, { id: genId(), parent_id: pId, class: className }] });
     }, [conditions, handleUpdate]);
 
     const updatePathStep = useCallback((index: number, className: string) => {
-        const current = [...(conditions.path_steps || DEFAULT_NODE_PATH)];
+        const current = [...(conditions.path_steps || getDefaultNodePath())];
         current[index] = { ...current[index], class: className };
         handleUpdate({ ...conditions, path_steps: current });
     }, [conditions, handleUpdate]);
 
     const updatePathStepAttrs = useCallback((index: number, attrs: Array<{ attr: string; alias: string }>) => {
-        const current = [...(conditions.path_steps || DEFAULT_NODE_PATH)];
+        const current = [...(conditions.path_steps || getDefaultNodePath())];
         current[index] = { ...current[index], tooltip_attributes: attrs };
         handleUpdate({ ...conditions, path_steps: current });
     }, [conditions, handleUpdate]);
 
     const removePathStep = useCallback((index: number) => {
-        const current = conditions.path_steps || DEFAULT_NODE_PATH;
+        const current = conditions.path_steps || getDefaultNodePath();
         if (current[index]?.fixed) return; // cannot remove fixed steps
-        handleUpdate({ ...conditions, path_steps: current.filter((_, i) => i !== index) });
+        const stepId = current[index].id;
+        
+        // Find descendants
+        const toRemove = new Set<string>([stepId]);
+        let changed = true;
+        while (changed) {
+            changed = false;
+            for (const step of current) {
+                if (step.parent_id && toRemove.has(step.parent_id) && !toRemove.has(step.id)) {
+                    toRemove.add(step.id);
+                    changed = true;
+                }
+            }
+        }
+        
+        handleUpdate({ ...conditions, path_steps: current.filter((s) => !toRemove.has(s.id)) });
     }, [conditions, handleUpdate]);
 
     // ── Legacy: target_class + resolve_via_connectivity_node ─────────────────

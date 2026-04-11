@@ -29,6 +29,64 @@ interface RuleEditorProps {
     error?: string | null;
 }
 
+const QueryBlock = ({ title, res }: { title: string, res?: RuleTestResponse | null }) => {
+    const [localCopied, setLocalCopied] = useState(false);
+    if (!res) return null;
+    return (
+        <Stack gap="xs" mt="xs">
+            <Group justify="space-between" align="center">
+                <Text size="xs" c="dimmed" fw={500}>{title}</Text>
+                <Tooltip label={localCopied ? 'Copied!' : 'Copy query with params'} withArrow>
+                    <ActionIcon
+                        size="xs"
+                        variant="subtle"
+                        color={localCopied ? 'teal' : 'gray'}
+                        onClick={() => {
+                            if (!res?.query) return;
+                            const params = res.params ?? {};
+                            let full = res.query;
+                            Object.entries(params).forEach(([key, val]) => {
+                                full = full.replaceAll(`$${key}`, JSON.stringify(val));
+                            });
+                            const fallback = () => {
+                                const ta = document.createElement('textarea');
+                                ta.value = full;
+                                ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+                                document.body.appendChild(ta);
+                                ta.focus();
+                                ta.select();
+                                document.execCommand('copy');
+                                document.body.removeChild(ta);
+                            };
+                            if (navigator.clipboard) {
+                                navigator.clipboard.writeText(full).catch(fallback);
+                            } else {
+                                fallback();
+                            }
+                            setLocalCopied(true);
+                            setTimeout(() => setLocalCopied(false), 2000);
+                        }}
+                    >
+                        {localCopied ? <Check size={12} /> : <Copy size={12} />}
+                    </ActionIcon>
+                </Tooltip>
+            </Group>
+            <Code block style={{ fontSize: rem(11), maxHeight: rem(150), overflowY: 'auto' }}>
+                {res.query || 'No query generated'}
+            </Code>
+            {res.params && Object.keys(res.params).length > 0 && (
+                <>
+                    <Text size="xs" c="dimmed" fw={500}>Parameters:</Text>
+                    <Code block style={{ fontSize: rem(11) }}>
+                        {JSON.stringify(res.params, null, 2)}
+                    </Code>
+                </>
+            )}
+            <Divider />
+        </Stack>
+    );
+};
+
 export const RuleEditor: React.FC<RuleEditorProps> = ({ 
     rule, 
     onChange, 
@@ -40,9 +98,10 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
 }) => {
     const [activeTab, setActiveTab] = useState<'basic' | 'conditional'>('basic');
     const [testResults, setTestResults] = useState<RuleTestResponse | null>(null);
+    const [overrideResults, setOverrideResults] = useState<Record<number, RuleTestResponse>>({});
     const [isTesting, setIsTesting] = useState(false);
     const [showQuery, setShowQuery] = useState(false);
-    const [copied, setCopied] = useState(false);
+    // const [copied, setCopied] = useState(false);
     const isMobile = useMediaQuery('(max-width: 768px)');
 
     // Auto-clear test results when conditions change
@@ -87,6 +146,42 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
                 : (conds?.target_class || 'PowerSystemResource');
             const res = await onTest(conds, targetClass);
             setTestResults(res);
+
+            // Trigger testing for all SVG overrides independently if present
+            if (rule.config?.svg_overrides && rule.config.svg_overrides.length > 0) {
+                const ovRes: Record<number, RuleTestResponse> = {};
+                const baseMrids = new Set(res.mrids || []);
+                
+                await Promise.all(
+                    rule.config.svg_overrides.map(async (ov: any, idx: number) => {
+                        if (!ov.conditions) return;
+                        const ovConds = typeof ov.conditions === 'string' 
+                            ? JSON.parse(ov.conditions) 
+                            : ov.conditions;
+                            
+                        // Determine target class for the override standalone
+                        const overrideTargetClass = ovConds?.path_steps?.length
+                            ? ovConds.path_steps[ovConds.path_steps.length - 1].class
+                            : targetClass;
+
+                        const rv = await onTest(ovConds, overrideTargetClass);
+                        
+                        // Perform client-side intersection (case-insensitive for robustness)
+                        const ovMrids = rv.mrids || [];
+                        const baseMridsUpper = new Set([...baseMrids].map(id => String(id).toUpperCase()));
+                        const matchedInBase = ovMrids.filter(id => baseMridsUpper.has(String(id).toUpperCase()));
+                        
+                        ovRes[idx] = {
+                            ...rv,
+                            match_count: matchedInBase.length,
+                            mrids: matchedInBase
+                        };
+                    })
+                );
+                setOverrideResults(ovRes);
+            } else {
+                setOverrideResults({});
+            }
         } catch (err) {
             console.error('Test failed', err);
         } finally {
@@ -233,6 +328,26 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
                     symbols={rule.config?.svg_overrides || []}
                     onChange={(symbols) => updateConfig({ svg_overrides: symbols })}
                     onOpenLiveEditor={onOpenLiveEditor}
+                    onTest={onTest ? async (conds, targetClass) => {
+                        // Custom Cypher overrides are standalone filters for testing purposes.
+                        // In the engine, the base rule acts as a "candidate filter" and overrides
+                        // are applied to that candidate set. For testing a specific symbol,
+                        // we execute its conditions as a standalone query.
+                        if (conds?.rule_mode === 'custom_cypher') {
+                            return onTest(conds, targetClass);
+                        }
+
+                        // For guided rules, we merge base + override conditions
+                        const mergedConditions = {
+                            ...(rule.match_conditions || {}),
+                            logical_op: 'AND',
+                            conditions: [
+                                ...(rule.match_conditions?.conditions || []),
+                                ...(conds?.conditions || [])
+                            ]
+                        };
+                        return onTest(mergedConditions, targetClass);
+                    } : undefined}
                     targetClass={targetClass}
                 />
             )}
@@ -260,9 +375,21 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
                             </Button>
 
                             {testResults && (
-                                <Badge color={testResults.match_count > 0 ? 'green' : 'gray'} variant="filled">
-                                    {testResults.match_count} Matches Found
-                                </Badge>
+                                <Stack gap={2}>
+                                    <Badge color={testResults.match_count > 0 ? 'green' : 'gray'} variant="filled">
+                                        {testResults.match_count} Base Matches Found
+                                    </Badge>
+                                    
+                                    {rule.config?.svg_overrides?.map((_ov: any, idx: number) => {
+                                        const ovRes = overrideResults[idx];
+                                        if (!ovRes) return null;
+                                        return (
+                                            <Badge key={idx} size="xs" color={ovRes.match_count > 0 ? 'blue' : 'gray'} variant="light">
+                                                Additional Rule #{idx + 1}: {ovRes.match_count} matches
+                                            </Badge>
+                                        );
+                                    })}
+                                </Stack>
                             )}
                         </Group>
 
@@ -291,57 +418,20 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
                     )}
 
                     <Collapse in={showQuery}>
-                        <Stack gap="xs" mt="xs">
-                            <Group justify="space-between" align="center">
-                                <Text size="xs" c="dimmed" fw={500}>Generated Cypher Query:</Text>
-                                <Tooltip label={copied ? 'Copied!' : 'Copy query with params'} withArrow>
-                                    <ActionIcon
-                                        size="xs"
-                                        variant="subtle"
-                                        color={copied ? 'teal' : 'gray'}
-                                        onClick={() => {
-                                            if (!testResults?.query) return;
-                                            const params = testResults.params ?? {};
-                                            let full = testResults.query;
-                                            Object.entries(params).forEach(([key, val]) => {
-                                                full = full.replaceAll(`$${key}`, JSON.stringify(val));
-                                            });
-                                            // navigator.clipboard requires HTTPS + focus — not reliable on mobile.
-                                            // Fall back to textarea execCommand for broad compatibility.
-                                            const fallback = () => {
-                                                const ta = document.createElement('textarea');
-                                                ta.value = full;
-                                                ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
-                                                document.body.appendChild(ta);
-                                                ta.focus();
-                                                ta.select();
-                                                document.execCommand('copy');
-                                                document.body.removeChild(ta);
-                                            };
-                                            if (navigator.clipboard) {
-                                                navigator.clipboard.writeText(full).catch(fallback);
-                                            } else {
-                                                fallback();
-                                            }
-                                            setCopied(true);
-                                            setTimeout(() => setCopied(false), 2000);
-                                        }}
-                                    >
-                                        {copied ? <Check size={12} /> : <Copy size={12} />}
-                                    </ActionIcon>
-                                </Tooltip>
-                            </Group>
-                            <Code block style={{ fontSize: rem(11), maxHeight: rem(150), overflowY: 'auto' }}>
-                                {testResults?.query || 'No query generated'}
-                            </Code>
-                            {testResults?.params && Object.keys(testResults.params).length > 0 && (
-                                <>
-                                    <Text size="xs" c="dimmed" fw={500}>Parameters:</Text>
-                                    <Code block style={{ fontSize: rem(11) }}>
-                                        {JSON.stringify(testResults.params, null, 2)}
-                                    </Code>
-                                </>
-                            )}
+                        <Stack gap="sm" mt="xs">
+                            <QueryBlock title="Base Generated Query:" res={testResults} />
+                            
+                            {rule.config?.svg_overrides?.map((_ov: any, idx: number) => {
+                                const ovRes = overrideResults[idx];
+                                if (!ovRes) return null;
+                                return (
+                                    <QueryBlock 
+                                        key={idx} 
+                                        title={`Additional Rule #${idx + 1} Generated Query:`} 
+                                        res={ovRes} 
+                                    />
+                                );
+                            })}
                         </Stack>
                     </Collapse>
                 </Stack>

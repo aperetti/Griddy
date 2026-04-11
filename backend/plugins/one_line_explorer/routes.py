@@ -89,10 +89,8 @@ def _find_upstream_path(G: nx.Graph, node_map: dict, node_id: str) -> list[str]:
         """Return True if *nid* qualifies as where the upstream trace stops."""
         n = node_map.get(nid) or {}
         # Higher voltage than selected node (voltage-gated stop)
-        if selected_kv is not None and selected_kv > 0:
-            nb_kv = n.get("base_voltage_kv")
-            if nb_kv is not None and nb_kv > selected_kv:
-                return True
+        # Removed: This stops traversal prematurely at the primary side of 
+        # a distribution transformer, preventing the full path to the source.
         # Substation
         if n.get("node_type") == "Substation":
             return True

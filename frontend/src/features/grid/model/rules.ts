@@ -45,8 +45,12 @@ export interface GraphPathStep {
 export interface Condition {
     id: string;
     path: string;
+    step_id?: string;
     op: string;
     value: any;
+    value_type?: 'literal' | 'property';
+    compare_step_id?: string;
+    compare_path?: string;
     /** Exact graph traversal path captured from the explorer. When present, the
      *  query builder uses these specific relationship hops instead of [*1..3]. */
     graph_path?: GraphPathStep[];
@@ -59,6 +63,8 @@ export interface ConditionGroup {
 }
 
 export interface PathStep {
+    id: string;
+    parent_id?: string;
     /** CIM class name at this hop (e.g. "ConnectivityNode", "Terminal", "PowerElectronicsConnection") */
     class: string;
     /** When true this step is auto-populated and cannot be removed by the user */

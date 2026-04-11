@@ -123,11 +123,65 @@ class DisplayRuleEngine:
                 query, params, _warnings = builder.build_rule_query(conditions, effective_target)
                 logger.debug("Executing bulk classification query for rule %s: %s", rule.get('id'), query)
                 
-                results = cim_manager.execute_cypher(query, params)
+                base_results = cim_manager.execute_cypher(query, params)
                 
-                for row in results:
-                    mrid = row.get('mrid')
-                    if mrid and mrid not in classification_map:
+                # Pre-fetch independent MRID sets for SVG overrides
+                overrides_config = config.get('svg_overrides') or []
+                if isinstance(overrides_config, str):
+                    try: 
+                        overrides_config = json.loads(overrides_config)
+                    except: 
+                        overrides_config = []
+                
+                override_mrid_sets = []
+                for ov in overrides_config:
+                    ov_conds = self._ensure_dict(ov.get('conditions'))
+                    if not ov_conds:
+                        override_mrid_sets.append(None)
+                        continue
+                    
+                    try:
+                        # Determine target class for this override standalone
+                        ov_path_steps = ov_conds.get('path_steps')
+                        if ov_path_steps:
+                            ov_target = ov_path_steps[-1]['class']
+                        else:
+                            ov_target = ov_conds.get('target_class') or effective_target
+                        
+                        ov_query, ov_params, _ = builder.build_rule_query(ov_conds, ov_target)
+                        ov_res = cim_manager.execute_cypher(ov_query, ov_params)
+                        
+                        # Normalize MRIDs to uppercase for robust set intersection
+                        mrid_set = {str(row['mrid']).upper() for row in ov_res if row.get('mrid')}
+                        override_mrid_sets.append(mrid_set)
+                        logger.debug("Pre-fetched %d MRIDs for override in rule %s", len(mrid_set), rule.get('id'))
+                    except Exception as e:
+                        logger.error("Error pre-fetching override for rule %s: %s", rule.get('id'), e)
+                        override_mrid_sets.append(set())
+
+                for row in base_results:
+                    raw_mrid = row.get('mrid')
+                    if not raw_mrid:
+                        continue
+                        
+                    mrid = str(raw_mrid).upper()
+                    if mrid not in classification_map:
+                        # Determine active overrides for this specific MRID
+                        active_overrides = []
+                        for idx, ov_set in enumerate(override_mrid_sets):
+                            if ov_set is not None and mrid in ov_set:
+                                ov = overrides_config[idx]
+                                active_overrides.append({
+                                    "icon": ov.get('icon') or ov.get('svg', ""),
+                                    "svg": ov.get('svg', ""),
+                                    "color_hex": ov.get('color_hex'),
+                                    "size": ov.get('size'),
+                                    "visual_type": ov.get('visual_type'),
+                                    "mode": ov.get('mode', "add")
+                                })
+
+                        override_hash = self._calculate_override_hash(active_overrides)
+
                         # Extract and cast config values
                         def get_float(k, default):
                             try: return float(config.get(k, default))
@@ -137,21 +191,24 @@ class DisplayRuleEngine:
                             try: return int(config.get(k, default))
                             except: return int(default)
 
-                        # Collect per-override tooltip configs for frontend evaluation
-                        overrides = config.get('svg_overrides') or []
-                        if isinstance(overrides, str):
-                            try: overrides = json.loads(overrides)
-                            except: overrides = []
+                        # Determine final size
+                        final_size = get_float('size', 1.0)
+                        for o in active_overrides:
+                            if o.get('size') is not None:
+                                try: final_size = float(o['size'])
+                                except: pass
+
+                        # Collect per-override tooltip configs
                         tooltip_overrides = [
                             {"conditions": o.get("conditions", {}), "tooltip_config": o["tooltip_config"]}
-                            for o in overrides
+                            for o in overrides_config
                             if o.get("tooltip_config")
                         ] or None
 
                         classification_map[mrid] = {
                             "rule_id": rule.get('id'),
                             "visual_type": config.get('visual_type', 'Custom'),
-                            "size": get_float('size', 1.0),
+                            "size": final_size,
                             "label": config.get('label', ""),
                             "icon": config.get('icon'),
                             "color_hex": config.get('color_hex'),
@@ -163,8 +220,8 @@ class DisplayRuleEngine:
                             "min_zoom": get_float('min_zoom', 0.0),
                             "max_zoom": get_float('max_zoom', 24.0),
                             "rotate_to_edge": bool(config.get('rotate_to_edge', False)),
-                            "svg_overrides": [],
-                            "override_hash": "",
+                            "svg_overrides": active_overrides,
+                            "override_hash": override_hash,
                             "tooltip_config": config.get('tooltip_config'),
                             "tooltip_overrides": tooltip_overrides,
                         }
@@ -328,14 +385,30 @@ class DisplayRuleEngine:
         return None
 
     def _calculate_override_hash(self, overrides: List[Dict[str, Any]]) -> str:
-        """Calculates a unique 8-char hash for a specific combination of overrides."""
+        """Calculates a unique stable 8-char hash for a specific combination of overrides.
+        Uses DJB2 on a simplified delimited string to ensure cross-language stability.
+        """
         if not overrides:
             return ""
-        # Sort by SVG content to ensure deterministic hashing regardless of order
-        # Sort by deterministic content to ensure stable hashing
-        sorted_overrides = sorted(overrides, key=lambda x: f"{x.get('icon', '')}{x.get('svg', '')}{x.get('mode', '')}")
-        override_str = json.dumps(sorted_overrides, sort_keys=True)
-        return hashlib.md5(override_str.encode()).hexdigest()[:8]
+        
+        # 1. Normalize and Sort
+        normalized = []
+        for o in overrides:
+            # We only care about the visual impact: content and mode
+            content = o.get('svg') or o.get('icon') or ''
+            mode = o.get('mode', 'add')
+            normalized.append(f"{content}|{mode}")
+        
+        normalized.sort()
+        
+        # 2. Hash the joined string
+        combined_str = "||".join(normalized)
+        
+        hash_val = 5381
+        for char in combined_str:
+            hash_val = ((hash_val << 5) + hash_val) + ord(char)
+        
+        return hex(hash_val & 0xFFFFFFFF)[2:].zfill(8)
 
         # Removed legacy internal condition checkers in favor of src/grid/cim_rules.py
 

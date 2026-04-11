@@ -25,11 +25,12 @@ interface ConditionalSymbolListProps {
     symbols: ConditionalSymbol[];
     onChange: (symbols: ConditionalSymbol[]) => void;
     onOpenLiveEditor?: (initialValue: string, onSave: (val: string) => void) => void;
+    onTest?: (conditions: any, targetClass: string) => Promise<any>;
     targetClass?: string;
 }
 
 function SymbolRow({
-    symbol, index, total, targetClass, onChange, onRemove, onMove, onOpenLiveEditor,
+    symbol, index, total, targetClass, onChange, onRemove, onMove, onOpenLiveEditor, onTest
 }: {
     symbol: ConditionalSymbol;
     index: number;
@@ -39,9 +40,25 @@ function SymbolRow({
     onRemove: () => void;
     onMove: (dir: 'up' | 'down') => void;
     onOpenLiveEditor?: (initialValue: string, onSave: (val: string) => void) => void;
+    onTest?: (conditions: any, targetClass: string) => Promise<any>;
 }) {
     const [showTooltip, setShowTooltip] = useState(false);
+    const [isTesting, setIsTesting] = useState(false);
+    const [testResults, setTestResults] = useState<{ match_count: number } | null>(null);
     const hasTooltip = !!symbol.tooltip_config;
+
+    const handleTest = async () => {
+        if (!onTest || !targetClass) return;
+        setIsTesting(true);
+        try {
+            const res = await onTest(symbol.conditions, targetClass);
+            setTestResults(res);
+        } catch (err) {
+            console.error('Test failed', err);
+        } finally {
+            setIsTesting(false);
+        }
+    };
 
     return (
         <Paper withBorder p="md" shadow="sm">
@@ -61,6 +78,24 @@ function SymbolRow({
                             style={{ width: rem(120) }}
                             comboboxProps={{ zIndex: 2000, withinPortal: true }}
                         />
+                        {onTest && (
+                            <Group gap={4}>
+                                <Button
+                                    size="xs"
+                                    variant="subtle"
+                                    color="teal"
+                                    onClick={handleTest}
+                                    loading={isTesting}
+                                >
+                                    Test
+                                </Button>
+                                {testResults && (
+                                    <Badge size="xs" color={testResults.match_count > 0 ? 'green' : 'gray'}>
+                                        {testResults.match_count}
+                                    </Badge>
+                                )}
+                            </Group>
+                        )}
                     </Group>
                     <Group gap="xs">
                         <Tooltip label="Move Up">
@@ -93,7 +128,7 @@ function SymbolRow({
                         visual_type: symbol.visual_type,
                         color_hex: symbol.color_hex,
                         size: symbol.size,
-                        icon: symbol.icon || symbol.svg,
+                        svg: symbol.svg || symbol.icon,
                     }}
                     onChange={(val) => onChange(val)}
                     onOpenLiveEditor={onOpenLiveEditor}
@@ -143,6 +178,7 @@ export const ConditionalSymbolList: React.FC<ConditionalSymbolListProps> = ({
     symbols = [],
     onChange,
     onOpenLiveEditor,
+    onTest,
     targetClass,
 }) => {
     const addSymbol = () => {
@@ -207,6 +243,7 @@ export const ConditionalSymbolList: React.FC<ConditionalSymbolListProps> = ({
                         onRemove={() => removeSymbol(idx)}
                         onMove={(dir) => moveSymbol(idx, dir)}
                         onOpenLiveEditor={onOpenLiveEditor}
+                        onTest={onTest}
                     />
                 ))
             )}

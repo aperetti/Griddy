@@ -152,13 +152,13 @@ describe('buildRuleQuery', () => {
                 rule_mode: 'guided',
                 entity_type: 'node',
                 path_steps: [
-                    { class: 'ConnectivityNode', fixed: true },
-                    { class: 'Terminal', fixed: true },
-                    { class: 'PowerElectronicsConnection' },
+                    { id: 'step_cn', class: 'ConnectivityNode', fixed: true },
+                    { id: 'step_t', class: 'Terminal', fixed: true, parent_id: 'step_cn' },
+                    { id: 'step_pec', class: 'PowerElectronicsConnection', parent_id: 'step_t' },
                 ],
             }));
             expect(result).not.toBeNull();
-            expect(result!.cypher).toMatch(/MATCH \(cn:ConnectivityNode\)-\[]-\(t:Terminal\)-\[]-\(n:PowerElectronicsConnection\)/);
+            expect(result!.cypher).toMatch(/MATCH \(cn:ConnectivityNode\), \(cn\)-\[]-\(t:Terminal\), \(t\)-\[]-\(n:PowerElectronicsConnection\)/);
             expect(result!.cypher).toMatch(/RETURN DISTINCT cn\.`IdentifiedObject\.mRID` AS mrid/);
         });
 
@@ -167,9 +167,9 @@ describe('buildRuleQuery', () => {
                 rule_mode: 'guided',
                 entity_type: 'node',
                 path_steps: [
-                    { class: 'ConnectivityNode', fixed: true },
-                    { class: 'Terminal', fixed: true },
-                    { class: 'EnergyConsumer' },
+                    { id: 'step_cn', class: 'ConnectivityNode', fixed: true },
+                    { id: 'step_t', class: 'Terminal', fixed: true, parent_id: 'step_cn' },
+                    { id: 'step_ec', class: 'EnergyConsumer', parent_id: 'step_t' },
                 ],
                 conditions: [{ id: 'c1', path: 'EnergyConsumer.p', op: '>', value: 1000 }],
             }));
@@ -184,10 +184,10 @@ describe('buildRuleQuery', () => {
                 rule_mode: 'guided',
                 entity_type: 'node',
                 path_steps: [
-                    { class: 'ConnectivityNode', fixed: true },
-                    { class: 'Terminal', fixed: true },
-                    { class: 'PowerElectronicsConnection' },
-                    { class: 'PowerElectronicsUnit' },
+                    { id: 'step_cn', class: 'ConnectivityNode', fixed: true },
+                    { id: 'step_t', class: 'Terminal', fixed: true, parent_id: 'step_cn' },
+                    { id: 'step_pec', class: 'PowerElectronicsConnection', parent_id: 'step_t' },
+                    { id: 'step_peu', class: 'PowerElectronicsUnit', parent_id: 'step_pec' },
                 ],
             }));
             expect(result).not.toBeNull();
