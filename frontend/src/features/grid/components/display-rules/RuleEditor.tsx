@@ -326,6 +326,8 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
             ) : (
                 <ConditionalSymbolList
                     symbols={rule.config?.svg_overrides || []}
+                    baseSvg={rule.config?.icon}
+                    baseColor={rule.config?.color_hex}
                     onChange={(symbols) => updateConfig({ svg_overrides: symbols })}
                     onOpenLiveEditor={onOpenLiveEditor}
                     onTest={onTest ? async (conds, targetClass) => {

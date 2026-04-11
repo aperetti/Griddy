@@ -34,7 +34,7 @@ export const SvgLiveEditor: React.FC<SvgLiveEditorProps> = ({
             }
             size="xl"
             zIndex={4000}
-            internal={true}
+            internal={false}
         >
             <Stack gap="md">
                 <Grid gutter="md">

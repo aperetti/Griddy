@@ -5,8 +5,7 @@ import {
 } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { 
-    Upload, Maximize2, 
-    Circle as CircleIcon, Square as SquareIcon, Triangle as TriangleIcon, Star 
+    Upload, Maximize2
 } from 'lucide-react';
 
 interface VisualConfigEditorProps {
@@ -16,24 +15,23 @@ interface VisualConfigEditorProps {
         size?: number;
         icon?: string;
         svg?: string;
+        mode?: 'replace' | 'add';
     };
+    baseSvg?: string;
+    baseColor?: string;
     onChange: (val: any) => void;
     onOpenLiveEditor?: (initialValue: string, onSave: (val: string) => void) => void;
     legend?: string;
 }
 
-const templates = [
-    { name: 'Circle', icon: <CircleIcon size={14} />, content: '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">\n  <circle cx="50" cy="50" r="40" stroke="currentColor" stroke-width="4" fill="none" />\n</svg>' },
-    { name: 'Square', icon: <SquareIcon size={14} />, content: '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">\n  <rect x="10" y="10" width="80" height="80" stroke="currentColor" stroke-width="4" fill="none" />\n</svg>' },
-    { name: 'Triangle', icon: <TriangleIcon size={14} />, content: '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">\n  <path d="M50 10 L90 90 L10 90 Z" stroke="currentColor" stroke-width="4" fill="none" />\n</svg>' },
-    { name: 'Diamond', icon: <Star size={14} />, content: '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">\n  <path d="M50 10 L90 50 L50 90 L10 50 Z" stroke="currentColor" stroke-width="4" fill="none" />\n</svg>' }
-];
-
-const SVGPreview = ({ content, color }: { content: string; color?: string }) => {
+const SVGPreview = ({ content, color, baseSvg, baseColor, mode }: { content: string; color?: string; baseSvg?: string; baseColor?: string; mode?: 'replace' | 'add' }) => {
     const bg = '#141517';
     const checkerColor = 'rgba(255,255,255,0.03)';
     
-    if (!content || !content.includes('<svg')) {
+    const hasBase = !!baseSvg && mode === 'add';
+    const hasContent = !!content && content.includes('<svg');
+
+    if (!hasContent && !hasBase) {
         return (
             <Paper 
                 withBorder 
@@ -51,10 +49,12 @@ const SVGPreview = ({ content, color }: { content: string; color?: string }) => 
         );
     }
 
-    let previewContent = content;
-    if (!content.includes('width=') && !content.includes('height=')) {
-        previewContent = content.replace('<svg', '<svg width="100%" height="100%"');
-    }
+    const prepare = (svg: string) => {
+        if (!svg.includes('width=') && !svg.includes('height=')) {
+            return svg.replace('<svg', '<svg width="100%" height="100%"');
+        }
+        return svg;
+    };
 
     return (
         <Paper 
@@ -81,17 +81,31 @@ const SVGPreview = ({ content, color }: { content: string; color?: string }) => 
                 style={{ 
                     width: 80, 
                     height: 80, 
-                    color: color || '#339AF0',
+                    position: 'relative',
                     filter: 'drop-shadow(0 0 2px rgba(0,0,0,0.5))'
                 }}
-                dangerouslySetInnerHTML={{ __html: previewContent }} 
-            />
+            >
+                {hasBase && (
+                    <div
+                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', color: baseColor || '#909296', opacity: 0.4 }}
+                        dangerouslySetInnerHTML={{ __html: prepare(baseSvg) }}
+                    />
+                )}
+                {hasContent && (
+                    <div 
+                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', color: color || '#339AF0' }}
+                        dangerouslySetInnerHTML={{ __html: prepare(content) }} 
+                    />
+                )}
+            </div>
         </Paper>
     );
 };
 
 export const VisualConfigEditor: React.FC<VisualConfigEditorProps> = ({
     config,
+    baseSvg,
+    baseColor,
     onChange,
     onOpenLiveEditor,
     legend = "Visual Appearance"
@@ -147,7 +161,7 @@ export const VisualConfigEditor: React.FC<VisualConfigEditorProps> = ({
 
                 <Grid.Col span={12}>
                     <Stack gap="xs">
-                        <Text size="sm" fw={500}>Base Symbol (SVG)</Text>
+                        <Text size="sm" fw={500}>{baseSvg ? 'Override Symbol (SVG)' : 'Base Symbol (SVG)'}</Text>
                         <Grid>
                             <Grid.Col span={{ base: 12, md: 8 }}>
                                 <Stack gap="xs">
@@ -180,24 +194,16 @@ export const VisualConfigEditor: React.FC<VisualConfigEditorProps> = ({
                                             </ActionIcon>
                                         </Tooltip>
                                     </Group>
-                                    <Group gap={4} wrap="wrap">
-                                        <Text size="xs" c="dimmed" mr={4}>Templates:</Text>
-                                        {templates.map(t => (
-                                            <Button
-                                                key={t.name}
-                                                variant="subtle"
-                                                size="compact-xs"
-                                                leftSection={t.icon}
-                                                onClick={() => onChange({ [svgKey]: t.content })}
-                                            >
-                                                {t.name}
-                                            </Button>
-                                        ))}
-                                    </Group>
                                 </Stack>
                             </Grid.Col>
                             <Grid.Col span={{ base: 12, md: 4 }}>
-                                <SVGPreview content={currentSvg} color={config.color_hex} />
+                                <SVGPreview 
+                                    content={currentSvg} 
+                                    color={config.color_hex} 
+                                    baseSvg={baseSvg} 
+                                    baseColor={baseColor}
+                                    mode={config.mode}
+                                />
                             </Grid.Col>
                         </Grid>
                     </Stack>

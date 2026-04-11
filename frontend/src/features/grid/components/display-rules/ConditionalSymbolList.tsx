@@ -27,10 +27,12 @@ interface ConditionalSymbolListProps {
     onOpenLiveEditor?: (initialValue: string, onSave: (val: string) => void) => void;
     onTest?: (conditions: any, targetClass: string) => Promise<any>;
     targetClass?: string;
+    baseSvg?: string;
+    baseColor?: string;
 }
 
 function SymbolRow({
-    symbol, index, total, targetClass, onChange, onRemove, onMove, onOpenLiveEditor, onTest
+    symbol, index, total, targetClass, onChange, onRemove, onMove, onOpenLiveEditor, onTest, baseSvg, baseColor
 }: {
     symbol: ConditionalSymbol;
     index: number;
@@ -41,6 +43,8 @@ function SymbolRow({
     onMove: (dir: 'up' | 'down') => void;
     onOpenLiveEditor?: (initialValue: string, onSave: (val: string) => void) => void;
     onTest?: (conditions: any, targetClass: string) => Promise<any>;
+    baseSvg?: string;
+    baseColor?: string;
 }) {
     const [showTooltip, setShowTooltip] = useState(false);
     const [isTesting, setIsTesting] = useState(false);
@@ -129,7 +133,10 @@ function SymbolRow({
                         color_hex: symbol.color_hex,
                         size: symbol.size,
                         svg: symbol.svg || symbol.icon,
+                        mode: symbol.mode,
                     }}
+                    baseSvg={baseSvg}
+                    baseColor={baseColor}
                     onChange={(val) => onChange(val)}
                     onOpenLiveEditor={onOpenLiveEditor}
                 />
@@ -180,6 +187,8 @@ export const ConditionalSymbolList: React.FC<ConditionalSymbolListProps> = ({
     onOpenLiveEditor,
     onTest,
     targetClass,
+    baseSvg,
+    baseColor,
 }) => {
     const addSymbol = () => {
         onChange([...symbols, {
@@ -239,6 +248,8 @@ export const ConditionalSymbolList: React.FC<ConditionalSymbolListProps> = ({
                         index={idx}
                         total={symbols.length}
                         targetClass={targetClass}
+                        baseSvg={baseSvg}
+                        baseColor={baseColor}
                         onChange={(patch) => updateSymbol(idx, patch)}
                         onRemove={() => removeSymbol(idx)}
                         onMove={(dir) => moveSymbol(idx, dir)}
