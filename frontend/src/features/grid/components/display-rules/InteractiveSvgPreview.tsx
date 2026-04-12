@@ -13,140 +13,101 @@ export const InteractiveSvgPreview: React.FC<InteractiveSvgPreviewProps> = ({
     value, baseSvg, baseColor, onChange 
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
-    const svgRef = useRef<SVGSVGElement>(null);
+    const workspaceRef = useRef<SVGSVGElement | null>(null);
     const moveableRef = useRef<Moveable>(null);
     const [target, setTarget] = useState<SVGGraphicsElement | null>(null);
-    const [selectedElId, setSelectedElId] = useState<string | null>(null);
+    const isInteracting = useRef(false);
 
-    // Parse the current overlay value
-    const parsedOverlay = useMemo(() => {
-        try {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(value || '<svg></svg>', 'image/svg+xml');
-            const svgElement = doc.querySelector('svg');
-            if (!svgElement) return null;
-
-            // Ensure every top-level child has an ID for selection tracking
-            const interactiveTargets = svgElement.querySelectorAll('g, path, circle, rect, polygon, text');
-            interactiveTargets.forEach((el, i) => {
-                if (!el.id) el.id = `overlay-el-${i}`;
-                (el as HTMLElement).dataset.isOverlay = 'true';
-            });
-
-            return svgElement;
-        } catch (e) {
-            console.error('Failed to parse overlay SVG', e);
-            return null;
-        }
-    }, [value]);
-
-    // Parse the base SVG
-    const parsedBase = useMemo(() => {
-        if (!baseSvg) return null;
-        try {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(baseSvg, 'image/svg+xml');
-            return doc.querySelector('svg');
-        } catch (e) {
-            console.error('Failed to parse base SVG', e);
-            return null;
-        }
+    // Parse the base SVG to establish the coordinate system
+    const baseInfo = useMemo(() => {
+        if (!baseSvg) return { viewBox: '0 0 100 100', content: '' };
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(baseSvg, 'image/svg+xml');
+        const svg = doc.querySelector('svg');
+        return {
+            viewBox: svg?.getAttribute('viewBox') || '0 0 100 100',
+            content: svg ? Array.from(svg.childNodes).map(n => n.cloneNode(true)) : []
+        };
     }, [baseSvg]);
 
-    // Construct the combined interactive workspace
+    // Initial construction of the workspace
+    // We only do this when the component mounts or when base/value changes *externally*
     useEffect(() => {
-        if (!containerRef.current) return;
+        if (!containerRef.current || isInteracting.current) return;
 
-        // 1. Create a clean workspace SVG
         const workspace = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         workspace.setAttribute('width', '100%');
         workspace.setAttribute('height', '100%');
+        workspace.setAttribute('viewBox', baseInfo.viewBox);
         workspace.style.display = 'block';
         workspace.style.overflow = 'visible';
         
-        const viewBox = parsedBase?.getAttribute('viewBox') || parsedOverlay?.getAttribute('viewBox') || '0 0 100 100';
-        workspace.setAttribute('viewBox', viewBox);
+        // 1. Add Base Layer
+        const baseG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        baseG.style.opacity = '0.3';
+        baseG.style.color = baseColor || '#909296';
+        baseG.style.pointerEvents = 'none';
+        baseInfo.content.forEach(node => baseG.appendChild(node.cloneNode(true)));
+        workspace.appendChild(baseG);
 
-        // 2. Append Base elements (non-interactive)
-        if (parsedBase) {
-            const baseG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-            baseG.style.opacity = '0.3';
-            baseG.style.color = baseColor || '#909296';
-            baseG.style.pointerEvents = 'none';
-            
-            Array.from(parsedBase.childNodes).forEach(node => {
-                baseG.appendChild(node.cloneNode(true));
-            });
-            workspace.appendChild(baseG);
-        }
-
-        // 3. Append Overlay elements (interactive)
-        if (parsedOverlay) {
-            Array.from(parsedOverlay.childNodes).forEach(node => {
-                if (node.nodeType === 1) { // Element
-                    const clone = node.cloneNode(true) as HTMLElement;
-                    clone.style.cursor = 'pointer';
-                    clone.addEventListener('mousedown', (e) => {
+        // 2. Add Overlay Layer
+        const parser = new DOMParser();
+        const overlayDoc = parser.parseFromString(`<svg>${value || ''}</svg>`, 'image/svg+xml');
+        const overlayContent = overlayDoc.querySelector('svg');
+        
+        if (overlayContent) {
+            Array.from(overlayContent.childNodes).forEach((node, i) => {
+                if (node.nodeType === 1) {
+                    const el = node.cloneNode(true) as HTMLElement;
+                    el.style.cursor = 'pointer';
+                    (el as any).dataset.isOverlay = 'true';
+                    if (!el.id) el.id = `overlay-${i}`;
+                    
+                    el.addEventListener('mousedown', (e) => {
                         e.stopPropagation();
-                        setSelectedElId(clone.id);
+                        setTarget(el as unknown as SVGGraphicsElement);
                     });
-                    workspace.appendChild(clone);
+                    workspace.appendChild(el);
                 }
             });
         }
 
-        // 4. Update container
         containerRef.current.innerHTML = '';
         containerRef.current.appendChild(workspace);
-        svgRef.current = workspace;
+        workspaceRef.current = workspace;
 
-        // 5. Restore selection
-        if (selectedElId) {
-            const newTarget = workspace.getElementById(selectedElId);
-            if (newTarget) setTarget(newTarget as SVGGraphicsElement);
-        }
+        workspace.addEventListener('mousedown', () => setTarget(null));
+    }, [value, baseInfo, baseColor]);
 
-        // Deselect on background click
-        workspace.addEventListener('mousedown', () => {
-            setTarget(null);
-            setSelectedElId(null);
-        });
-
-    }, [parsedOverlay, parsedBase, baseColor, selectedElId]);
-
-    const syncChanges = () => {
-        if (!svgRef.current) return;
+    const handleSync = () => {
+        if (!workspaceRef.current) return;
         
+        // Collect overlay elements and serialize
         let content = '';
         const serializer = new XMLSerializer();
         
-        Array.from(svgRef.current.childNodes).forEach(node => {
+        Array.from(workspaceRef.current.childNodes).forEach(node => {
             const el = node as HTMLElement;
             if (el.dataset?.isOverlay === 'true') {
-                const cleanClone = el.cloneNode(true) as HTMLElement;
-                if (cleanClone.id?.startsWith('overlay-el-')) {
-                    cleanClone.removeAttribute('id');
-                }
-                delete cleanClone.dataset.isOverlay;
-                content += serializer.serializeToString(cleanClone);
+                const clone = el.cloneNode(true) as HTMLElement;
+                // Remove internal temporary markers
+                delete (clone as any).dataset.isOverlay;
+                if (clone.id.startsWith('overlay-')) clone.removeAttribute('id');
+                content += serializer.serializeToString(clone);
             }
         });
 
+        isInteracting.current = false;
         onChange(content);
     };
 
     return (
-        <Box 
-            style={{ width: '100%', height: '100%', position: 'relative' }}
-        >
+        <Box style={{ width: '100%', height: '100%', position: 'relative' }}>
             <div 
                 ref={containerRef} 
                 style={{ 
-                    width: '100%', 
-                    height: '100%', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center' 
+                    width: '100%', height: '100%', 
+                    display: 'flex', alignItems: 'center', justifyContent: 'center' 
                 }} 
             />
 
@@ -159,25 +120,24 @@ export const InteractiveSvgPreview: React.FC<InteractiveSvgPreviewProps> = ({
                     rotatable={true}
                     pinchable={true}
                     keepRatio={true}
-                    throttleDrag={0}
-                    throttleResize={0}
-                    throttleRotate={0}
                     useTouch={true}
+                    onDragStart={() => { isInteracting.current = true; }}
                     onDrag={({ target, transform }) => {
                         target.setAttribute('transform', transform);
                     }}
-                    onDragEnd={syncChanges}
+                    onDragEnd={handleSync}
+                    onResizeStart={() => { isInteracting.current = true; }}
                     onResize={({ target, drag }) => {
                         target.setAttribute('transform', drag.transform);
                     }}
-                    onResizeEnd={syncChanges}
+                    onResizeEnd={handleSync}
+                    onRotateStart={() => { isInteracting.current = true; }}
                     onRotate={({ target, transform }) => {
                         target.setAttribute('transform', transform);
                     }}
-                    onRotateEnd={syncChanges}
+                    onRotateEnd={handleSync}
                     origin={false}
                     edge={false}
-                    padding={{ left: 0, top: 0, right: 0, bottom: 0 }}
                 />
             )}
         </Box>
