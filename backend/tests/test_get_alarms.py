@@ -4,14 +4,14 @@ from unittest.mock import MagicMock
 from datetime import datetime, timezone
 
 from src.analytics.get_alarms import GetActiveAlarmsUseCase
-from src.shared.repository import AssetRepository
+from src.shared.repository import IAlarmRepository
 from src.shared.graph_engine import GraphEngine
 from src.grid.alarm import Alarm
 
 class TestGetActiveAlarmsUseCase(unittest.TestCase):
     def setUp(self):
         # Create mocks for dependencies
-        self.mock_repo = MagicMock(spec=AssetRepository)
+        self.mock_repo = MagicMock(spec=IAlarmRepository)
         self.mock_graph = MagicMock(spec=GraphEngine)
 
         # Instantiate the use case with mocks

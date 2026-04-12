@@ -5,17 +5,17 @@ circular dependencies during the refactor into feature slices.
 """
 from typing import Optional, Any, Dict
 from src.shared.cim_registry import CimModelRegistry
-from src.shared.sqlite_repository import SqliteRepository
+from src.shared.sqlite_repository import AlarmRepository
 from src.grid.topology_engine import TopologyEngine
 from src.grid.display_rule_engine import DisplayRuleEngine
-from src.shared.database_setup import DB_PATH, SQLITE_PATH, ADMIN_SQLITE_PATH, PARQUET_DIR
+from src.shared.database_setup import DB_PATH, ADMIN_SQLITE_PATH, PARQUET_DIR
 
 # ── Global Instances ─────────────────────────────────────────────
 # CIM model registry (populated during FastAPI lifespan startup)
 registry = CimModelRegistry.get_instance()
 
-# SQLite is kept only for alarms
-alarm_repo = SqliteRepository(SQLITE_PATH)
+# Alarms are stored in admin.sqlite alongside display-rule configuration
+alarm_repo = AlarmRepository(ADMIN_SQLITE_PATH)
 
 # Display rule engine for node classification
 display_engine = DisplayRuleEngine(ADMIN_SQLITE_PATH)

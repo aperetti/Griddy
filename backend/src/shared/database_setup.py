@@ -1,7 +1,8 @@
 """Database Setup and Initialization.
 
-Topology (grid_nodes, grid_edges, alarms) lives in **SQLite** for portability.
-DuckDB is kept purely as an analytics engine for parquet / weather queries.
+All persistent state lives in two databases:
+- admin.sqlite  — configuration (display rules, users, alarms, overrides)
+- DuckDB        — analytics engine for parquet / weather queries
 """
 import os
 import sqlite3
@@ -15,13 +16,6 @@ if _THIS_DIR.name == "shared" and _THIS_DIR.parent.name == "src":
 else:
     BASE_DIR = Path.cwd()
 
-# ── SQLite: topology database (grid_nodes, grid_edges, alarms) ────
-# In Docker, we typically mount /data to a volume
-DEFAULT_SQLITE = BASE_DIR / "grid_topology.sqlite"
-if os.path.exists("/data") and os.access("/data", os.W_OK):
-    DEFAULT_SQLITE = Path("/data/grid_topology.sqlite")
-
-SQLITE_PATH = os.getenv("TOPOLOGY_DB_PATH", str(DEFAULT_SQLITE))
 # Find project root for admin database (which lives in admin-console/admin-backend)
 _PROJECT_ROOT = BASE_DIR if (BASE_DIR / "admin-console").exists() else BASE_DIR.parent
 ADMIN_SQLITE_PATH = os.getenv("ADMIN_DB_PATH") or os.getenv("CONFIG_DB_PATH") or str(_PROJECT_ROOT / "admin-console" / "admin-backend" / "admin.sqlite")
@@ -108,7 +102,7 @@ def init_admin_db():
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    
+
     # Seed default analytics threshold if not exists
     cursor.execute("SELECT COUNT(*) FROM config_overrides WHERE key = 'analytics_threshold'")
     if cursor.fetchone()[0] == 0:
@@ -116,39 +110,11 @@ def init_admin_db():
             "INSERT INTO config_overrides (key, value) VALUES (?, ?)",
             ("analytics_threshold", "2000000")
         )
-    
-    conn.commit()
-    conn.close()
-    print(f"Admin database initialised at {ADMIN_SQLITE_PATH}")
 
-
-def init_db():
-    """Initialises all database schemas."""
-    # Topology DB
-    conn = sqlite3.connect(SQLITE_PATH)
-    # ... (existing code for topology)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS grid_nodes (
-            node_id   TEXT PRIMARY KEY,
-            model_id  TEXT NOT NULL,
-            node_type TEXT NOT NULL,
-            name      TEXT,
-            phases_present TEXT DEFAULT '["A","B","C"]',
-            latitude  REAL,
-            longitude REAL,
-            is_open   INTEGER DEFAULT 0
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS grid_edges (
-            edge_id      TEXT PRIMARY KEY,
-            model_id     TEXT NOT NULL,
-            from_node_id TEXT NOT NULL,
-            to_node_id   TEXT NOT NULL,
-            conductor_type TEXT,
-            phases       TEXT DEFAULT '["A","B","C"]'
-        )
-    """)
+    # ── Alarms ────────────────────────────────────────────────────
+    # Operational alarm events referencing CIM node mRIDs.
+    # Kept here (not in Neo4j) because they are written by external
+    # SCADA/ingestion processes and do not belong in the CIM graph.
     conn.execute("""
         CREATE TABLE IF NOT EXISTS alarms (
             alarm_id  TEXT PRIMARY KEY,
@@ -160,11 +126,14 @@ def init_db():
             is_active INTEGER DEFAULT 1
         )
     """)
+
     conn.commit()
     conn.close()
-    print(f"Topology database initialised at {SQLITE_PATH}")
+    print(f"Admin database initialised at {ADMIN_SQLITE_PATH}")
 
-    # Admin DB
+
+def init_db():
+    """Initialises all database schemas."""
     init_admin_db()
 
 
