@@ -16,6 +16,7 @@ export const InteractiveSvgPreview: React.FC<InteractiveSvgPreviewProps> = ({
     const svgRef = useRef<SVGSVGElement>(null);
     const moveableRef = useRef<Moveable>(null);
     const [target, setTarget] = useState<SVGGraphicsElement | null>(null);
+    const [selectedElId, setSelectedElId] = useState<string | null>(null);
 
     // Parse the current overlay value
     const parsedOverlay = useMemo(() => {
@@ -63,7 +64,6 @@ export const InteractiveSvgPreview: React.FC<InteractiveSvgPreviewProps> = ({
         workspace.style.display = 'block';
         workspace.style.overflow = 'visible';
         
-        // Match the viewBox of the base or use default
         const viewBox = parsedBase?.getAttribute('viewBox') || parsedOverlay?.getAttribute('viewBox') || '0 0 100 100';
         workspace.setAttribute('viewBox', viewBox);
 
@@ -88,7 +88,7 @@ export const InteractiveSvgPreview: React.FC<InteractiveSvgPreviewProps> = ({
                     clone.style.cursor = 'pointer';
                     clone.addEventListener('mousedown', (e) => {
                         e.stopPropagation();
-                        setTarget(clone as unknown as SVGGraphicsElement);
+                        setSelectedElId(clone.id);
                     });
                     workspace.appendChild(clone);
                 }
@@ -100,38 +100,39 @@ export const InteractiveSvgPreview: React.FC<InteractiveSvgPreviewProps> = ({
         containerRef.current.appendChild(workspace);
         svgRef.current = workspace;
 
-        // Deselect on background click
-        workspace.addEventListener('mousedown', () => setTarget(null));
+        // 5. Restore selection
+        if (selectedElId) {
+            const newTarget = workspace.getElementById(selectedElId);
+            if (newTarget) setTarget(newTarget as SVGGraphicsElement);
+        }
 
-    }, [parsedOverlay, parsedBase, baseColor]);
+        // Deselect on background click
+        workspace.addEventListener('mousedown', () => {
+            setTarget(null);
+            setSelectedElId(null);
+        });
+
+    }, [parsedOverlay, parsedBase, baseColor, selectedElId]);
 
     const syncChanges = () => {
-        if (!svgRef.current || !parsedOverlay) return;
+        if (!svgRef.current) return;
         
-        // Create a new SVG container for the result
-        const resultDoc = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        let content = '';
+        const serializer = new XMLSerializer();
         
-        // Copy original viewBox and attributes
-        Array.from(parsedOverlay.attributes).forEach(attr => {
-            resultDoc.setAttribute(attr.name, attr.value);
-        });
-        
-        // Find all overlay elements in the workspace and move them back to the result
         Array.from(svgRef.current.childNodes).forEach(node => {
             const el = node as HTMLElement;
             if (el.dataset?.isOverlay === 'true') {
                 const cleanClone = el.cloneNode(true) as HTMLElement;
-                // Clean up temporary attributes
-                if (cleanClone.id.startsWith('overlay-el-')) {
+                if (cleanClone.id?.startsWith('overlay-el-')) {
                     cleanClone.removeAttribute('id');
                 }
                 delete cleanClone.dataset.isOverlay;
-                resultDoc.appendChild(cleanClone);
+                content += serializer.serializeToString(cleanClone);
             }
         });
 
-        const serializer = new XMLSerializer();
-        onChange(serializer.serializeToString(resultDoc));
+        onChange(content);
     };
 
     return (
