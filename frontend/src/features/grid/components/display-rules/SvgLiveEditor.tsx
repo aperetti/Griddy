@@ -46,24 +46,27 @@ export const SvgLiveEditor: React.FC<SvgLiveEditorProps> = ({
         >
             <Stack gap="md" h="100%" style={{ overflow: 'hidden' }}>
                 <Grid gutter="md" style={{ flex: 1, minHeight: 0 }}>
-                    <Grid.Col span={{ base: 12, md: 6 }} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                        <Stack gap={4} style={{ flex: 1, height: '100%', minHeight: 0 }}>
+                    <Grid.Col span={{ base: 12, md: 6 }} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                        <Stack gap={4} h="100%" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                             <Text size="sm" fw={500}>SVG Code</Text>
-                            <Box style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                            <Box style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
                                 <Textarea
                                     placeholder="<svg>...</svg>"
                                     value={value}
                                     onChange={(e) => onChange(e.currentTarget.value)}
-                                    style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
+                                    autosize={false}
+                                    style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}
                                     styles={{ 
-                                        root: { flex: 1, display: 'flex', flexDirection: 'column' },
-                                        wrapper: { flex: 1, display: 'flex', flexDirection: 'column' },
+                                        root: { flex: 1, height: '100%', display: 'flex', flexDirection: 'column' },
+                                        wrapper: { flex: 1, height: '100%', display: 'flex', flexDirection: 'column' },
                                         input: { 
                                             flex: 1, 
+                                            height: '100% !important',
+                                            minHeight: '100% !important',
                                             fontSize: rem(12), 
                                             fontFamily: 'monospace',
                                             backgroundColor: 'var(--mantine-color-dark-6)',
-                                            height: '100% !important'
+                                            resize: 'none'
                                         } 
                                     }}
                                 />

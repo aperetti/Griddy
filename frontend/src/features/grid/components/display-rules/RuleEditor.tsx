@@ -128,7 +128,14 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
             : mc;
     }, [rule.match_conditions]);
 
-    const targetClass: string | undefined = parsedConditions?.target_class;
+    const targetClass: string = useMemo(() => {
+        const conds = parsedConditions;
+        if (conds?.entity_type === 'edge') {
+            return conds.path_steps?.[0]?.class || conds.target_class || 'PowerSystemResource';
+        }
+        return 'ConnectivityNode';
+    }, [parsedConditions]);
+
     const isEdgeRule = parsedConditions?.entity_type === 'edge';
 
     const handleTest = async () => {
@@ -139,12 +146,15 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
                 ? JSON.parse(rule.match_conditions) 
                 : rule.match_conditions;
             
-            // For path-based rules derive target from last path step; legacy rules use target_class
-            const pathSteps = conds?.path_steps;
-            const targetClass = pathSteps?.length
-                ? pathSteps[pathSteps.length - 1].class
-                : (conds?.target_class || 'PowerSystemResource');
-            const res = await onTest(conds, targetClass);
+            // Derive target for testing: Node rules -> ConnectivityNode, Edge rules -> Anchor (first step)
+            let testTarget = 'ConnectivityNode';
+            if (conds?.entity_type === 'edge') {
+                testTarget = conds.path_steps?.[0]?.class || conds.target_class || 'PowerSystemResource';
+            } else if (conds?.rule_mode !== 'guided') {
+                testTarget = conds?.target_class || 'ConnectivityNode';
+            }
+
+            const res = await onTest(conds, testTarget);
             setTestResults(res);
 
             // Trigger testing for all SVG overrides independently if present

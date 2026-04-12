@@ -75,10 +75,10 @@ export const GridMap = React.memo((props: GridMapProps) => {
         nodes, dimensions, highlightedNodes, fitHighlightedNodesTrigger, skipGlobalFit, goToLocation, onViewStateChange,
     });
 
-    const { clusteredData, nodePositions, visualEdgePaths } = useClustering({ nodes, edges, viewState, dimensions });
+    const { clusteredData, nodePositions, visualEdgePaths, offsetEdges } = useClustering({ nodes, edges, viewState, dimensions });
 
     const layers = useLayers({
-        clusteredData, visualEdgePaths, nodes, edges, nodePositions, spriteMap, viewState,
+        clusteredData, visualEdgePaths, offsetEdges, nodes, edges, nodePositions, spriteMap, viewState,
         hoveredNodeId, hoveredEdgeId, highlightedNodes, highlightedEdges, selectedNodeIdsSet,
         nodeAverages, edgeAverages, voltageScale, isDraggingRef,
         onNodeClick, onEdgeClick, setHoveredNodeId, setHoveredEdgeId, onTooltipHover, setViewState,

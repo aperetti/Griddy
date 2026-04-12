@@ -7,6 +7,7 @@ import { getBearing, stringToColor, getVisualType, getNodeColor, getEdgeColor, e
 interface UseLayersParams {
     clusteredData: { nodesToRender: Node[]; clusters: any[] };
     visualEdgePaths: any[];
+    offsetEdges: Edge[];
     nodes: Node[];
     edges: Edge[];
     nodePositions: Record<string, [number, number]>;
@@ -35,31 +36,37 @@ export function useLayers(p: UseLayersParams) {
         const bearings: Record<string, number> = {};
         p.nodes.forEach(node => {
             if (!node.display_rotate_to_edge) return;
-            const edge = p.edges.find(e => e.source === node.id || e.target === node.id);
+            const edge = p.offsetEdges.find(e => e.source === node.id || e.target === node.id);
             if (edge) bearings[node.id] = getBearing(edge.sourcePosition, edge.targetPosition);
         });
         return bearings;
-    }, [p.nodes, p.edges]);
+    }, [p.nodes, p.offsetEdges]);
 
     const edgeBearings = useMemo(() => {
         const bearings: Record<string, number> = {};
-        p.edges.forEach(edge => {
+        p.offsetEdges.forEach(edge => {
             if (edge.display_rotate_to_edge) {
-                bearings[edge.id || `${edge.source}-${edge.target}`] = getBearing(edge.sourcePosition, edge.targetPosition);
+                const key = edge.id || `${edge.source}-${edge.target}`;
+                if (edge.waypoints && edge.waypoints.length >= 2) {
+                    bearings[key] = getPathMidpoint(edge.waypoints).bearing;
+                } else {
+                    bearings[key] = getBearing(edge.sourcePosition, edge.targetPosition);
+                }
             }
         });
         return bearings;
-    }, [p.edges]);
+    }, [p.offsetEdges]);
 
     const propagatedNodeAverages = useMemo(() => {
         if (!p.nodeAverages) return null;
         
         const averages = { ...p.nodeAverages };
         const adjacency = new Map<string, string[]>();
-        p.edges.forEach(e => {
+        p.offsetEdges.forEach(e => {
             if (!adjacency.has(e.source)) adjacency.set(e.source, []);
             adjacency.get(e.source)!.push(e.target);
         });
+        // ... (rest of function unchanged but using p.offsetEdges)
 
         const memo = new Map<string, number | null>();
 
@@ -277,7 +284,7 @@ export function useLayers(p: UseLayersParams) {
                     if (p.highlightedNodes.has(d.id)) size *= 1.2;
                     return size;
                 },
-                sizeScale: Math.pow(1.5, (p.viewState.zoom || 14) - 14),
+                sizeScale: Math.pow(1.2, (p.viewState.zoom || 14) - 14),
                 sizeMinPixels: 1,
                 pickable: true,
                 onHover: (info: any) => {
@@ -300,19 +307,19 @@ export function useLayers(p: UseLayersParams) {
             }),
             new IconLayer<Edge>({
                 id: 'grid-custom-edge-icons',
-                data: p.edges.filter(e => e.display_icon && !!p.spriteMap.mapping[e.display_icon!]),
+                data: p.offsetEdges.filter(e => e.display_icon && !!p.spriteMap.mapping[e.display_icon!]),
                 getPosition: (d: Edge) => edgeMidpoint(d),
                 iconAtlas: p.spriteMap.atlasUrl,
                 iconMapping: p.spriteMap.mapping,
                 getIcon: (d: Edge) => d.display_icon!,
                 getColor: (d: Edge) => getEdgeColor(d, p.highlightedEdges.has(d.id || ''), p.hoveredEdgeId === d.id, d.circuit_id),
                 getSize: (d: Edge) => {
-                    const sizeAttr = d.display_size ?? 1.0;
+                    const sizeAttr = (d.display_size ?? 1.0) * 32;
                     let size = p.hoveredEdgeId === d.id ? sizeAttr * 1.5 : sizeAttr;
                     if (p.highlightedEdges.has(d.id || '')) size *= 1.2;
                     return size;
                 },
-                sizeScale: Math.pow(1.5, (p.viewState.zoom || 14) - 14),
+                sizeScale: Math.pow(1.2, (p.viewState.zoom || 14) - 14),
                 sizeMinPixels: 1,
                 pickable: true,
                 onHover: (info: any) => {
@@ -326,9 +333,9 @@ export function useLayers(p: UseLayersParams) {
                     if (info.object && srcEvent && p.onEdgeClick) p.onEdgeClick(info.object as Edge, srcEvent.shiftKey || srcEvent.ctrlKey);
                 },
                 updateTriggers: {
-                    getSize: [p.hoveredEdgeId, p.highlightedEdges, p.edges],
-                    getIcon: [p.edges, p.spriteMap],
-                    getColor: [p.highlightedEdges, p.hoveredEdgeId, p.edges],
+                    getSize: [p.hoveredEdgeId, p.highlightedEdges, p.offsetEdges],
+                    getIcon: [p.offsetEdges, p.spriteMap],
+                    getColor: [p.highlightedEdges, p.hoveredEdgeId, p.offsetEdges],
                     getAngle: [edgeBearings],
                 },
                 getAngle: (d: Edge) => edgeBearings[d.id || `${d.source}-${d.target}`] || 0,
@@ -363,5 +370,5 @@ export function useLayers(p: UseLayersParams) {
             getAlignmentBaseline: 'center',
             updateTriggers: { getPosition: [p.clusteredData.clusters] },
         }),
-    ], [p.clusteredData, p.visualEdgePaths, p.hoveredNodeId, p.hoveredEdgeId, p.highlightedNodes, p.highlightedEdges, p.selectedNodeIdsSet, p.nodeAverages, p.edgeAverages, p.voltageScale, p.onNodeClick, p.onEdgeClick, p.viewState.zoom, p.nodePositions, p.nodes, p.edges, p.spriteMap, nodeBearings, edgeBearings]);
+    ], [p.clusteredData, p.visualEdgePaths, p.hoveredNodeId, p.hoveredEdgeId, p.highlightedNodes, p.highlightedEdges, p.selectedNodeIdsSet, p.nodeAverages, p.edgeAverages, p.voltageScale, p.onNodeClick, p.onEdgeClick, p.viewState.zoom, p.nodePositions, p.nodes, p.edges, p.offsetEdges, p.spriteMap, nodeBearings, edgeBearings, propagatedNodeAverages]);
 }

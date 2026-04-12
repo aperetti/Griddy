@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { WebMercatorViewport } from '@deck.gl/core';
 import Supercluster from 'supercluster';
 import type { Node, Edge } from '../../../shared/types';
-import { SWITCH_EDGE_TYPES, edgeMidpoint } from '../model/mapUtils';
+import { SWITCH_EDGE_TYPES, edgeMidpoint, getPathMidpoint } from '../model/mapUtils';
 
 interface UseClusteringParams {
     nodes: Node[];
@@ -19,11 +19,22 @@ export function useClustering({ nodes, edges, viewState, dimensions }: UseCluste
     }, [nodes]);
 
     const offsetEdges = useMemo(() => {
-        return edges.map(edge => ({
-            ...edge,
-            sourcePosition: nodePositions[edge.source] || edge.sourcePosition,
-            targetPosition: nodePositions[edge.target] || edge.targetPosition,
-        }));
+        return edges.map(edge => {
+            const sp = nodePositions[edge.source] || edge.sourcePosition;
+            const tp = nodePositions[edge.target] || edge.targetPosition;
+            let updatedWaypoints = edge.waypoints;
+            if (updatedWaypoints && updatedWaypoints.length >= 2) {
+                updatedWaypoints = [...updatedWaypoints];
+                updatedWaypoints[0] = sp;
+                updatedWaypoints[updatedWaypoints.length - 1] = tp;
+            }
+            return {
+                ...edge,
+                sourcePosition: sp,
+                targetPosition: tp,
+                waypoints: updatedWaypoints,
+            };
+        });
     }, [edges, nodePositions]);
 
     const visualEdgePaths = useMemo(() => {
@@ -33,23 +44,37 @@ export function useClustering({ nodes, edges, viewState, dimensions }: UseCluste
             (e.display_max_zoom === undefined || viewState.zoom <= e.display_max_zoom)
         );
         return visibleEdges.flatMap(e => {
+            const rawPath = e.waypoints && e.waypoints.length > 1
+                ? e.waypoints
+                : [e.sourcePosition, e.targetPosition];
+
             if (!e.edge_type || !SWITCH_EDGE_TYPES.has(e.edge_type)) {
-                const path = e.waypoints && e.waypoints.length > 1
-                    ? e.waypoints
-                    : [e.sourcePosition, e.targetPosition];
-                return [{ ...e, path }];
+                return [{ ...e, path: rawPath }];
             }
-            const mid = edgeMidpoint(e);
+
+            // Calculate midpoint and local bearing along the path
+            const { position: mid, bearing, segmentIndex } = getPathMidpoint(rawPath);
+            
+            // Calculate gap bounds based on local segment angle
+            const rad = (bearing * Math.PI) / 180;
+            const ux = Math.sin(rad);
+            const uy = Math.cos(rad);
+            const lonScale = Math.cos((mid[1] * Math.PI) / 180);
+            
+            const gapStart: [number, number] = [mid[0] - ux * (OFFSET / lonScale), mid[1] - uy * OFFSET];
+            const gapEnd: [number, number] = [mid[0] + ux * (OFFSET / lonScale), mid[1] + uy * OFFSET];
+
+            // Check if line is too short for a gap
             const dx = (e.targetPosition[0] - e.sourcePosition[0]) * Math.cos((e.sourcePosition[1] * Math.PI) / 180);
             const dy = e.targetPosition[1] - e.sourcePosition[1];
-            const len = Math.sqrt(dx * dx + dy * dy);
-            if (len < OFFSET * 3) return [{ ...e, path: [e.sourcePosition, e.targetPosition] }];
-            const mag = Math.sqrt(Math.pow(e.targetPosition[0] - e.sourcePosition[0], 2) + Math.pow(e.targetPosition[1] - e.sourcePosition[1], 2));
-            const ux = (e.targetPosition[0] - e.sourcePosition[0]) / mag;
-            const uy = (e.targetPosition[1] - e.sourcePosition[1]) / mag;
+            if (Math.sqrt(dx * dx + dy * dy) < OFFSET * 3) {
+                return [{ ...e, path: rawPath }];
+            }
+
+            // Split the path while preserving waypoints
             return [
-                { ...e, path: [e.sourcePosition, [mid[0] - ux * (OFFSET / Math.cos((mid[1] * Math.PI) / 180)), mid[1] - uy * OFFSET]] },
-                { ...e, path: [[mid[0] + ux * (OFFSET / Math.cos((mid[1] * Math.PI) / 180)), mid[1] + uy * OFFSET], e.targetPosition] },
+                { ...e, path: [...rawPath.slice(0, segmentIndex + 1), gapStart] },
+                { ...e, path: [gapEnd, ...rawPath.slice(segmentIndex + 1)] },
             ];
         });
     }, [offsetEdges, viewState.zoom]);
@@ -112,5 +137,5 @@ export function useClustering({ nodes, edges, viewState, dimensions }: UseCluste
         return { nodesToRender: [...staticNodes, ...unclusteredNodes], clusters };
     }, [nodes, viewState.zoom, viewState.longitude, viewState.latitude, dimensions]);
 
-    return { clusteredData, nodePositions, visualEdgePaths };
+    return { clusteredData, nodePositions, visualEdgePaths, offsetEdges };
 }

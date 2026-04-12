@@ -31,7 +31,7 @@ if os.name != 'nt':
     except Exception as e:
         print(f"Warning: Could not register Liberation fonts: {e}")
 
-# Standard SVGs
+# Standard SVGs from GridMap.tsx frontend
 DEFAULT_SVGS = {
     "open_switch": '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><line x1="30" y1="10" x2="30" y2="90" stroke="currentColor" stroke-width="8" stroke-linecap="round" /><line x1="70" y1="10" x2="70" y2="90" stroke="currentColor" stroke-width="8" stroke-linecap="round" /></svg>',
     "closed_switch": '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><line x1="30" y1="10" x2="30" y2="90" stroke="currentColor" stroke-width="8" stroke-linecap="round" /><line x1="70" y1="10" x2="70" y2="90" stroke="currentColor" stroke-width="8" stroke-linecap="round" /><line x1="15" y1="65" x2="85" y2="35" stroke="currentColor" stroke-width="8" stroke-linecap="round" /></svg>',
@@ -54,7 +54,9 @@ class SpriteGenerator:
             """Extracts everything inside the root <svg> tags."""
             if not content or "<svg" not in content.lower():
                 return content or ""
+            # Find the first > after <svg
             start_tag_end = content.find(">") + 1
+            # Find the last </svg>
             end_tag_start = content.rfind("</svg>")
             if start_tag_end > 0 and end_tag_start > start_tag_end:
                 return content[start_tag_end:end_tag_start]
@@ -66,8 +68,10 @@ class SpriteGenerator:
         base_inner = get_inner(svg_str)
 
         # 2. Build the combined SVG
+        # We force width/height/viewBox to ensure consistent 100x100 frame
         final_color = color or "#cccccc"
-        result = [f'<svg width="100" height="100" viewBox="0 0 100 100" fill="{final_color}" stroke="{final_color}" xmlns="http://www.w3.org/2000/svg">']
+        # CRITICAL: We removed fill="{final_color}" from the root tag here to fix giant squares
+        result = [f'<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">']
         
         # 3. Add Base Layer (scaled and CENTERED to fit 100x100 frame)
         try:
@@ -87,7 +91,7 @@ class SpriteGenerator:
         except:
             result.append(f'<g>{base_inner}</g>')
 
-        # 4. Add Overlays
+        # 4. Add Overlays (each wrapped in its own group)
         if overrides:
             for o in overrides:
                 mode = o.get('mode', 'add')
@@ -97,6 +101,7 @@ class SpriteGenerator:
                 
                 ov_inner = get_inner(content)
                 if mode == 'replace':
+                    # Replacement mode wipes the base and previous overlays
                     result = [result[0], f'<g>{ov_inner}</g>']
                 else:
                     result.append(f'<g>{ov_inner}</g>')
@@ -104,7 +109,10 @@ class SpriteGenerator:
         result.append("</svg>")
         svg_str = "".join(result)
 
-        svg_str = re.sub(r'currentColor', final_color, svg_str, flags=re.IGNORECASE)
+        # 5. Final color and font processing
+        # Inject color only into explicit currentColor placeholders
+        svg_str = re.sub(r'\bcurrentColor\b', final_color, svg_str, flags=re.IGNORECASE)
+
         if "Arial" in svg_str:
             svg_str = svg_str.replace("Arial", "Helvetica")
 
@@ -120,6 +128,7 @@ class SpriteGenerator:
             if drawing is None:
                 return Image.new("RGBA", (self.item_size, self.item_size), (255, 0, 0, 50))
 
+            # Force drawing dimensions to 100x100 to prevent content-based shifting
             drawing.width = 100
             drawing.height = 100
 
@@ -144,8 +153,11 @@ class SpriteGenerator:
 
             parsed_img = Image.frombytes("RGBA", img_b.size, bytes(out_data))
 
-            scale = (self.item_size / 100.0) * 0.9
-            new_w, new_h = int(100 * scale), int(100 * scale)
+            # Now scale the 100x100 result to the sprite size (128x128)
+            scale = (self.item_size / 100.0) * 0.9 # Keep 10% padding
+            new_w = int(100 * scale)
+            new_h = int(100 * scale)
+            
             resized_img = parsed_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
             final_img = Image.new("RGBA", (self.item_size, self.item_size), (0, 0, 0, 0))
@@ -172,6 +184,7 @@ class SpriteGenerator:
         return hex(hash_val & 0xFFFFFFFF)[2:].zfill(8)
 
     def generate(self) -> Tuple[bytes, Dict[str, Any]]:
+        """Generate sprite sheet and metadata."""
         items = []
         for key, svg in DEFAULT_SVGS.items():
             items.append({
@@ -186,22 +199,41 @@ class SpriteGenerator:
                 rules = conn.execute("SELECT * FROM display_config_rules WHERE enabled = 1").fetchall()
                 for rule in rules:
                     d = dict(rule)
-                    try: config = json.loads(d['config'])
-                    except: continue
+                    try: 
+                        config = json.loads(d['config'])
+                    except: 
+                        continue
+                    
                     icon_svg = config.get('icon') or config.get('svg')
                     if not icon_svg: continue
+                    
+                    color_hex = config.get('color_hex')
                     candidates = []
                     for o in (config.get('svg_overrides') or []):
                         ov_content = o.get('svg') or o.get('icon')
                         if ov_content:
-                            candidates.append({"svg": ov_content, "mode": o.get('mode', 'add'), "conditions": o.get('conditions', {})})
+                            candidates.append({
+                                "svg": ov_content,
+                                "mode": o.get('mode', 'add'),
+                                "conditions": o.get('conditions', {})
+                            })
+                    for o in (config.get('css_overrides') or []):
+                        if isinstance(o, dict) and o.get('css'):
+                            candidates.append({
+                                "svg": f"<style>{o.get('css')}</style>",
+                                "mode": 'add',
+                                "conditions": o.get('conditions', {})
+                            })
+
                     unconditional = [c for c in candidates if not c.get('conditions')]
                     conditional = [c for c in candidates if c.get('conditions')]
+                    
                     items.append({
                         "id": f"rule_{d['id']}",
-                        "svg": self._process_svg(icon_svg, color=config.get('color_hex'), overrides=unconditional),
+                        "svg": self._process_svg(icon_svg, color=color_hex, overrides=unconditional),
                         "name": d['name']
                     })
+                    
                     k = min(len(conditional), 4)
                     for i in range(1, k + 1):
                         for combo in itertools.combinations(conditional[:k], i):
@@ -210,18 +242,20 @@ class SpriteGenerator:
                             ov_hash = self._calculate_override_hash(render_ready)
                             items.append({
                                 "id": f"rule_{d['id']}_{ov_hash}",
-                                "svg": self._process_svg(icon_svg, color=config.get('color_hex'), overrides=render_ready),
+                                "svg": self._process_svg(icon_svg, color=color_hex, overrides=render_ready),
                                 "name": f"{d['name']} (Override {ov_hash})"
                             })
         except Exception as e:
-            logger.error("Sprite error: %s", e)
+            logger.error("Error generating sprites: %s", e)
 
         if not items: return b"", {}
+
         num_items = len(items)
         cols = math.ceil(math.sqrt(num_items))
         rows = math.ceil(num_items / cols)
         sprite_sheet = Image.new("RGBA", (cols * self.item_size, rows * self.item_size), (0, 0, 0, 0))
         mapping = {}
+
         for idx, item in enumerate(items):
             x, y = (idx % cols) * self.item_size, (idx // cols) * self.item_size
             img = self._render_svg_to_image(item["svg"])
@@ -231,6 +265,7 @@ class SpriteGenerator:
                 "anchorX": self.item_size // 2, "anchorY": self.item_size // 2,
                 "name": item["name"]
             }
+
         output = BytesIO()
         sprite_sheet.save(output, format="PNG")
         return output.getvalue(), mapping

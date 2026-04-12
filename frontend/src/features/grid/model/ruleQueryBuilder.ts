@@ -160,15 +160,21 @@ function _buildFromPathSteps(
 ): BuiltQuery | null {
     if (steps.length < 1) return null;
 
+    const entityType = conditions.entity_type || 'node';
+
     // Assign aliases: ConnectivityNode → cn, Terminal → t, rest → n, n1, n2…
     const aliases = new Map<string, string>(); // step.id -> alias
     const classToAlias = new Map<string, string>(); // Legacy support
     let userIdx = 0;
     
-    for (const step of steps) {
+    for (let i = 0; i < steps.length; i++) {
+        const step = steps[i];
         let alias: string;
         if (step.fixed) {
             alias = step.class === 'ConnectivityNode' ? 'cn' : 't';
+        } else if (entityType === 'edge' && i === 0) {
+            // For edge rules, the first step is the anchor
+            alias = 'n';
         } else {
             alias = userIdx === 0 ? 'n' : `n${userIdx}`;
             userIdx++;
@@ -216,6 +222,10 @@ function _buildFromPathSteps(
     
     const matchClause = patternParts.length > 0 ? `MATCH ${patternParts.join(', ')}` : '';
 
+    // The anchor node is whose mRID we return. 
+    // Node rules -> cn, Edge rules -> the first node in path_steps (usually 'n')
+    const anchorAlias = entityType === 'node' ? 'cn' : (steps[0]?.id ? aliases.get(steps[0].id) : 'n') || 'n';
+
     // Last non-fixed step is the main target (for inherited-class fallback)
     const lastUserStep = [...steps].reverse().find(s => !s.fixed);
     const mainClass = lastUserStep?.class || steps[steps.length - 1].class;
@@ -256,7 +266,7 @@ function _buildFromPathSteps(
     // Scope to active ConnectivityNode mRIDs when provided
     if (options?.activeMrids?.length) {
         params['activeMrids'] = options.activeMrids;
-        whereParts.push(`cn.\`IdentifiedObject.mRID\` IN $activeMrids`);
+        whereParts.push(`${anchorAlias}.\`IdentifiedObject.mRID\` IN $activeMrids`);
     }
 
     const logicalOp = conditions.logical_op === 'OR' ? ' OR ' : ' AND ';
@@ -276,13 +286,19 @@ function _buildFromPathSteps(
         }
     }
 
-    const returnCols = [`cn.\`IdentifiedObject.mRID\` AS mrid`, ...tooltipProjections].join(', ');
+    const returnCols = [`${anchorAlias}.\`IdentifiedObject.mRID\` AS mrid`, ...tooltipProjections].join(', ');
     parts.push(`RETURN DISTINCT ${returnCols}`);
 
     return { cypher: parts.join('\n'), params };
 }
 
 const _NUMERIC_OPS = new Set(['>', '<', '>=', '<=', 'gt', 'lt', 'gte', 'lte']);
+
+const _CIM_PREFIXES = [
+    'Switch', 'ConductingEquipment', 'Equipment', 'PowerSystemResource', 
+    'IdentifiedObject', 'EnergyConnection', 'ConnectivityNodeContainer', 
+    'EquipmentContainer', 'PowerTransformerEnd', 'TransformerEnd'
+];
 
 function _buildConditionStr(
     cond: Condition,
@@ -304,36 +320,64 @@ function _buildConditionStr(
     const sqlOp = cyOp[op];
     if (!sqlOp) return '';
 
-    const raw = `${alias}.\`${path}\``;
-    const prop = _NUMERIC_OPS.has(op) ? `toFloat(${raw})` : raw;
+    const dotIdx = path.indexOf('.');
+    const attr = dotIdx > -1 ? path.slice(dotIdx + 1) : path;
+    
+    // Build alternatives
+    const alternatives = [path];
+    if (dotIdx > -1) {
+        alternatives.push(attr);
+        for (const p of _CIM_PREFIXES) {
+            const alt = `${p}.${attr}`;
+            if (!alternatives.includes(alt)) alternatives.push(alt);
+        }
+    }
+    
+    const propExprs = alternatives.map(alt => `${alias}.\`${alt}\``);
 
-    if (sqlOp === 'IS NOT NULL' || sqlOp === 'IS NULL') return `${raw} ${sqlOp}`;
+    if (sqlOp === 'IS NOT NULL' || sqlOp === 'IS NULL') {
+        return `(${propExprs.map(p => `${p} ${sqlOp}`).join(' OR ')})`;
+    }
 
     if (value_type === 'property') {
         if (!compare_path) return '';
         let compareAlias = compare_step_id ? aliases.get(compare_step_id) : undefined;
         if (!compareAlias && classToAlias) {
-            const dotIdx = compare_path.indexOf('.');
-            const classPrefix = dotIdx > -1 ? compare_path.slice(0, dotIdx) : null;
-            if (classPrefix && classToAlias.has(classPrefix)) {
-                compareAlias = classToAlias.get(classPrefix);
+            const cDot = compare_path.indexOf('.');
+            const cPrefix = cDot > -1 ? compare_path.slice(0, cDot) : null;
+            if (cPrefix && classToAlias.has(cPrefix)) {
+                compareAlias = classToAlias.get(cPrefix);
             }
         }
         if (!compareAlias) return '';
 
+        // Simplistic direct property-to-property for now
+        const raw = `${alias}.\`${path}\``;
         const compareRaw = `${compareAlias}.\`${compare_path}\``;
+        const prop = _NUMERIC_OPS.has(op) ? `toFloat(${raw})` : raw;
         const compareProp = _NUMERIC_OPS.has(op) ? `toFloat(${compareRaw})` : compareRaw;
         return `${prop} ${sqlOp} ${compareProp}`;
     }
 
     const value = coerceValue(cond.value);
+    
+    // Boolean handling
+    if (typeof value === 'boolean' && sqlOp === '=') {
+        const pLow = addParam(String(value).toLowerCase());
+        const pCap = addParam(String(value).charAt(0).toUpperCase() + String(value).slice(1).toLowerCase());
+        const parts = propExprs.map(p => `(${p} = ${pLow} OR ${p} = ${pCap})`);
+        return `(${parts.join(' OR ')})`;
+    }
+
     const p = addParam(value);
     if ((op === '==' || op === 'eq') && typeof value === 'number') {
-        // n10s may store numbers as strings — match both
         const ps = addParam(String(value));
-        return `(${raw} = ${p} OR ${raw} = ${ps})`;
+        const parts = propExprs.map(p => `(${p} = ${p} OR ${p} = ${ps})`);
+        return `(${parts.join(' OR ')})`;
     }
-    return `${prop} ${sqlOp} ${p}`;
+
+    const wrap = (p: string) => _NUMERIC_OPS.has(op) ? `toFloat(${p})` : p;
+    return `(${propExprs.map(p => `${wrap(p)} ${sqlOp} ${p}`).join(' OR ')})`;
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────────────

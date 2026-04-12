@@ -164,56 +164,42 @@ export const CimRuleBuilder = ({ value, onChange }: CimRuleBuilderProps) => {
             {/* ── Guided mode ───────────────────────────────────────── */}
             {ruleMode === 'guided' && (
                 <>
-                    {entityType === 'node' && (
-                        <Fieldset
-                            legend={
-                                <Group gap={6}>
-                                    Path &amp; Conditions
-                                    {explorerPathDetected && (
-                                        <Badge size="xs" color="teal" variant="light" leftSection={<Waypoints size={10} />}>
-                                            from explorer
-                                        </Badge>
-                                    )}
-                                </Group>
+                    <Fieldset
+                        legend={
+                            <Group gap={6}>
+                                {entityType === 'node' ? 'Node Path & Conditions' : 'Edge Path & Conditions'}
+                                {explorerPathDetected && entityType === 'node' && (
+                                    <Badge size="xs" color="teal" variant="light" leftSection={<Waypoints size={10} />}>
+                                        from explorer
+                                    </Badge>
+                                )}
+                            </Group>
+                        }
+                        variant="default"
+                    >
+                        <PathStepBuilder
+                            steps={conditions.path_steps || (entityType === 'node' ? [
+                                { class: 'ConnectivityNode', fixed: true },
+                                { class: 'Terminal', fixed: true },
+                            ] : [
+                                { class: conditions.target_class || 'ACLineSegment', fixed: false }
+                            ])}
+                            onAddStep={addPathStep}
+                            onUpdateStep={updatePathStep}
+                            onUpdateStepAttrs={updatePathStepAttrs}
+                            onRemoveStep={(idx: number) => {
+                                removePathStep(idx);
+                                setExplorerPathDetected(false);
+                            }}
+                            conditions={
+                                conditions.conditions.filter(c => !('conditions' in c)) as Condition[]
                             }
-                            variant="default"
-                        >
-                            <PathStepBuilder
-                                steps={conditions.path_steps || [
-                                    { class: 'ConnectivityNode', fixed: true },
-                                    { class: 'Terminal', fixed: true },
-                                ]}
-                                onAddStep={addPathStep}
-                                onUpdateStep={updatePathStep}
-                                onUpdateStepAttrs={updatePathStepAttrs}
-                                onRemoveStep={(idx: number) => {
-                                    removePathStep(idx);
-                                    setExplorerPathDetected(false);
-                                }}
-                                conditions={
-                                    conditions.conditions.filter(c => !('conditions' in c)) as Condition[]
-                                }
-                                onAddConditionForClass={addConditionForClass}
-                                onUpdateCondition={updateCondition}
-                                onRemoveCondition={removeNodeItem}
-                                schema={schema}
-                            />
-                        </Fieldset>
-                    )}
-
-                    {entityType === 'edge' && (
-                        <MantineSelect
-                            label="Target Edge Class"
-                            placeholder="e.g. ACLineSegment"
-                            data={edgeClassOptions}
-                            value={conditions.target_class || null}
-                            onChange={setTargetClass}
-                            searchable
-                            clearable
-                            size="xs"
-                            comboboxProps={{ zIndex: 2000, withinPortal: true }}
+                            onAddConditionForClass={addConditionForClass}
+                            onUpdateCondition={updateCondition}
+                            onRemoveCondition={removeNodeItem}
+                            schema={schema}
                         />
-                    )}
+                    </Fieldset>
 
                     {/* Rule Assistant */}
                     <Group justify="flex-end">
@@ -239,29 +225,6 @@ export const CimRuleBuilder = ({ value, onChange }: CimRuleBuilderProps) => {
                             />
                         </Box>
                     </Collapse>
-
-                    {/* Edge conditions */}
-                    {entityType === 'edge' && effectiveTargetClass && (
-                        <Box>
-                            <Group gap="xs" mb={4}>
-                                <Text size="xs" fw={700} c="dimmed">ATTRIBUTE CONDITIONS</Text>
-                                <Tooltip label="Filter by properties of the edge class.">
-                                    <Info size={12} style={{ opacity: 0.5 }} />
-                                </Tooltip>
-                            </Group>
-                            <ConditionGroup
-                                group={conditions}
-                                isRoot={true}
-                                onUpdateLogicalOp={setLogicalOp}
-                                onAddCondition={addCondition}
-                                onAddGroup={addGroup}
-                                onUpdateCondition={updateCondition}
-                                onRemoveNode={removeNodeItem}
-                                targetClass={effectiveTargetClass}
-                                schema={schema}
-                            />
-                        </Box>
-                    )}
                 </>
             )}
         </Stack>

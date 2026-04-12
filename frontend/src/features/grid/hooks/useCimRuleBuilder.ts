@@ -75,9 +75,13 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
             }
             update.target_class = undefined;
         } else {
-            // Edge mode uses legacy target_class
-            update.rule_mode = 'guided';
-            update.path_steps = undefined;
+            // Switch to guided edge mode
+            update.rule_mode = conditions.rule_mode || 'guided';
+            if (!conditions.path_steps?.length) {
+                // Initialize with current target_class if available, else default
+                const edgeClass = conditions.target_class || 'ACLineSegment';
+                update.path_steps = [{ id: genId(), class: edgeClass, fixed: false }];
+            }
             update.custom_cypher = undefined;
         }
         handleUpdate({ ...conditions, ...update });
@@ -85,8 +89,13 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
 
     const setRuleMode = useCallback((mode: 'guided' | 'custom_cypher') => {
         const update: Partial<MatchConditions> = { rule_mode: mode };
-        if (mode === 'guided' && conditions.entity_type === 'node' && !conditions.path_steps?.length) {
-            update.path_steps = getDefaultNodePath();
+        if (mode === 'guided') {
+            if (conditions.entity_type === 'node' && !conditions.path_steps?.length) {
+                update.path_steps = getDefaultNodePath();
+            } else if (conditions.entity_type === 'edge' && !conditions.path_steps?.length) {
+                const edgeClass = conditions.target_class || 'ACLineSegment';
+                update.path_steps = [{ id: genId(), class: edgeClass, fixed: false }];
+            }
         }
         handleUpdate({ ...conditions, ...update });
     }, [conditions, handleUpdate]);
