@@ -465,8 +465,6 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                         </Stack>
                     )}
                 </Box>
-
-                </Box>
             </AnalysisWindow>
 
             <SvgLiveEditor 
