@@ -466,37 +466,39 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                     )}
                 </Box>
 
-                <SvgLiveEditor 
-                    opened={liveEditorData.opened}
-                    onClose={() => setLiveEditorData(prev => ({ ...prev, opened: false }))}
-                    value={liveEditorData.value}
-                    onChange={(val) => setLiveEditorData(prev => ({ ...prev, value: val }))}
-                    onSave={() => {
-                        liveEditorData.onSave(liveEditorData.value);
-                        setLiveEditorData(prev => ({ ...prev, opened: false }));
-                    }}
-                    zIndex={zIndex + 100}
-                />
-
-                <ConfirmationModal 
-                    opened={confirmModal.opened}
-                    onClose={() => setConfirmModal(prev => ({ ...prev, opened: false }))}
-                    onConfirm={confirmModal.onConfirm}
-                    title={confirmModal.title}
-                    message={confirmModal.message}
-                    confirmColor={confirmModal.color}
-                />
-
-                <InputModal 
-                    opened={inputModal.opened}
-                    onClose={() => setInputModal({ ...inputModal, opened: false })}
-                    title={inputModal.title}
-                    label={inputModal.label}
-                    placeholder={inputModal.placeholder}
-                    initialValue={inputModal.initialValue}
-                    onSubmit={inputModal.onSubmit}
-                />
+                </Box>
             </AnalysisWindow>
+
+            <SvgLiveEditor 
+                opened={liveEditorData.opened}
+                onClose={() => setLiveEditorData(prev => ({ ...prev, opened: false }))}
+                value={liveEditorData.value}
+                onChange={(val) => setLiveEditorData(prev => ({ ...prev, value: val }))}
+                onSave={() => {
+                    liveEditorData.onSave(liveEditorData.value);
+                    setLiveEditorData(prev => ({ ...prev, opened: false }));
+                }}
+                zIndex={zIndex + 100}
+            />
+
+            <ConfirmationModal 
+                opened={confirmModal.opened}
+                onClose={() => setConfirmModal(prev => ({ ...prev, opened: false }))}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                confirmColor={confirmModal.color}
+            />
+
+            <InputModal 
+                opened={inputModal.opened}
+                onClose={() => setInputModal({ ...inputModal, opened: false })}
+                title={inputModal.title}
+                label={inputModal.label}
+                placeholder={inputModal.placeholder}
+                initialValue={inputModal.initialValue}
+                onSubmit={inputModal.onSubmit}
+            />
         </>
     );
 };
