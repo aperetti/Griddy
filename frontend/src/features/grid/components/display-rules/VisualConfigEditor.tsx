@@ -20,7 +20,7 @@ interface VisualConfigEditorProps {
     baseSvg?: string;
     baseColor?: string;
     onChange: (val: any) => void;
-    onOpenLiveEditor?: (initialValue: string, onSave: (val: string) => void) => void;
+    onOpenLiveEditor?: (initialValue: string, onSave: (val: string) => void, baseSvg?: string, baseColor?: string) => void;
     legend?: string;
 }
 
@@ -187,7 +187,7 @@ export const VisualConfigEditor: React.FC<VisualConfigEditorProps> = ({
                                                 size={isMobile ? 'md' : 'lg'}
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    onOpenLiveEditor?.(currentSvg, (val) => onChange({ [svgKey]: val }));
+                                                    onOpenLiveEditor?.(currentSvg, (val) => onChange({ [svgKey]: val }), baseSvg, baseColor);
                                                 }}
                                             >
                                                 <Maximize2 size={isMobile ? 14 : 18} />

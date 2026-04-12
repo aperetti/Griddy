@@ -4,113 +4,134 @@ import Moveable from 'react-moveable';
 
 interface InteractiveSvgPreviewProps {
     value: string;
+    baseSvg?: string;
+    baseColor?: string;
     onChange: (val: string) => void;
 }
 
-interface Transform {
-    x: number;
-    y: number;
-    scale: number;
-    rotate: number;
-}
-
-/**
- * Parses an SVG transform string like "translate(10, 20) scale(1.5) rotate(45)"
- */
-function parseTransform(transformStr: string): Transform {
-    const t = { x: 0, y: 0, scale: 1, rotate: 0 };
-    if (!transformStr) return t;
-
-    const translateMatch = transformStr.match(/translate\(([-\d.]+)[,\s]+([-\d.]+)\)/);
-    if (translateMatch) {
-        t.x = parseFloat(translateMatch[1]);
-        t.y = parseFloat(translateMatch[2]);
-    }
-
-    const scaleMatch = transformStr.match(/scale\(([-\d.]+)\)/);
-    if (scaleMatch) {
-        t.scale = parseFloat(scaleMatch[1]);
-    }
-
-    const rotateMatch = transformStr.match(/rotate\(([-\d.]+)\)/);
-    if (rotateMatch) {
-        t.rotate = parseFloat(rotateMatch[1]);
-    }
-
-    return t;
-}
-
-function stringifyTransform(t: Transform): string {
-    const parts = [];
-    if (t.x !== 0 || t.y !== 0) parts.push(`translate(${t.x.toFixed(2)}, ${t.y.toFixed(2)})`);
-    if (t.scale !== 1) parts.push(`scale(${t.scale.toFixed(2)})`);
-    if (t.rotate !== 0) parts.push(`rotate(${t.rotate.toFixed(2)})`);
-    return parts.join(' ');
-}
-
-export const InteractiveSvgPreview: React.FC<InteractiveSvgPreviewProps> = ({ value, onChange }) => {
+export const InteractiveSvgPreview: React.FC<InteractiveSvgPreviewProps> = ({ 
+    value, baseSvg, baseColor, onChange 
+}) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const svgRef = useRef<SVGSVGElement>(null);
     const moveableRef = useRef<Moveable>(null);
     const [target, setTarget] = useState<SVGGraphicsElement | null>(null);
 
-    // Parse the SVG into a DOM structure for rendering
-    const parsedSvg = useMemo(() => {
+    // Parse the current overlay value
+    const parsedOverlay = useMemo(() => {
         try {
             const parser = new DOMParser();
-            const doc = parser.parseFromString(value, 'image/svg+xml');
+            const doc = parser.parseFromString(value || '<svg></svg>', 'image/svg+xml');
             const svgElement = doc.querySelector('svg');
             if (!svgElement) return null;
 
-            // Ensure every <g> has an ID for selection tracking
-            const groups = svgElement.querySelectorAll('g');
-            groups.forEach((g, i) => {
-                if (!g.id) g.id = `group-${i}`;
+            // Ensure every top-level child has an ID for selection tracking
+            const interactiveTargets = svgElement.querySelectorAll('g, path, circle, rect, polygon, text');
+            interactiveTargets.forEach((el, i) => {
+                if (!el.id) el.id = `overlay-el-${i}`;
+                (el as HTMLElement).dataset.isOverlay = 'true';
             });
 
             return svgElement;
         } catch (e) {
-            console.error('Failed to parse SVG', e);
+            console.error('Failed to parse overlay SVG', e);
             return null;
         }
     }, [value]);
 
-    // Apply the selection and listeners once rendered
+    // Parse the base SVG
+    const parsedBase = useMemo(() => {
+        if (!baseSvg) return null;
+        try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(baseSvg, 'image/svg+xml');
+            return doc.querySelector('svg');
+        } catch (e) {
+            console.error('Failed to parse base SVG', e);
+            return null;
+        }
+    }, [baseSvg]);
+
+    // Construct the combined interactive workspace
     useEffect(() => {
-        if (!containerRef.current || !parsedSvg) return;
+        if (!containerRef.current) return;
 
-        // Clear and append
-        containerRef.current.innerHTML = '';
-        const clone = parsedSvg.cloneNode(true) as SVGSVGElement;
+        // 1. Create a clean workspace SVG
+        const workspace = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        workspace.setAttribute('width', '100%');
+        workspace.setAttribute('height', '100%');
+        workspace.style.display = 'block';
+        workspace.style.overflow = 'visible';
         
-        clone.setAttribute('width', '100%');
-        clone.setAttribute('height', '100%');
-        clone.style.display = 'block';
-        clone.style.overflow = 'visible';
-        
-        containerRef.current.appendChild(clone);
-        svgRef.current = clone;
+        // Match the viewBox of the base or use default
+        const viewBox = parsedBase?.getAttribute('viewBox') || parsedOverlay?.getAttribute('viewBox') || '0 0 100 100';
+        workspace.setAttribute('viewBox', viewBox);
 
-        // Add click listeners to all <g> elements for selection
-        const groups = clone.querySelectorAll('g');
-        groups.forEach((g) => {
-            (g as HTMLElement).style.cursor = 'pointer';
-            g.addEventListener('mousedown', (e) => {
-                e.stopPropagation();
-                setTarget(g as SVGGraphicsElement);
+        // 2. Append Base elements (non-interactive)
+        if (parsedBase) {
+            const baseG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            baseG.style.opacity = '0.3';
+            baseG.style.color = baseColor || '#909296';
+            baseG.style.pointerEvents = 'none';
+            
+            Array.from(parsedBase.childNodes).forEach(node => {
+                baseG.appendChild(node.cloneNode(true));
             });
-        });
+            workspace.appendChild(baseG);
+        }
 
-        // Deselect if clicking background
-        clone.addEventListener('mousedown', () => setTarget(null));
+        // 3. Append Overlay elements (interactive)
+        if (parsedOverlay) {
+            Array.from(parsedOverlay.childNodes).forEach(node => {
+                if (node.nodeType === 1) { // Element
+                    const clone = node.cloneNode(true) as HTMLElement;
+                    clone.style.cursor = 'pointer';
+                    clone.addEventListener('mousedown', (e) => {
+                        e.stopPropagation();
+                        setTarget(clone as unknown as SVGGraphicsElement);
+                    });
+                    workspace.appendChild(clone);
+                }
+            });
+        }
 
-    }, [parsedSvg]);
+        // 4. Update container
+        containerRef.current.innerHTML = '';
+        containerRef.current.appendChild(workspace);
+        svgRef.current = workspace;
+
+        // Deselect on background click
+        workspace.addEventListener('mousedown', () => setTarget(null));
+
+    }, [parsedOverlay, parsedBase, baseColor]);
 
     const syncChanges = () => {
-        if (!svgRef.current) return;
+        if (!svgRef.current || !parsedOverlay) return;
+        
+        // Create a new SVG container for the result
+        const resultDoc = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        
+        // Copy original viewBox and attributes
+        Array.from(parsedOverlay.attributes).forEach(attr => {
+            resultDoc.setAttribute(attr.name, attr.value);
+        });
+        
+        // Find all overlay elements in the workspace and move them back to the result
+        Array.from(svgRef.current.childNodes).forEach(node => {
+            const el = node as HTMLElement;
+            if (el.dataset?.isOverlay === 'true') {
+                const cleanClone = el.cloneNode(true) as HTMLElement;
+                // Clean up temporary attributes
+                if (cleanClone.id.startsWith('overlay-el-')) {
+                    cleanClone.removeAttribute('id');
+                }
+                delete cleanClone.dataset.isOverlay;
+                resultDoc.appendChild(cleanClone);
+            }
+        });
+
         const serializer = new XMLSerializer();
-        const result = serializer.serializeToString(svgRef.current);
-        onChange(result);
+        onChange(serializer.serializeToString(resultDoc));
     };
 
     return (
@@ -135,22 +156,22 @@ export const InteractiveSvgPreview: React.FC<InteractiveSvgPreviewProps> = ({ va
                     draggable={true}
                     resizable={true}
                     rotatable={true}
+                    pinchable={true}
                     keepRatio={true}
                     throttleDrag={0}
                     throttleResize={0}
                     throttleRotate={0}
+                    useTouch={true}
                     onDrag={({ target, transform }) => {
-                        target.style.transform = transform;
+                        target.setAttribute('transform', transform);
                     }}
                     onDragEnd={syncChanges}
-                    onResize={({ target, width, height, drag }) => {
-                        // For SVG <g> tags, we usually use scale transforms rather than width/height
-                        // However, react-moveable can handle matrix transforms.
-                        target.style.transform = drag.transform;
+                    onResize={({ target, drag }) => {
+                        target.setAttribute('transform', drag.transform);
                     }}
                     onResizeEnd={syncChanges}
                     onRotate={({ target, transform }) => {
-                        target.style.transform = transform;
+                        target.setAttribute('transform', transform);
                     }}
                     onRotateEnd={syncChanges}
                     origin={false}

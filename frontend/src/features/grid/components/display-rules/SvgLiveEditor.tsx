@@ -14,6 +14,8 @@ interface SvgLiveEditorProps {
     value: string;
     onChange: (val: string) => void;
     onSave: () => void;
+    baseSvg?: string;
+    baseColor?: string;
     zIndex?: number;
 }
 
@@ -23,12 +25,15 @@ export const SvgLiveEditor: React.FC<SvgLiveEditorProps> = ({
     value, 
     onChange, 
     onSave,
+    baseSvg,
+    baseColor,
     zIndex = 4000
 }) => {
     return (
         <AnalysisWindow 
             isOpen={opened} 
             onClose={onClose} 
+            storageKey="svg-live-editor"
             title={
                 <Group gap="xs">
                     <Code size={18} />
@@ -79,7 +84,12 @@ export const SvgLiveEditor: React.FC<SvgLiveEditorProps> = ({
                             >
                                 {value ? (
                                     <Box style={{ flex: 1, position: 'relative' }}>
-                                        <InteractiveSvgPreview value={value} onChange={onChange} />
+                                        <InteractiveSvgPreview 
+                                            value={value} 
+                                            onChange={onChange}
+                                            baseSvg={baseSvg}
+                                            baseColor={baseColor}
+                                        />
                                     </Box>
                                 ) : (
                                     <Stack align="center" justify="center" gap="xs" c="dimmed" h="100%">

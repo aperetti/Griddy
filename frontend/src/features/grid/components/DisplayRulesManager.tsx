@@ -62,6 +62,8 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
         opened: boolean;
         value: string;
         onSave: (val: string) => void;
+        baseSvg?: string;
+        baseColor?: string;
     }>({ opened: false, value: '', onSave: () => {} });
 
     // Custom Modal State
@@ -197,7 +199,9 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                             onSave={handleSaveRule}
                             onCancel={() => setEditingRule(null)}
                             onTest={handleTestRule}
-                            onOpenLiveEditor={(init, save) => setLiveEditorData({ opened: true, value: init, onSave: save })}
+                            onOpenLiveEditor={(init, save, base, color) => setLiveEditorData({ 
+                                opened: true, value: init, onSave: save, baseSvg: base, baseColor: color 
+                            })}
                             error={saveError}
                         />
                     ) : (
@@ -476,6 +480,8 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                     liveEditorData.onSave(liveEditorData.value);
                     setLiveEditorData(prev => ({ ...prev, opened: false }));
                 }}
+                baseSvg={liveEditorData.baseSvg}
+                baseColor={liveEditorData.baseColor}
                 zIndex={zIndex + 100}
             />
 

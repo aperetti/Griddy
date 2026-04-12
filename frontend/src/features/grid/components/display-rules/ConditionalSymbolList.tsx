@@ -24,7 +24,7 @@ interface ConditionalSymbol {
 interface ConditionalSymbolListProps {
     symbols: ConditionalSymbol[];
     onChange: (symbols: ConditionalSymbol[]) => void;
-    onOpenLiveEditor?: (initialValue: string, onSave: (val: string) => void) => void;
+    onOpenLiveEditor?: (initialValue: string, onSave: (val: string) => void, baseSvg?: string, baseColor?: string) => void;
     onTest?: (conditions: any, targetClass: string) => Promise<any>;
     targetClass?: string;
     baseSvg?: string;
@@ -41,7 +41,7 @@ function SymbolRow({
     onChange: (patch: Partial<ConditionalSymbol>) => void;
     onRemove: () => void;
     onMove: (dir: 'up' | 'down') => void;
-    onOpenLiveEditor?: (initialValue: string, onSave: (val: string) => void) => void;
+    onOpenLiveEditor?: (initialValue: string, onSave: (val: string) => void, baseSvg?: string, baseColor?: string) => void;
     onTest?: (conditions: any, targetClass: string) => Promise<any>;
     baseSvg?: string;
     baseColor?: string;
