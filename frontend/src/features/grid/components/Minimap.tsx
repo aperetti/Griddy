@@ -1,5 +1,7 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { WebMercatorViewport } from '@deck.gl/core';
+import { Tooltip, Text, Stack } from '@mantine/core';
+import { Info } from 'lucide-react';
 import type { Node, Edge } from '../../../shared/types';
 
 interface MinimapProps {
@@ -250,6 +252,45 @@ export const Minimap = React.memo<MinimapProps>(({
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
             />
+            {viewState && viewState.longitude != null && viewState.latitude != null && (
+                <div
+                    style={{
+                        position: 'absolute',
+                        top: 6,
+                        right: 6,
+                        zIndex: 1001,
+                        pointerEvents: 'auto',
+                    }}
+                >
+                    <Tooltip
+                        label={
+                            <Stack gap={2} p={4}>
+                                <Text size="xs" ff="monospace" c="dimmed" fw={700}>MAP STATUS</Text>
+                                <Text size="xs" ff="monospace">LAT: {viewState.latitude.toFixed(6)}</Text>
+                                <Text size="xs" ff="monospace">LON: {viewState.longitude.toFixed(6)}</Text>
+                                <Text size="xs" ff="monospace">ZOOM: {viewState.zoom.toFixed(2)}</Text>
+                            </Stack>
+                        }
+                        position="left"
+                        withArrow
+                    >
+                        <div
+                            style={{
+                                color: 'rgba(255, 255, 255, 0.4)',
+                                cursor: 'help',
+                                padding: '4px',
+                                display: 'flex',
+                                borderRadius: '4px',
+                                backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                                transition: 'all 0.2s ease',
+                                border: '1px solid rgba(255, 255, 255, 0.05)',
+                            }}
+                        >
+                            <Info size={14} />
+                        </div>
+                    </Tooltip>
+                </div>
+            )}
         </div>
     );
 });
