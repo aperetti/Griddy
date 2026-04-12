@@ -10,7 +10,7 @@ interface AnalysisWindowProps {
     onClose: () => void;
     onMinimize?: () => void;
     isMinimized?: boolean;
-    title: string;
+    title: ReactNode;
     storageKey: string;
     zIndex?: number;
     filterContent?: ReactNode;

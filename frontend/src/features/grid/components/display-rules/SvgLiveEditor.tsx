@@ -1,10 +1,11 @@
 import React from 'react';
 import { 
     Stack, Group, Text, Button, 
-    Textarea, Paper, Divider, rem,
-    Grid, Box
+    Paper, Divider, rem,
+    Box
 } from '@mantine/core';
-import { Save, Eye, Code } from 'lucide-react';
+import { Save, Eye, Code as CodeIcon } from 'lucide-react';
+import Editor from '@monaco-editor/react';
 import { AnalysisWindow } from '../../../analytics/components/AnalysisWindow';
 import { InteractiveSvgPreview } from './InteractiveSvgPreview';
 
@@ -36,45 +37,67 @@ export const SvgLiveEditor: React.FC<SvgLiveEditorProps> = ({
             storageKey="svg-live-editor"
             title={
                 <Group gap="xs">
-                    <Code size={18} />
+                    <CodeIcon size={18} />
                     <Text fw={600}>SVG Live Editor</Text>
                 </Group>
             }
             initialWidth={850}
             initialHeight={750}
             zIndex={zIndex}
+            contentStyle={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                overflow: 'hidden',
+                height: '100%',
+                padding: '15px' 
+            }}
         >
-            <Stack gap="md" h="100%" style={{ overflow: 'hidden' }}>
-                <Grid gutter="md" style={{ flex: 1, minHeight: 0 }}>
-                    <Grid.Col span={{ base: 12, md: 6 }} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                        <Stack gap={4} h="100%" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <Stack gap="md" style={{ flex: 1, overflow: 'hidden', height: '100%' }}>
+                <Box style={{ flex: 1, display: 'flex', gap: rem(16), minHeight: 0 }}>
+                    <Box style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                        <Stack gap={4} style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
                             <Text size="sm" fw={500}>SVG Code</Text>
-                            <Box style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
-                                <Textarea
-                                    placeholder="<svg>...</svg>"
+                            <Box 
+                                style={{ 
+                                    flex: 1, 
+                                    display: 'flex', 
+                                    flexDirection: 'column', 
+                                    minHeight: '200px',
+                                    height: '100%',
+                                    borderRadius: 'var(--mantine-radius-sm)',
+                                    border: '1px solid var(--mantine-color-dark-4)',
+                                    overflow: 'hidden',
+                                    backgroundColor: '#1A1B1E'
+                                }}
+                            >
+                                <Editor
+                                    height="100%"
+                                    width="100%"
+                                    language="xml"
+                                    theme="vs-dark"
                                     value={value}
-                                    onChange={(e) => onChange(e.currentTarget.value)}
-                                    autosize={false}
-                                    style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}
-                                    styles={{ 
-                                        root: { flex: 1, height: '100%', display: 'flex', flexDirection: 'column' },
-                                        wrapper: { flex: 1, height: '100%', display: 'flex', flexDirection: 'column' },
-                                        input: { 
-                                            flex: 1, 
-                                            height: '100% !important',
-                                            minHeight: '100% !important',
-                                            fontSize: rem(12), 
-                                            fontFamily: 'monospace',
-                                            backgroundColor: 'var(--mantine-color-dark-6)',
-                                            resize: 'none'
-                                        } 
+                                    onChange={(val) => onChange(val || '')}
+                                    options={{
+                                        minimap: { enabled: false },
+                                        fontSize: 14,
+                                        lineHeight: 22,
+                                        lineNumbers: 'on',
+                                        scrollBeyondLastLine: false,
+                                        automaticLayout: true,
+                                        wordWrap: 'on',
+                                        padding: { top: 10, bottom: 10 },
+                                        guides: {
+                                            indentation: true
+                                        },
+                                        renderLineHighlight: 'all',
                                     }}
                                 />
                             </Box>
                         </Stack>
-                    </Grid.Col>
-                    <Grid.Col span={{ base: 12, md: 6 }} style={{ display: 'flex', flexDirection: 'column' }}>
-                        <Stack gap={4} h="100%">
+                    </Box>
+
+                    <Box style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                        <Stack gap={4} style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
                             <Text size="sm" fw={500}>Interactive Preview</Text>
                             <Paper 
                                 withBorder 
@@ -108,11 +131,11 @@ export const SvgLiveEditor: React.FC<SvgLiveEditorProps> = ({
                                 Click a group (&lt;g&gt;) to select and transform it. Drag to move, use handles to scale and rotate.
                             </Text>
                         </Stack>
-                    </Grid.Col>
-                </Grid>
+                    </Box>
+                </Box>
 
                 <Divider />
-                <Group justify="flex-end">
+                <Group justify="flex-end" style={{ flexShrink: 0 }}>
                     <Button variant="subtle" color="gray" onClick={onClose}>Cancel</Button>
                     <Button variant="filled" color="blue" leftSection={<Save size={16} />} onClick={onSave}>
                         Apply Changes
