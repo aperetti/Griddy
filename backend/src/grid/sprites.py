@@ -2,6 +2,7 @@ import os
 import json
 import sqlite3
 import math
+import re
 from io import BytesIO
 from typing import List, Dict, Any, Tuple
 from PIL import Image
@@ -10,8 +11,11 @@ from reportlab.graphics import renderPM
 import xml.etree.ElementTree as ET
 import hashlib
 import itertools
+import logging
 
 from src.shared.dependencies import ADMIN_SQLITE_PATH
+
+logger = logging.getLogger(__name__)
 
 # Linux/Docker font registration for ReportLab
 if os.name != 'nt':
@@ -44,58 +48,80 @@ class SpriteGenerator:
         if not svg_str:
             return ""
 
-        # Normalize SVG if it's just content or needs viewBox
-        if not svg_str.startswith("<svg"):
-            svg_str = f'<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">{svg_str}</svg>'
+        def get_inner(content: str) -> str:
+            """Extracts everything inside the root <svg> tags."""
+            if not content or "<svg" not in content.lower():
+                return content or ""
+            # Find the first > after <svg
+            start_tag_end = content.find(">") + 1
+            # Find the last </svg>
+            end_tag_start = content.rfind("</svg>")
+            if start_tag_end > 0 and end_tag_start > start_tag_end:
+                return content[start_tag_end:end_tag_start]
+            return content
 
-        # Apply Overrides
+        # 1. Extract Base ViewBox and Content
+        vb_match = re.search(r'viewBox=["\']([^"]*)["\']', svg_str)
+        view_box = vb_match.group(1) if vb_match else "0 0 100 100"
+        base_inner = get_inner(svg_str)
+
+        # 2. Build the combined SVG
+        # We force width/height/viewBox to ensure consistent 100x100 frame
+        final_color = color or "#cccccc"
+        result = [f'<svg width="100" height="100" viewBox="0 0 100 100" fill="{final_color}" stroke="{final_color}" xmlns="http://www.w3.org/2000/svg">']
+        
+        # 3. Add Base Layer (scaled to fit 100x100 frame)
+        try:
+            parts = [float(x) for x in view_box.split()]
+            if len(parts) == 4 and (parts[2] != 100 or parts[3] != 100):
+                scale = min(100.0 / parts[2], 100.0 / parts[3])
+                result.append(f'<g transform="scale({scale:.3f})">{base_inner}</g>')
+            else:
+                result.append(f'<g>{base_inner}</g>')
+        except:
+            result.append(f'<g>{base_inner}</g>')
+
+        # 4. Add Overlays (each wrapped in its own group)
         if overrides:
             for o in overrides:
                 mode = o.get('mode', 'add')
-                content = o.get('svg', '')
+                content = o.get('svg') or o.get('icon') or ''
                 if not content:
                     continue
                 
+                ov_inner = get_inner(content)
                 if mode == 'replace':
-                    # Entire icon replacement
-                    if content.startswith("<svg"):
-                        svg_str = content
-                    else:
-                        # Wrap content in a standard SVG container if it wasn't already
-                        svg_str = f'<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">{content}</svg>'
-                else: # 'add'
-                    if "</svg>" in svg_str:
-                        svg_str = svg_str.replace("</svg>", f"{content}</svg>")
-                    else:
-                        svg_str = f"{svg_str}{content}"
+                    # Replacement mode wipes the base and previous overlays
+                    result = [result[0], f'<g>{ov_inner}</g>']
+                else:
+                    result.append(f'<g>{ov_inner}</g>')
 
-        if color:
-            # Replace currentColor
-            svg_str = svg_str.replace("currentColor", color)
-            
-            # Simple attribute injection (Pillow/svglib doesn't support complex CSS selectors well)
-            # We trust the user provided good SVGs or we use basic replacement
-            if 'fill="' not in svg_str and 'stroke="' not in svg_str:
-                 svg_str = svg_str.replace("<svg", f'<svg fill="{color}" stroke="{color}"')
+        result.append("</svg>")
+        svg_str = "".join(result)
 
-        # Linux/Docker compatibility: Replace Arial with a built-in font ReportLab knows
+        # 5. Final color and font processing
+        # Use a case-insensitive replace for currentColor
+        svg_str = re.sub(r'currentColor', final_color, svg_str, flags=re.IGNORECASE)
+
         if "Arial" in svg_str:
             svg_str = svg_str.replace("Arial", "Helvetica")
 
         return svg_str
 
     def _render_svg_to_image(self, svg_str: str) -> Image.Image:
-        """Render SVG string to a PIL Image."""
+        """Render SVG string to a PIL Image using a fixed 100x100 frame."""
         try:
-            # Handle empty or invalid SVG
             if not svg_str:
                 return Image.new("RGBA", (self.item_size, self.item_size), (0, 0, 0, 0))
 
             drawing = svg2rlg(BytesIO(svg_str.encode("utf-8")))
-            if drawing is None or drawing.width <= 0 or drawing.height <= 0:
+            if drawing is None:
                 return Image.new("RGBA", (self.item_size, self.item_size), (255, 0, 0, 50))
 
-            # 1. Render raw reportlab drawing into B and W backgrounds for Alpha extraction
+            # Force drawing dimensions to 100x100 to prevent content-based shifting
+            drawing.width = 100
+            drawing.height = 100
+
             img_b = renderPM.drawToPIL(drawing, bg=0x000000)
             img_w = renderPM.drawToPIL(drawing, bg=0xFFFFFF)
 
@@ -104,7 +130,6 @@ class SpriteGenerator:
             out_data = bytearray(img_b.width * img_b.height * 4)
 
             for i, ((rb, gb, bb), (rw, gw, bw)) in enumerate(zip(data_b, data_w)):
-                # Averaged difference
                 a_f = 255.0 - ((rw - rb) + (gw - gb) + (bw - bb)) / 3.0
                 a = int(round(a_f))
                 idx = i * 4
@@ -118,72 +143,39 @@ class SpriteGenerator:
 
             parsed_img = Image.frombytes("RGBA", img_b.size, bytes(out_data))
 
-            # 2. Scale and center using PIL to avoid ReportLab shifting bugs
-            scale_x = self.item_size / parsed_img.width
-            scale_y = self.item_size / parsed_img.height
-            scale = min(scale_x, scale_y) * 0.9 # Leave padding
-
-            new_w = max(1, int(parsed_img.width * scale))
-            new_h = max(1, int(parsed_img.height * scale))
+            # Now scale the 100x100 result to the sprite size (128x128)
+            scale = (self.item_size / 100.0) * 0.9 # Keep 10% padding
+            new_w = int(100 * scale)
+            new_h = int(100 * scale)
             
-            # Resampling filter: LANCZOS is best for high quality downsizing/upsizing
             resized_img = parsed_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
-            # Center on final transparent canvas
             final_img = Image.new("RGBA", (self.item_size, self.item_size), (0, 0, 0, 0))
             offset_x = (self.item_size - new_w) // 2
             offset_y = (self.item_size - new_h) // 2
-            final_img.paste(resized_img, (offset_x, offset_y), resized_img) # use itself as mask
+            final_img.paste(resized_img, (offset_x, offset_y), resized_img)
             
             return final_img
 
         except Exception as e:
-            if "cannot open resource" in str(e).lower() and "<text" in svg_str:
-                print(f"Font rendering failed, retrying without text elements...")
-                # Simple regex-less stripping of <text>...</text>
-                # (A better way would be using ET, but for a fallback this is safe)
-                import re
-                svg_no_text = re.sub(r'<text.*?</text>', '', svg_str, flags=re.DOTALL)
-                return self._render_svg_to_image(svg_no_text)
-
-            import traceback
-            print(f"Error rendering SVG: {e}")
-            print(f"FAILED SVG CONTENT: {svg_str}")
-            traceback.print_exc()
-            # Return a red square on error
+            logger.error("Render failed: %s", e)
             return Image.new("RGBA", (self.item_size, self.item_size), (255, 0, 0, 100))
 
     def _calculate_override_hash(self, overrides: List[Dict[str, Any]]) -> str:
-        """Calculates a unique stable 8-char hash for a specific combination of overrides.
-        Uses DJB2 on a simplified delimited string to ensure cross-language stability.
-        """
-        if not overrides:
-            return ""
-        
-        # 1. Normalize and Sort
+        if not overrides: return ""
         normalized = []
         for o in overrides:
-            # We only care about the visual impact: content and mode
-            content = o.get('svg') or o.get('icon') or ''
-            mode = o.get('mode', 'add')
-            normalized.append(f"{content}|{mode}")
-        
+            normalized.append(f"{o.get('svg','') or o.get('icon','')}|{o.get('mode','add')}")
         normalized.sort()
-        
-        # 2. Hash the joined string
         combined_str = "||".join(normalized)
-        
         hash_val = 5381
         for char in combined_str:
             hash_val = ((hash_val << 5) + hash_val) + ord(char)
-        
         return hex(hash_val & 0xFFFFFFFF)[2:].zfill(8)
 
     def generate(self) -> Tuple[bytes, Dict[str, Any]]:
         """Generate sprite sheet and metadata."""
         items = []
-        
-        # 1. Add Defaults
         for key, svg in DEFAULT_SVGS.items():
             items.append({
                 "id": f"default_{key}",
@@ -191,37 +183,30 @@ class SpriteGenerator:
                 "name": f"Default {key}"
             })
 
-        # 2. Add Rules from DB
         try:
             with sqlite3.connect(ADMIN_SQLITE_PATH) as conn:
                 conn.row_factory = sqlite3.Row
                 rules = conn.execute("SELECT * FROM display_config_rules WHERE enabled = 1").fetchall()
                 for rule in rules:
                     d = dict(rule)
-                    try:
-                        config = json.loads(d['config']) if d.get('config') else {}
-                    except:
-                        config = {}
-                    
-                    icon_svg = config.get('icon')
-                    if not icon_svg:
+                    try: 
+                        config = json.loads(d['config'])
+                    except: 
                         continue
                     
-                    color_hex = config.get('color_hex')
-                        
-                    # 1. Collect all candidate overrides
-                    candidates = []
+                    icon_svg = config.get('icon') or config.get('svg')
+                    if not icon_svg: continue
                     
-                    # SVG Overrides
+                    color_hex = config.get('color_hex')
+                    candidates = []
                     for o in (config.get('svg_overrides') or []):
-                        if isinstance(o, dict) and o.get('svg'):
+                        ov_content = o.get('svg') or o.get('icon')
+                        if ov_content:
                             candidates.append({
-                                "svg": o.get('svg'),
+                                "svg": ov_content,
                                 "mode": o.get('mode', 'add'),
                                 "conditions": o.get('conditions', {})
                             })
-                            
-                    # Legacy CSS Overrides (wrap in <style> block)
                     for o in (config.get('css_overrides') or []):
                         if isinstance(o, dict) and o.get('css'):
                             candidates.append({
@@ -230,76 +215,47 @@ class SpriteGenerator:
                                 "conditions": o.get('conditions', {})
                             })
 
-                    # 2. Separate into Unconditional and Conditional
                     unconditional = [c for c in candidates if not c.get('conditions')]
                     conditional = [c for c in candidates if c.get('conditions')]
                     
-                    # 3. Generate base icon (id = rule_{id})
-                    # This contains only unconditional overrides
                     items.append({
                         "id": f"rule_{d['id']}",
                         "svg": self._process_svg(icon_svg, color=color_hex, overrides=unconditional),
                         "name": d['name']
                     })
                     
-                    # 4. Generate all combinations of conditional overrides
-                    # Limit to avoid atlas explosion (max 16 combinations = 4 conditional rules)
                     k = min(len(conditional), 4)
                     for i in range(1, k + 1):
                         for combo in itertools.combinations(conditional[:k], i):
-                            active_overrides = unconditional + list(combo)
-                            
-                            # For hashing and rendering, we only care about svg and mode, not conditions
-                            render_ready_overrides = [
-                                {"svg": o.get('svg'), "mode": o.get('mode', 'add')} 
-                                for o in active_overrides
-                            ]
-                            
-                            ov_hash = self._calculate_override_hash(render_ready_overrides)
-                            
+                            active = unconditional + list(combo)
+                            render_ready = [{"svg": o['svg'], "mode": o['mode']} for o in active]
+                            ov_hash = self._calculate_override_hash(render_ready)
                             items.append({
                                 "id": f"rule_{d['id']}_{ov_hash}",
-                                "svg": self._process_svg(icon_svg, color=color_hex, overrides=render_ready_overrides),
+                                "svg": self._process_svg(icon_svg, color=color_hex, overrides=render_ready),
                                 "name": f"{d['name']} (Override {ov_hash})"
                             })
         except Exception as e:
-            print(f"Error fetching rules for sprite generation: {e}")
+            logger.error("Error generating sprites: %s", e)
 
-        if not items:
-            # Return a tiny empty sprite sheet if nothing to render
-            return b"", {}
+        if not items: return b"", {}
 
-        # 3. Pack into Sprite Sheet
         num_items = len(items)
         cols = math.ceil(math.sqrt(num_items))
         rows = math.ceil(num_items / cols)
-        
-        sprite_width = cols * self.item_size
-        sprite_height = rows * self.item_size
-        
-        sprite_sheet = Image.new("RGBA", (sprite_width, sprite_height), (0, 0, 0, 0))
+        sprite_sheet = Image.new("RGBA", (cols * self.item_size, rows * self.item_size), (0, 0, 0, 0))
         mapping = {}
 
         for idx, item in enumerate(items):
-            row = idx // cols
-            col = idx % cols
-            x = col * self.item_size
-            y = row * self.item_size
-            
+            x, y = (idx % cols) * self.item_size, (idx // cols) * self.item_size
             img = self._render_svg_to_image(item["svg"])
             sprite_sheet.paste(img, (x, y))
-            
             mapping[item["id"]] = {
-                "x": x,
-                "y": y,
-                "width": self.item_size,
-                "height": self.item_size,
-                "anchorX": self.item_size // 2,
-                "anchorY": self.item_size // 2,
+                "x": x, "y": y, "width": self.item_size, "height": self.item_size,
+                "anchorX": self.item_size // 2, "anchorY": self.item_size // 2,
                 "name": item["name"]
             }
 
-        # 4. Save to Bytes
         output = BytesIO()
         sprite_sheet.save(output, format="PNG")
         return output.getvalue(), mapping

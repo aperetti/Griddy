@@ -1,3 +1,4 @@
+import React, { useMemo } from 'react';
 import {
     Stack, Group, Text, TextInput, NumberInput,
     Select, Grid, Paper, Tooltip, ActionIcon,
@@ -28,10 +29,38 @@ const SVGPreview = ({ content, color, baseSvg, baseColor, mode }: { content: str
     const bg = '#141517';
     const checkerColor = 'rgba(255,255,255,0.03)';
     
-    const hasBase = !!baseSvg && mode === 'add';
-    const hasContent = !!content && content.includes('<svg');
+    const VIEWBOX_SIZE = 100;
 
-    if (!hasContent && !hasBase) {
+    // Build the exact same workspace logic as the interactive editor
+    const workspaceContent = useMemo(() => {
+        const parser = new DOMParser();
+        
+        // BASE LAYER
+        let baseContent = '';
+        if (baseSvg && mode === 'add') {
+            const baseStr = baseSvg.includes('<svg') ? baseSvg : `<svg xmlns="http://www.w3.org/2000/svg">${baseSvg}</svg>`;
+            const doc = parser.parseFromString(baseStr, 'image/svg+xml');
+            const svg = doc.querySelector('svg');
+            if (svg) {
+                const vb = svg.getAttribute('viewBox')?.split(/[,\s]+/).map(parseFloat);
+                let scaleStr = '';
+                if (vb && vb.length === 4) {
+                    const s = Math.min(VIEWBOX_SIZE / vb[2], VIEWBOX_SIZE / vb[3]);
+                    scaleStr = `transform="scale(${s.toFixed(3)})"`;
+                }
+                baseContent = `<g opacity="0.3" fill="${baseColor || 'currentColor'}" stroke="${baseColor || 'none'}" pointer-events="none" ${scaleStr}>${svg.innerHTML}</g>`;
+            }
+        }
+
+        // OVERLAY LAYER
+        const overlayContent = `<g color="${color || '#339AF0'}">${content || ''}</g>`;
+
+        return `${baseContent}${overlayContent}`;
+    }, [content, color, baseSvg, baseColor, mode]);
+
+    const hasContent = !!content || (!!baseSvg && mode === 'add');
+
+    if (!hasContent) {
         return (
             <Paper 
                 withBorder 
@@ -48,13 +77,6 @@ const SVGPreview = ({ content, color, baseSvg, baseColor, mode }: { content: str
             </Paper>
         );
     }
-
-    const prepare = (svg: string) => {
-        if (!svg.includes('width=') && !svg.includes('height=')) {
-            return svg.replace('<svg', '<svg width="100%" height="100%"');
-        }
-        return svg;
-    };
 
     return (
         <Paper 
@@ -85,18 +107,13 @@ const SVGPreview = ({ content, color, baseSvg, baseColor, mode }: { content: str
                     filter: 'drop-shadow(0 0 2px rgba(0,0,0,0.5))'
                 }}
             >
-                {hasBase && (
-                    <div
-                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', color: baseColor || '#909296', opacity: 0.4 }}
-                        dangerouslySetInnerHTML={{ __html: prepare(baseSvg) }}
-                    />
-                )}
-                {hasContent && (
-                    <div 
-                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', color: color || '#339AF0' }}
-                        dangerouslySetInnerHTML={{ __html: prepare(content) }} 
-                    />
-                )}
+                <svg 
+                    viewBox={`0 0 ${VIEWBOX_SIZE} ${VIEWBOX_SIZE}`}
+                    width="100%"
+                    height="100%"
+                    style={{ display: 'block' }}
+                    dangerouslySetInnerHTML={{ __html: workspaceContent }}
+                />
             </div>
         </Paper>
     );
