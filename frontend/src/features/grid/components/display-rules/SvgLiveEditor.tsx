@@ -41,30 +41,33 @@ export const SvgLiveEditor: React.FC<SvgLiveEditorProps> = ({
                 </Group>
             }
             initialWidth={850}
-            initialHeight={600}
+            initialHeight={750}
             zIndex={zIndex}
         >
-            <Stack gap="md" h="100%">
+            <Stack gap="md" h="100%" style={{ overflow: 'hidden' }}>
                 <Grid gutter="md" style={{ flex: 1, minHeight: 0 }}>
-                    <Grid.Col span={{ base: 12, md: 6 }} style={{ display: 'flex', flexDirection: 'column' }}>
-                        <Stack gap={4} h="100%">
+                    <Grid.Col span={{ base: 12, md: 6 }} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <Stack gap={4} style={{ flex: 1, height: '100%', minHeight: 0 }}>
                             <Text size="sm" fw={500}>SVG Code</Text>
-                            <Textarea
-                                placeholder="<svg>...</svg>"
-                                value={value}
-                                onChange={(e) => onChange(e.currentTarget.value)}
-                                h="100%"
-                                styles={{ 
-                                    root: { flex: 1, display: 'flex', flexDirection: 'column' },
-                                    wrapper: { flex: 1, display: 'flex', flexDirection: 'column' },
-                                    input: { 
-                                        flex: 1, 
-                                        fontSize: rem(12), 
-                                        fontFamily: 'monospace',
-                                        backgroundColor: 'var(--mantine-color-dark-6)'
-                                    } 
-                                }}
-                            />
+                            <Box style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                                <Textarea
+                                    placeholder="<svg>...</svg>"
+                                    value={value}
+                                    onChange={(e) => onChange(e.currentTarget.value)}
+                                    style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
+                                    styles={{ 
+                                        root: { flex: 1, display: 'flex', flexDirection: 'column' },
+                                        wrapper: { flex: 1, display: 'flex', flexDirection: 'column' },
+                                        input: { 
+                                            flex: 1, 
+                                            fontSize: rem(12), 
+                                            fontFamily: 'monospace',
+                                            backgroundColor: 'var(--mantine-color-dark-6)',
+                                            height: '100% !important'
+                                        } 
+                                    }}
+                                />
+                            </Box>
                         </Stack>
                     </Grid.Col>
                     <Grid.Col span={{ base: 12, md: 6 }} style={{ display: 'flex', flexDirection: 'column' }}>

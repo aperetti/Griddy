@@ -71,25 +71,31 @@ export const InteractiveSvgPreview: React.FC<InteractiveSvgPreviewProps> = ({
     } | null>(null);
 
     const VIEWBOX_SIZE = 100;
-    const DISPLAY_SIZE = 300;
+    const DISPLAY_SIZE = 400;
 
     const workspaceContent = useMemo(() => {
         const parser = new DOMParser();
         
-        // 1. BASE LAYER
+        // 1. BASE LAYER (Centering Logic mirrored from Backend)
         let baseContent = '';
         if (baseSvg) {
             const baseStr = baseSvg.includes('<svg') ? baseSvg : `<svg xmlns="http://www.w3.org/2000/svg">${baseSvg}</svg>`;
             const doc = parser.parseFromString(baseStr, 'image/svg+xml');
             const svg = doc.querySelector('svg');
             if (svg) {
-                const vb = svg.getAttribute('viewBox')?.split(/[,\s]+/).map(parseFloat);
-                let scaleStr = '';
-                if (vb && vb.length === 4) {
-                    const s = Math.min(VIEWBOX_SIZE / vb[2], VIEWBOX_SIZE / vb[3]);
-                    scaleStr = `transform="scale(${s.toFixed(3)})"`;
+                const vbStr = svg.getAttribute('viewBox') || '0 0 100 100';
+                const vb = vbStr.split(/[,\s]+/).map(parseFloat);
+                let transformStr = '';
+                
+                if (vb.length === 4) {
+                    const [vx, vy, vw, vh] = vb;
+                    const scale = Math.min(VIEWBOX_SIZE / vw, VIEWBOX_SIZE / vh);
+                    const offX = (VIEWBOX_SIZE - (vw * scale)) / 2;
+                    const offY = (VIEWBOX_SIZE - (vh * scale)) / 2;
+                    transformStr = `transform="translate(${offX.toFixed(3)}, ${offY.toFixed(3)}) scale(${scale.toFixed(3)}) translate(${-vx.toFixed(3)}, ${-vy.toFixed(3)})"`;
                 }
-                baseContent = `<g opacity="0.3" fill="${baseColor || 'currentColor'}" stroke="${baseColor || 'none'}" pointer-events="none" ${scaleStr}>${svg.innerHTML}</g>`;
+                
+                baseContent = `<g opacity="0.3" fill="${baseColor || 'currentColor'}" stroke="${baseColor || 'none'}" pointer-events="none" ${transformStr}>${svg.innerHTML}</g>`;
             }
         }
 
@@ -143,7 +149,6 @@ export const InteractiveSvgPreview: React.FC<InteractiveSvgPreviewProps> = ({
                 return;
             }
 
-            // For mobile, prevent scrolling and other browser defaults
             if (e.cancelable) e.preventDefault();
             e.stopPropagation();
 
@@ -182,7 +187,6 @@ export const InteractiveSvgPreview: React.FC<InteractiveSvgPreviewProps> = ({
                 return;
             }
 
-            // Final serialization
             let finalContent = '';
             const serializer = new XMLSerializer();
             svg.querySelectorAll('[data-interactive="true"]').forEach(el => {
@@ -216,7 +220,7 @@ export const InteractiveSvgPreview: React.FC<InteractiveSvgPreviewProps> = ({
             window.removeEventListener('touchend', onEnd);
             window.removeEventListener('touchcancel', onEnd);
         };
-    }, [onChange]); // Stable dependency
+    }, [onChange]);
 
     return (
         <Box 
