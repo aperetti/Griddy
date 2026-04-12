@@ -5,7 +5,8 @@ import {
     Grid, Box
 } from '@mantine/core';
 import { Save, Eye, Code } from 'lucide-react';
-import { GridModal } from '../../../../features/ui/GridModal';
+import { AnalysisWindow } from '../../../analytics/components/AnalysisWindow';
+import { InteractiveSvgPreview } from './InteractiveSvgPreview';
 
 interface SvgLiveEditorProps {
     opened: boolean;
@@ -13,6 +14,7 @@ interface SvgLiveEditorProps {
     value: string;
     onChange: (val: string) => void;
     onSave: () => void;
+    zIndex?: number;
 }
 
 export const SvgLiveEditor: React.FC<SvgLiveEditorProps> = ({ 
@@ -20,11 +22,12 @@ export const SvgLiveEditor: React.FC<SvgLiveEditorProps> = ({
     onClose, 
     value, 
     onChange, 
-    onSave 
+    onSave,
+    zIndex = 4000
 }) => {
     return (
-        <GridModal 
-            opened={opened} 
+        <AnalysisWindow 
+            isOpen={opened} 
             onClose={onClose} 
             title={
                 <Group gap="xs">
@@ -32,60 +35,61 @@ export const SvgLiveEditor: React.FC<SvgLiveEditorProps> = ({
                     <Text fw={600}>SVG Live Editor</Text>
                 </Group>
             }
-            size="xl"
-            zIndex={4000}
-            internal={false}
+            initialWidth={850}
+            initialHeight={600}
+            zIndex={zIndex}
         >
-            <Stack gap="md">
-                <Grid gutter="md">
-                    <Grid.Col span={{ base: 12, md: 7 }}>
-                        <Stack gap={4}>
+            <Stack gap="md" h="100%">
+                <Grid gutter="md" style={{ flex: 1, minHeight: 0 }}>
+                    <Grid.Col span={{ base: 12, md: 6 }} style={{ display: 'flex', flexDirection: 'column' }}>
+                        <Stack gap={4} h="100%">
                             <Text size="sm" fw={500}>SVG Code</Text>
                             <Textarea
                                 placeholder="<svg>...</svg>"
                                 value={value}
                                 onChange={(e) => onChange(e.currentTarget.value)}
-                                minRows={15}
-                                maxRows={25}
-                                styles={{ input: { fontSize: rem(12), fontFamily: 'monospace' } }}
+                                h="100%"
+                                styles={{ 
+                                    root: { flex: 1, display: 'flex', flexDirection: 'column' },
+                                    wrapper: { flex: 1, display: 'flex', flexDirection: 'column' },
+                                    input: { 
+                                        flex: 1, 
+                                        fontSize: rem(12), 
+                                        fontFamily: 'monospace',
+                                        backgroundColor: 'var(--mantine-color-dark-6)'
+                                    } 
+                                }}
                             />
                         </Stack>
                     </Grid.Col>
-                    <Grid.Col span={{ base: 12, md: 5 }}>
-                        <Stack gap={4}>
-                            <Text size="sm" fw={500}>Preview</Text>
+                    <Grid.Col span={{ base: 12, md: 6 }} style={{ display: 'flex', flexDirection: 'column' }}>
+                        <Stack gap={4} h="100%">
+                            <Text size="sm" fw={500}>Interactive Preview</Text>
                             <Paper 
                                 withBorder 
-                                p="xl" 
+                                p={0}
                                 bg="var(--mantine-color-dark-4)" 
                                 style={{ 
-                                    minHeight: rem(300), 
+                                    flex: 1,
                                     display: 'flex', 
-                                    alignItems: 'center', 
-                                    justifyContent: 'center',
-                                    overflow: 'hidden'
+                                    flexDirection: 'column',
+                                    overflow: 'hidden',
+                                    position: 'relative'
                                 }}
                             >
                                 {value ? (
-                                    <Box 
-                                        dangerouslySetInnerHTML={{ __html: value }} 
-                                        style={{ 
-                                            width: '100%', 
-                                            height: '100%', 
-                                            display: 'flex', 
-                                            alignItems: 'center', 
-                                            justifyContent: 'center'
-                                        }}
-                                    />
+                                    <Box style={{ flex: 1, position: 'relative' }}>
+                                        <InteractiveSvgPreview value={value} onChange={onChange} />
+                                    </Box>
                                 ) : (
-                                    <Stack align="center" gap="xs" c="dimmed">
+                                    <Stack align="center" justify="center" gap="xs" c="dimmed" h="100%">
                                         <Eye size={32} opacity={0.3} />
                                         <Text size="xs">Awaiting SVG code...</Text>
                                     </Stack>
                                 )}
                             </Paper>
                             <Text size="xs" c="dimmed" mt="xs">
-                                Note: Only standard SVG tags are supported. Ensure the code is self-contained.
+                                Click a group (&lt;g&gt;) to select and transform it. Drag to move, use handles to scale and rotate.
                             </Text>
                         </Stack>
                     </Grid.Col>
@@ -99,6 +103,6 @@ export const SvgLiveEditor: React.FC<SvgLiveEditorProps> = ({
                     </Button>
                 </Group>
             </Stack>
-        </GridModal>
+        </AnalysisWindow>
     );
 };

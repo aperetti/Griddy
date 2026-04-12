@@ -475,6 +475,7 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                         liveEditorData.onSave(liveEditorData.value);
                         setLiveEditorData(prev => ({ ...prev, opened: false }));
                     }}
+                    zIndex={zIndex + 100}
                 />
 
                 <ConfirmationModal 
