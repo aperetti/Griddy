@@ -114,12 +114,35 @@ class CimProfileService:
             try:
                 module = sys.modules.get(cls.__module__)
                 globalns = vars(module) if module else {}
+                
+                # Standard resolution
                 hints = typing.get_type_hints(cls, globalns=globalns)
+                
+                # Fallback for shadowed types (e.g. RatioTapChanger: Optional[RatioTapChanger])
+                # which can resolve to NoneType in some environments.
+                raw_annos = getattr(cls, "__annotations__", {})
+                
+                import re
+
                 for fname, ftype in hints.items():
                     if fname.startswith("_"):
                         continue
+                    
+                    targets = []
                     for arg in (typing.get_args(ftype) or [ftype]):
                         ref_name = getattr(arg, "__name__", None)
+                        if ref_name and ref_name != "NoneType":
+                            targets.append(ref_name)
+                    
+                    # If no valid targets found via get_type_hints, check raw annotation string
+                    if not targets and fname in raw_annos:
+                        raw_val = str(raw_annos[fname])
+                        # Match the last word before optional closing brackets/spaces
+                        match = re.search(r"(\w+)[\]\s]*$", raw_val)
+                        if match:
+                            targets.append(match.group(1))
+
+                    for ref_name in targets:
                         if ref_name and ref_name in node_classes and ref_name != name:
                             forward[name].add(ref_name)
                             # Also expand to subclasses: if PEC references PowerElectronicsUnit,

@@ -188,10 +188,11 @@ async def get_adjacent_classes(class_name: str):
     adjacent = svc.get_adjacent_classes(class_name)
 
     # Filter to topology-relevant superclasses — excludes measurement, control,
-    # fault, location, and info classes that are not useful path hops.
+    # and fault classes that are not useful path hops.
     _TOPOLOGY_ROOTS = frozenset({
         "Equipment", "ConductingEquipment", "ConnectivityNode", "Terminal",
         "BusNameMarker", "RegulatingControl", "TransformerEnd",
+        "TapChanger", "Asset", "AssetInfo", "Location", "BaseVoltage",
     })
     filtered: list[str] = []
     for name in adjacent:
