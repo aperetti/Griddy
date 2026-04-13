@@ -477,28 +477,39 @@ export function PathStepBuilder({
         );
     }
 
-    const renderStepTree = (parentId?: string, depth = 0) => {
-        const children = steps.filter(s => s.parent_id === parentId || (!parentId && !s.parent_id));
+    const renderStepTree = (parentId?: string, depth = 0, visited = new Set<string>()) => {
+        // Find steps where parent_id matches OR if parentId is undefined, find steps with no parent_id
+        const children = steps.filter(s => {
+            const matchesParent = s.parent_id === parentId;
+            const isOrphan = !parentId && !s.parent_id;
+            return s.id && (matchesParent || isOrphan);
+        });
         
-        return children.map((step) => (
-            <Stack key={step.id} gap={0} ml={depth * indent} style={{ position: 'relative' }}>
-                {depth > 0 && (
-                    <div style={{
-                        position: 'absolute',
-                        left: -indent,
-                        top: 0,
-                        bottom: '50%',
-                        width: indent,
-                        borderLeft: '1px solid rgba(255,255,255,0.1)',
-                        borderBottom: '1px solid rgba(255,255,255,0.1)',
-                        borderBottomLeftRadius: 4,
-                        pointerEvents: 'none'
-                    }} />
-                )}
-                {renderStepCard(step, depth)}
-                {renderStepTree(step.id, depth + 1)}
-            </Stack>
-        ));
+        return children.map((step) => {
+            // Cycle detection and ID presence guard
+            if (!step.id || visited.has(step.id)) return null;
+            visited.add(step.id);
+
+            return (
+                <Stack key={step.id} gap={0} ml={depth * indent} style={{ position: 'relative' }}>
+                    {depth > 0 && (
+                        <div style={{
+                            position: 'absolute',
+                            left: -indent,
+                            top: 0,
+                            bottom: '50%',
+                            width: indent,
+                            borderLeft: '1px solid rgba(255,255,255,0.1)',
+                            borderBottom: '1px solid rgba(255,255,255,0.1)',
+                            borderBottomLeftRadius: 4,
+                            pointerEvents: 'none'
+                        }} />
+                    )}
+                    {renderStepCard(step, depth)}
+                    {renderStepTree(step.id, depth + 1, visited)}
+                </Stack>
+            );
+        });
     };
 
     return (
@@ -511,11 +522,40 @@ export function PathStepBuilder({
                         variant="light"
                         color="blue"
                         leftSection={<Plus size={10} />}
-                        onClick={() => setAddingStepTo(undefined)}
+                        onClick={() => setAddingStepTo('ROOT')}
                     >
                         Start path
                     </Button>
                 </Group>
+            )}
+
+            {/* Handle the initial "ROOT" adding state if the tree is empty */}
+            {addingStepTo === 'ROOT' && steps.length === 0 && (
+                <Paper withBorder p="xs" style={{ borderColor: 'rgba(99,179,237,0.3)', background: 'rgba(0,0,0,0.15)' }}>
+                    <Group gap={6}>
+                        <Select
+                            size="xs"
+                            data={addSelectData}
+                            placeholder={addLoading ? 'Loading…' : 'Select starting class…'}
+                            disabled={addLoading}
+                            rightSection={addLoading ? <Loader size={12} /> : undefined}
+                            searchable
+                            autoFocus
+                            style={{ flex: 1 }}
+                            comboboxProps={{ withinPortal: false, zIndex: 2000 }}
+                            nothingFoundMessage={addLoading ? 'Loading…' : 'No matching classes'}
+                            onChange={(v) => {
+                                if (v) {
+                                    onAddStep(v, undefined); // No parent for the first step
+                                    setAddingStepTo(null);
+                                }
+                            }}
+                        />
+                        <ActionIcon size="xs" variant="subtle" color="gray" onClick={() => setAddingStepTo(null)}>
+                            <X size={12} />
+                        </ActionIcon>
+                    </Group>
+                </Paper>
             )}
         </Stack>
     );

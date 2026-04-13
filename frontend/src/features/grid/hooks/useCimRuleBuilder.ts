@@ -25,7 +25,13 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
     const parseValue = (val: any): MatchConditions => {
         try {
             const parsed = typeof val === 'string' ? JSON.parse(val || '{}') : val;
-            const migrated = ensureIds(parsed?.logical_op ? parsed : { ...parsed, logical_op: 'AND', conditions: parsed?.conditions || [] });
+            let migrated = ensureIds(parsed?.logical_op ? parsed : { ...parsed, logical_op: 'AND', conditions: parsed?.conditions || [] });
+
+            // Ensure path_steps for node rules are initialized with stable IDs
+            const entityType = migrated.entity_type || 'node';
+            if (entityType === 'node' && (!migrated.path_steps || migrated.path_steps.length === 0)) {
+                migrated.path_steps = getDefaultNodePath();
+            }
 
             // Migrate path_steps to ensure they have IDs and parent_ids
             if (migrated.path_steps && Array.isArray(migrated.path_steps)) {
@@ -33,7 +39,7 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
                     const newStep = { ...step, id: step.id || genId() };
                     // Apply ID to the original array element so subsequent steps can reference it
                     arr[index] = newStep; 
-                    if (!newStep.parent_id && index > 0) {
+                    if (!newStep.parent_id && index > 0 && migrated.path_steps.length > index) {
                         newStep.parent_id = arr[index - 1].id;
                     }
                     return newStep;
@@ -42,7 +48,8 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
 
             return migrated;
         } catch (e) {
-            return { id: genId(), logical_op: 'AND', conditions: [] };
+            const base = { id: genId(), logical_op: 'AND', conditions: [] };
+            return base;
         }
     };
 

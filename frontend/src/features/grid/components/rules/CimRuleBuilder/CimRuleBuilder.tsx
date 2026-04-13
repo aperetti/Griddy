@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import {
     Button, Group, Text, Stack,
     Box, Tooltip, SegmentedControl, Fieldset,
@@ -128,62 +128,8 @@ export const CimRuleBuilder = ({ value, onChange }: CimRuleBuilderProps) => {
         }
     }, [entityType, ruleMode, conditions, handleUpdate]);
 
-    return (
-        <Stack gap="xs">
-            {/* ── Entity type + mode selectors ─────────────────────── */}
-            <Group grow gap="xs">
-                <SegmentedControl
-                    size="xs"
-                    value={entityType}
-                    onChange={(v) => setEntityType(v as 'node' | 'edge')}
-                    data={[
-                        { value: 'node', label: <Group gap={4}><GitBranch size={12} />Node</Group> },
-                        { value: 'edge', label: <Group gap={4}><Code2 size={12} />Edge</Group> },
-                    ]}
-                />
-                <SegmentedControl
-                    size="xs"
-                    value={ruleMode}
-                    onChange={(v) => setRuleMode(v as 'guided' | 'custom_cypher')}
-                    data={[
-                        { value: 'guided', label: 'Guided' },
-                        { value: 'custom_cypher', label: 'Custom Cypher' },
-                    ]}
-                />
-            </Group>
-
-            {/* ── Custom Cypher mode ────────────────────────────────── */}
-            {ruleMode === 'custom_cypher' && (
-                <CustomCypherEditor
-                    value={conditions.custom_cypher || ''}
-                    onChange={setCustomCypher}
-                    entityType={entityType}
-                />
-            )}
-
-            {/* ── Guided mode ───────────────────────────────────────── */}
-            {ruleMode === 'guided' && (
-                <>
-                    <Fieldset
-                        legend={
-                            <Group gap={6}>
-                                {entityType === 'node' ? 'Node Path & Conditions' : 'Edge Path & Conditions'}
-                                {explorerPathDetected && entityType === 'node' && (
-                                    <Badge size="xs" color="teal" variant="light" leftSection={<Waypoints size={10} />}>
-                                        from explorer
-                                    </Badge>
-                                )}
-                            </Group>
-                        }
-                        variant="default"
-                    >
                         <PathStepBuilder
-                            steps={conditions.path_steps || (entityType === 'node' ? [
-                                { class: 'ConnectivityNode', fixed: true },
-                                { class: 'Terminal', fixed: true },
-                            ] : [
-                                { class: conditions.target_class || 'ACLineSegment', fixed: false }
-                            ])}
+                            steps={conditions.path_steps || []}
                             onAddStep={addPathStep}
                             onUpdateStep={updatePathStep}
                             onUpdateStepAttrs={updatePathStepAttrs}
