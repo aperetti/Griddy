@@ -194,16 +194,43 @@ async def get_adjacent_classes(class_name: str):
         "BusNameMarker", "RegulatingControl", "TransformerEnd",
         "TapChanger", "Asset", "AssetInfo", "Location", "BaseVoltage",
     })
-    filtered: list[str] = []
+    
+    # Priority for categorization (most specific to most general)
+    _CATEGORIES = [
+        ("ConductingEquipment", "Conducting Equipment"),
+        ("TransformerEnd", "Transformer Ends"),
+        ("TapChanger", "Tap Changers"),
+        ("Terminal", "Topology"),
+        ("ConnectivityNode", "Topology"),
+        ("BusNameMarker", "Topology"),
+        ("RegulatingControl", "Control & Regulation"),
+        ("AssetInfo", "Asset Information"),
+        ("Asset", "Assets"),
+        ("Location", "Locations"),
+        ("BaseVoltage", "System Metadata"),
+        ("Equipment", "Other Equipment"),
+    ]
+
+    filtered: list[dict] = []
     for name in adjacent:
         cls = svc.classes.get(name)
         if not cls:
             continue
         mro_names = {c.__name__ for c in getattr(cls, "__mro__", [])}
-        if mro_names & _TOPOLOGY_ROOTS:
-            filtered.append(name)
+        
+        if not (mro_names & _TOPOLOGY_ROOTS):
+            continue
+            
+        # Determine category based on MRO
+        category = "Other CIM Classes"
+        for root, label in _CATEGORIES:
+            if root in mro_names:
+                category = label
+                break
+        
+        filtered.append({"name": name, "category": category})
 
-    return {"class": class_name, "adjacent": sorted(filtered)}
+    return {"class": class_name, "adjacent": sorted(filtered, key=lambda x: (x["category"], x["name"]))}
 
 
 @router.get("/connections/{class_name}")

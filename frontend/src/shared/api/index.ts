@@ -527,11 +527,11 @@ export const fetchConductingEquipmentClasses = async (): Promise<string[]> => {
     return data.classes as string[];
 };
 
-export const fetchAdjacentClasses = async (className: string): Promise<string[]> => {
+export const fetchAdjacentClasses = async (className: string): Promise<Array<{ name: string; category: string }>> => {
     const response = await fetch(`${API_BASE}/cim/adjacent-classes/${encodeURIComponent(className)}`);
     if (!response.ok) throw new Error(`Failed to fetch adjacent classes for ${className}`);
     const data = await response.json();
-    return data.adjacent as string[];
+    return data.adjacent as Array<{ name: string; category: string }>;
 };
 
 export const fetchCimEquipmentExpanded = async (mrid: string): Promise<any> => {

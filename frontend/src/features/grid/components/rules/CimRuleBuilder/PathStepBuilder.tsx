@@ -20,7 +20,7 @@ interface PathStepBuilderProps {
 
 /** Fetch and cache adjacent classes for a given parent class. */
 function useAdjacentClasses(parentClass: string | null) {
-    const [classes, setClasses] = useState<string[]>([]);
+    const [classes, setClasses] = useState<Array<{ name: string; category: string }>>([]);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
@@ -136,15 +136,25 @@ export function PathStepBuilder({
         : null;
     const { classes: editClasses, loading: editLoading } = useAdjacentClasses(editingIdx !== null ? editParentClass : null);
 
-    const addSelectData = useMemo(
-        () => addClasses.map(c => ({ value: c, label: c })),
-        [addClasses],
-    );
+    const addSelectData = useMemo(() => {
+        const groups: Record<string, any[]> = {};
+        (addClasses || []).filter(c => c && c.name).forEach(c => {
+            const cat = c.category || 'Other CIM Classes';
+            if (!groups[cat]) groups[cat] = [];
+            groups[cat].push({ value: c.name, label: c.name });
+        });
+        return Object.entries(groups).map(([group, items]) => ({ group, items }));
+    }, [addClasses]);
 
-    const editSelectData = useMemo(
-        () => editClasses.map(c => ({ value: c, label: c })),
-        [editClasses],
-    );
+    const editSelectData = useMemo(() => {
+        const groups: Record<string, any[]> = {};
+        (editClasses || []).filter(c => c && c.name).forEach(c => {
+            const cat = c.category || 'Other CIM Classes';
+            if (!groups[cat]) groups[cat] = [];
+            groups[cat].push({ value: c.name, label: c.name });
+        });
+        return Object.entries(groups).map(([group, items]) => ({ group, items }));
+    }, [editClasses]);
 
     const conditionsForClass = useCallback(
         (cls: string) => conditions.filter(c => c.path.startsWith(cls + '.')),
