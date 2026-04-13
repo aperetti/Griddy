@@ -219,7 +219,9 @@ export const CimRuleBuilder = ({ value, onChange }: CimRuleBuilderProps) => {
                             <RuleAssistant
                                 targetClass={effectiveTargetClass}
                                 onSelectAttribute={(path, val, op, graphPath) => {
-                                    addFilledCondition(conditions.id, path, val, op || '==', graphPath);
+                                    // Use the stepId if we can find it for the effective target class
+                                    const step = conditions.path_steps?.find(s => s.class === effectiveTargetClass && !s.fixed);
+                                    addFilledCondition(conditions.id, path, val, op || '==', graphPath, step?.id);
                                 }}
                                 onNodePathChange={entityType === 'node' ? handleNodePathChange : undefined}
                             />

@@ -323,6 +323,9 @@ function _buildConditionStr(
     const dotIdx = path.indexOf('.');
     const attr = dotIdx > -1 ? path.slice(dotIdx + 1) : path;
     
+    // Ensure we have a valid attribute name to avoid n.`` syntax errors
+    if (!attr || attr === '') return '';
+    
     // Build alternatives
     const alternatives = [path];
     if (dotIdx > -1) {
@@ -365,19 +368,19 @@ function _buildConditionStr(
     if (typeof value === 'boolean' && sqlOp === '=') {
         const pLow = addParam(String(value).toLowerCase());
         const pCap = addParam(String(value).charAt(0).toUpperCase() + String(value).slice(1).toLowerCase());
-        const parts = propExprs.map(p => `(${p} = ${pLow} OR ${p} = ${pCap})`);
+        const parts = propExprs.map(prop => `(${prop} = ${pLow} OR ${prop} = ${pCap})`);
         return `(${parts.join(' OR ')})`;
     }
 
-    const p = addParam(value);
+    const param = addParam(value);
     if ((op === '==' || op === 'eq') && typeof value === 'number') {
-        const ps = addParam(String(value));
-        const parts = propExprs.map(p => `(${p} = ${p} OR ${p} = ${ps})`);
+        const paramStr = addParam(String(value));
+        const parts = propExprs.map(prop => `(${prop} = ${param} OR ${prop} = ${paramStr})`);
         return `(${parts.join(' OR ')})`;
     }
 
-    const wrap = (p: string) => _NUMERIC_OPS.has(op) ? `toFloat(${p})` : p;
-    return `(${propExprs.map(p => `${wrap(p)} ${sqlOp} ${p}`).join(' OR ')})`;
+    const wrap = (pName: string) => _NUMERIC_OPS.has(op) ? `toFloat(${pName})` : pName;
+    return `(${propExprs.map(prop => `${wrap(prop)} ${sqlOp} ${param}`).join(' OR ')})`;
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────────────

@@ -166,8 +166,8 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
         handleUpdate(next as MatchConditions);
     }, [conditions, handleUpdate]);
 
-    const addConditionForClass = useCallback((className: string) => {
-        const newCond: Condition = { id: genId(), path: `${className}.`, op: '==', value: '' };
+    const addConditionForClass = useCallback((className: string, stepId?: string) => {
+        const newCond: Condition = { id: genId(), path: `${className}.`, op: '==', value: '', step_id: stepId };
         const next = updateNode(conditions, conditions.id, (n) => ({
             ...n,
             conditions: [...n.conditions, newCond]
@@ -175,8 +175,8 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
         handleUpdate(next as MatchConditions);
     }, [conditions, handleUpdate]);
 
-    const addFilledCondition = useCallback((groupId: string, path: string, value: any, op: string, graphPath?: GraphPathStep[]) => {
-        const newCond: Condition = { id: genId(), path, op, value: value ?? '' };
+    const addFilledCondition = useCallback((groupId: string, path: string, value: any, op: string, graphPath?: GraphPathStep[], stepId?: string) => {
+        const newCond: Condition = { id: genId(), path, op, value: value ?? '', step_id: stepId };
         if (graphPath && graphPath.length > 0) newCond.graph_path = graphPath;
         const next = updateNode(conditions, groupId, (n) => ({
             ...n,
