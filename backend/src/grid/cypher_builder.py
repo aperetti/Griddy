@@ -140,13 +140,26 @@ class CypherRuleBuilder:
                 pattern_parts.append(f"({child_def})")
                 
         match_str = "MATCH " + ", ".join(pattern_parts) if pattern_parts else ""
-        anchor_alias = "cn" if entity_type == "node" else (aliases.get(path_steps[0].get("id")) or "n")
+        
+        # Both nodes and edges anchor on the root equipment (first step) in this architecture
+        anchor_alias = aliases.get(path_steps[0].get("id")) or "n"
 
         last_user_step = next((s for s in reversed(path_steps) if not s.get("fixed")), path_steps[-1])
         main_class = last_user_step.get("class", "")
         main_alias = aliases.get(last_user_step.get("id")) or class_to_alias.get(main_class, "n")
 
         where_parts: List[str] = []
+
+        # Geometry type filtering.
+        # Assume root equipment always has a direct relationship to a Location entity.
+        # - node: renders as a point (fewer than 2 distinct position points)
+        # - edge: renders as a polyline (2 or more distinct position points)
+        geometry_type = rule_config.get("geometry_type")
+        if geometry_type == "node":
+            where_parts.append(f"COUNT {{ ({anchor_alias})-[:`PowerSystemResource.Location`]->()<-[:`PositionPoint.Location`]-(:PositionPoint) }} < 2")
+        elif geometry_type == "edge":
+            where_parts.append(f"COUNT {{ ({anchor_alias})-[:`PowerSystemResource.Location`]->()<-[:`PositionPoint.Location`]-(:PositionPoint) }} >= 2")
+
         for cond in rule_config.get("conditions", []):
             if "logical_op" in cond: continue
             step_id = cond.get("step_id")

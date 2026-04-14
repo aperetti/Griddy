@@ -1,10 +1,10 @@
-import { Grid, ColorInput, NumberInput, Select, Fieldset, Stack, Text, Group, Paper, Button, ActionIcon, Tooltip, FileButton } from '@mantine/core';
+import { Grid, ColorInput, NumberInput, Select, Fieldset, Stack, Text, Group, Paper, Button, ActionIcon, Tooltip, FileButton, Switch, Divider } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { Upload, Maximize2, Circle as CircleIcon, Square as SquareIcon, Triangle as TriangleIcon, Star } from 'lucide-react';
 import type { RuleConfig } from '../../../../shared/api';
 
 interface EdgeStyleEditorProps {
-    config: Pick<RuleConfig, 'color_hex' | 'line_weight' | 'line_style' | 'icon'>;
+    config: Pick<RuleConfig, 'color_hex' | 'line_weight' | 'line_style' | 'icon' | 'center_icon_enabled' | 'center_icon_size' | 'center_icon_rotate'>;
     onChange: (patch: Partial<RuleConfig>) => void;
     onOpenLiveEditor?: (initialValue: string, onSave: (val: string) => void) => void;
 }
@@ -141,61 +141,92 @@ export function EdgeStyleEditor({ config, onChange, onOpenLiveEditor }: EdgeStyl
             </Fieldset>
 
             <Fieldset legend="Center Icon (optional)" variant="default">
-                <Grid gutter="md">
-                    <Grid.Col span={{ base: 12, md: 8 }}>
-                        <Stack gap="xs">
-                            <Group gap="xs" wrap="nowrap">
-                                <ActionIcon
-                                    variant="subtle"
-                                    color="red"
-                                    size="sm"
-                                    title="Clear icon"
-                                    disabled={!config.icon}
-                                    onClick={() => onChange({ icon: undefined })}
-                                >
-                                    ×
-                                </ActionIcon>
-                                <FileButton onChange={handleFileUpload} accept="image/svg+xml">
-                                    {(props) => (
-                                        <Tooltip label="Upload SVG">
-                                            <ActionIcon {...props} variant="light" size={isMobile ? 'md' : 'lg'}>
-                                                <Upload size={isMobile ? 14 : 18} />
+                <Stack gap="md">
+                    <Grid gutter="md">
+                        <Grid.Col span={{ base: 12, sm: 4 }}>
+                            <Switch
+                                label="Enable Center Icon"
+                                checked={config.center_icon_enabled}
+                                onChange={(e) => onChange({ center_icon_enabled: e.currentTarget.checked })}
+                            />
+                        </Grid.Col>
+                        <Grid.Col span={{ base: 12, sm: 4 }}>
+                            <NumberInput
+                                label="Icon Size"
+                                value={config.center_icon_size || 1.0}
+                                min={0.1} max={5} step={0.1}
+                                disabled={!config.center_icon_enabled}
+                                onChange={(v) => onChange({ center_icon_size: Number(v) })}
+                            />
+                        </Grid.Col>
+                        <Grid.Col span={{ base: 12, sm: 4 }}>
+                            <Switch
+                                label="Rotate Icon to Edge"
+                                checked={config.center_icon_rotate}
+                                disabled={!config.center_icon_enabled}
+                                onChange={(e) => onChange({ center_icon_rotate: e.currentTarget.checked })}
+                            />
+                        </Grid.Col>
+                    </Grid>
+
+                    <Divider opacity={0.1} />
+
+                    <Grid gutter="md">
+                        <Grid.Col span={{ base: 12, md: 8 }}>
+                            <Stack gap="xs">
+                                <Group gap="xs" wrap="nowrap">
+                                    <ActionIcon
+                                        variant="subtle"
+                                        color="red"
+                                        size="sm"
+                                        title="Clear icon"
+                                        disabled={!config.icon}
+                                        onClick={() => onChange({ icon: undefined })}
+                                    >
+                                        ×
+                                    </ActionIcon>
+                                    <FileButton onChange={handleFileUpload} accept="image/svg+xml">
+                                        {(props) => (
+                                            <Tooltip label="Upload SVG">
+                                                <ActionIcon {...props} variant="light" size={isMobile ? 'md' : 'lg'}>
+                                                    <Upload size={isMobile ? 14 : 18} />
+                                                </ActionIcon>
+                                            </Tooltip>
+                                        )}
+                                    </FileButton>
+                                    {onOpenLiveEditor && (
+                                        <Tooltip label="Open in Live Editor">
+                                            <ActionIcon
+                                                variant="light"
+                                                size={isMobile ? 'md' : 'lg'}
+                                                onClick={() => onOpenLiveEditor(config.icon || '', (val) => onChange({ icon: val }))}
+                                            >
+                                                <Maximize2 size={isMobile ? 14 : 18} />
                                             </ActionIcon>
                                         </Tooltip>
                                     )}
-                                </FileButton>
-                                {onOpenLiveEditor && (
-                                    <Tooltip label="Open in Live Editor">
-                                        <ActionIcon
-                                            variant="light"
-                                            size={isMobile ? 'md' : 'lg'}
-                                            onClick={() => onOpenLiveEditor(config.icon || '', (val) => onChange({ icon: val }))}
+                                </Group>
+                                <Group gap={4} wrap="wrap">
+                                    <Text size="xs" c="dimmed" mr={4}>Templates:</Text>
+                                    {templates.map(t => (
+                                        <Button
+                                            key={t.name}
+                                            variant="subtle"
+                                            size="compact-xs"
+                                            leftSection={t.icon}
+                                            onClick={() => onChange({ icon: t.content })}
                                         >
-                                            <Maximize2 size={isMobile ? 14 : 18} />
-                                        </ActionIcon>
-                                    </Tooltip>
-                                )}
-                            </Group>
-                            <Group gap={4} wrap="wrap">
-                                <Text size="xs" c="dimmed" mr={4}>Templates:</Text>
-                                {templates.map(t => (
-                                    <Button
-                                        key={t.name}
-                                        variant="subtle"
-                                        size="compact-xs"
-                                        leftSection={t.icon}
-                                        onClick={() => onChange({ icon: t.content })}
-                                    >
-                                        {t.name}
-                                    </Button>
-                                ))}
-                            </Group>
-                        </Stack>
-                    </Grid.Col>
-                    <Grid.Col span={{ base: 12, md: 4 }}>
-                        <SVGPreview content={config.icon || ''} color={config.color_hex} />
-                    </Grid.Col>
-                </Grid>
+                                            {t.name}
+                                        </Button>
+                                    ))}
+                                </Group>
+                            </Stack>
+                        </Grid.Col>
+                        <Grid.Col span={{ base: 12, md: 4 }}>
+                            <SVGPreview content={config.icon || ''} color={config.color_hex} />
+                        </Grid.Col>
+                    </Grid>
+                </Stack>
             </Fieldset>
         </Stack>
     );

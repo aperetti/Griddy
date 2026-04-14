@@ -43,6 +43,9 @@ export interface Node {
     display_min_zoom?: number;
     display_max_zoom?: number;
     display_rotate_to_edge?: boolean;
+    display_center_icon_enabled?: boolean;
+    display_center_icon_size?: number;
+    display_center_icon_rotate?: boolean;
     display_tooltip?: Record<string, any>;
     display_tooltip_data?: Record<string, any>;
     display_tooltip_overrides?: Array<{ conditions: any; tooltip_config: Record<string, any> }>;
@@ -77,8 +80,13 @@ export interface Edge {
     display_min_zoom?: number;
     display_max_zoom?: number;
     display_rotate_to_edge?: boolean;
+    display_center_icon_enabled?: boolean;
+    display_center_icon_size?: number;
+    display_center_icon_rotate?: boolean;
     display_tooltip?: Record<string, any>;
     display_tooltip_data?: Record<string, any>;
     display_tooltip_overrides?: Array<{ conditions: any; tooltip_config: Record<string, any> }>;
+    display_line_weight?: number;
+    display_line_style?: 'solid' | 'dashed' | 'dotted';
     waypoints?: [number, number][];  // ordered polyline points [lon, lat] for ACLineSegments
 }

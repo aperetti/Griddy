@@ -175,6 +175,14 @@ async def get_conducting_equipment_classes():
     return {"classes": svc.get_conducting_equipment_classes()}
 
 
+@router.get("/rootable-classes")
+async def get_rootable_classes():
+    """Return CIM classes that can have a Location relationship (subclasses of PowerSystemResource)."""
+    from src.shared.cim.profile import CimProfileService
+    svc = CimProfileService.get_instance()
+    return {"classes": svc.get_rootable_classes()}
+
+
 @router.get("/adjacent-classes/{class_name}")
 async def get_adjacent_classes(class_name: str):
     """Return CIM classes adjacent to class_name via UML associations.

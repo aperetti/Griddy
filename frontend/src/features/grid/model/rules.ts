@@ -84,7 +84,9 @@ export interface MatchConditions extends ConditionGroup {
     rule_mode?: 'guided' | 'custom_cypher';
     /** 'node' = CN-centred symbol rule; 'edge' = topology edge styling rule. */
     entity_type?: 'node' | 'edge';
-    /** Ordered path steps for guided node rules: CN (fixed) → Terminal (fixed) → user-defined hops */
+    /** Geometry filter: 'any' = all, 'node' = 1 point, 'edge' = >1 point */
+    geometry_type?: 'any' | 'node' | 'edge';
+    /** Ordered path steps for guided node rules */
     path_steps?: PathStep[];
     /** Raw Cypher for custom_cypher mode */
     custom_cypher?: string;

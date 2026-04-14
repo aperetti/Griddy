@@ -307,14 +307,18 @@ export function useLayers(p: UseLayersParams) {
             }),
             new IconLayer<Edge>({
                 id: 'grid-custom-edge-icons',
-                data: p.offsetEdges.filter(e => e.display_icon && !!p.spriteMap.mapping[e.display_icon!]),
+                data: p.offsetEdges.filter(e => 
+                    (e.display_icon || e.display_center_icon_enabled) && 
+                    !!p.spriteMap.mapping[e.display_icon || 'circle']
+                ),
                 getPosition: (d: Edge) => edgeMidpoint(d),
                 iconAtlas: p.spriteMap.atlasUrl,
                 iconMapping: p.spriteMap.mapping,
-                getIcon: (d: Edge) => d.display_icon!,
+                getIcon: (d: Edge) => d.display_icon || 'circle',
                 getColor: (d: Edge) => getEdgeColor(d, p.highlightedEdges.has(d.id || ''), p.hoveredEdgeId === d.id, d.circuit_id),
                 getSize: (d: Edge) => {
-                    const sizeAttr = (d.display_size ?? 1.0) * 32;
+                    const baseSize = d.display_center_icon_size ?? d.display_size ?? 1.0;
+                    const sizeAttr = baseSize * 32;
                     let size = p.hoveredEdgeId === d.id ? sizeAttr * 1.5 : sizeAttr;
                     if (p.highlightedEdges.has(d.id || '')) size *= 1.2;
                     return size;
@@ -338,7 +342,10 @@ export function useLayers(p: UseLayersParams) {
                     getColor: [p.highlightedEdges, p.hoveredEdgeId, p.offsetEdges],
                     getAngle: [edgeBearings],
                 },
-                getAngle: (d: Edge) => edgeBearings[d.id || `${d.source}-${d.target}`] || 0,
+                getAngle: (d: Edge) => {
+                    if (d.display_center_icon_rotate === false) return 0;
+                    return edgeBearings[d.id || `${d.source}-${d.target}`] || 0;
+                },
             }),
         ] : []),
         new ScatterplotLayer({

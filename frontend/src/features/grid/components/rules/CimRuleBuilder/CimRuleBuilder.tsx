@@ -4,7 +4,7 @@ import {
     Box, Tooltip, SegmentedControl, Fieldset,
     Collapse, Select as MantineSelect, Badge
 } from '@mantine/core';
-import { Sparkles, Info, GitBranch, Code2, Waypoints } from 'lucide-react';
+import { Sparkles, Waypoints } from 'lucide-react';
 import { RuleAssistant } from '../RuleAssistant/RuleAssistant';
 import { useCimRuleBuilder } from '../../../hooks/useCimRuleBuilder';
 import { ConditionGroup } from './ConditionGroup';
@@ -12,12 +12,6 @@ import { PathStepBuilder } from './PathStepBuilder';
 import { CustomCypherEditor } from './CustomCypherEditor';
 import { useSchema } from '../../../context/SchemaContext';
 import { genId, type PathStep, type Condition } from '../../../model/rules';
-
-// Edge classes for the edge-mode target class selector
-const EDGE_CLASSES = [
-    'ACLineSegment', 'Breaker', 'LoadBreakSwitch', 'Fuse',
-    'Disconnector', 'Recloser', 'PowerTransformer', 'TransformerTank',
-];
 
 /**
  * Derive PathStep[] from an ordered CIM class chain navigated in the explorer.
@@ -73,7 +67,7 @@ export const CimRuleBuilder = ({ value, onChange }: CimRuleBuilderProps) => {
     const {
         conditions,
         handleUpdate,
-        setEntityType,
+        setGeometryType,
         setRuleMode,
         setCustomCypher,
         addPathStep,
@@ -94,10 +88,10 @@ export const CimRuleBuilder = ({ value, onChange }: CimRuleBuilderProps) => {
     const [explorerPathDetected, setExplorerPathDetected] = useState(false);
 
     // Derive current mode values
-    const entityType: 'node' | 'edge' = conditions.entity_type || 'node';
     const ruleMode: 'guided' | 'custom_cypher' = conditions.rule_mode || 'guided';
-
-    const edgeClassOptions = EDGE_CLASSES.map(c => ({ value: c, label: c }));
+    const geometryType = conditions.geometry_type || 'node';
+    // entity_type is kept in sync with geometry_type via setGeometryType
+    const entityType: 'node' | 'edge' = geometryType === 'edge' ? 'edge' : 'node';
 
     // The "target class" shown in condition hints — last non-fixed path step or target_class
     const effectiveTargetClass: string | undefined = (() => {
@@ -128,8 +122,64 @@ export const CimRuleBuilder = ({ value, onChange }: CimRuleBuilderProps) => {
         }
     }, [entityType, ruleMode, conditions, handleUpdate]);
 
+    return (
+        <Stack gap="xs">
+            {/* ── Mode selector ────────────────────────────────────── */}
+            <SegmentedControl
+                size="xs"
+                value={ruleMode}
+                onChange={(v) => setRuleMode(v as 'guided' | 'custom_cypher')}
+                data={[
+                    { value: 'guided', label: 'Guided' },
+                    { value: 'custom_cypher', label: 'Custom Cypher' },
+                ]}
+            />
+
+            {/* ── Geometry Filter (Guided Mode only) ────────────────── */}
+            {ruleMode === 'guided' && (
+                <Fieldset legend="Geometry Filter" variant="default">
+                    <SegmentedControl
+                        size="xs"
+                        fullWidth
+                        value={geometryType}
+                        onChange={(v) => setGeometryType(v as 'any' | 'node' | 'edge')}
+                        data={[
+                            { value: 'any', label: 'Any' },
+                            { value: 'node', label: 'Node (1 point)' },
+                            { value: 'edge', label: 'Edge (>1 point)' },
+                        ]}
+                    />
+                </Fieldset>
+            )}
+
+            {/* ── Custom Cypher mode ────────────────────────────────── */}
+            {ruleMode === 'custom_cypher' && (
+                <CustomCypherEditor
+                    value={conditions.custom_cypher || ''}
+                    onChange={setCustomCypher}
+                    entityType={entityType}
+                />
+            )}
+
+            {/* ── Guided mode ───────────────────────────────────────── */}
+            {ruleMode === 'guided' && (
+                <>
+                    <Fieldset
+                        legend={
+                            <Group gap={6}>
+                                {entityType === 'node' ? 'Node Path & Conditions' : 'Edge Path & Conditions'}
+                                {explorerPathDetected && entityType === 'node' && (
+                                    <Badge size="xs" color="teal" variant="light" leftSection={<Waypoints size={10} />}>
+                                        from explorer
+                                    </Badge>
+                                )}
+                            </Group>
+                        }
+                        variant="default"
+                    >
                         <PathStepBuilder
                             steps={conditions.path_steps || []}
+                            entityType={entityType}
                             onAddStep={addPathStep}
                             onUpdateStep={updatePathStep}
                             onUpdateStepAttrs={updatePathStepAttrs}

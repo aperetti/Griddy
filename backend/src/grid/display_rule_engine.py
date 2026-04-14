@@ -3,6 +3,7 @@ import json
 import logging
 import hashlib
 from typing import List, Dict, Any, Optional
+from concurrent.futures import ThreadPoolExecutor
 from src.grid.cypher_builder import CypherRuleBuilder
 from .cim_rules import CimRuleEngine
 from .cim_mapping import CimMapper
@@ -100,133 +101,159 @@ class DisplayRuleEngine:
             return self._classify_cache[model_id]
 
         builder = CypherRuleBuilder()
-        classification_map = {}
-
-        # self._rules is sorted by priority DESC (highest first)
+        
+        # 1. Collect all queries to execute in parallel
+        # We store (rule_id, is_base, override_idx) -> task
+        tasks = []
+        
         for rule in self._rules:
             try:
-                config = rule.get('config', {})
                 conditions = rule.get('match_conditions', {})
                 target_class = conditions.get('target_class')
                 path_steps = conditions.get('path_steps')
                 rule_mode = conditions.get('rule_mode', 'guided')
 
-                # Path-based or custom_cypher rules don't need target_class
                 if not target_class and not path_steps and rule_mode != 'custom_cypher':
                     continue
 
-                # For path-based/custom rules, derive a placeholder target_class for the builder
                 effective_target = target_class or (
                     path_steps[-1]['class'] if path_steps else 'ConnectivityNode'
                 )
 
-                query, params, _warnings = builder.build_rule_query(conditions, effective_target)
-                logger.debug("Executing bulk classification query for rule %s: %s", rule.get('id'), query)
+                query, params, _ = builder.build_rule_query(conditions, effective_target)
+                tasks.append({
+                    "rule_id": rule['id'],
+                    "is_base": True,
+                    "query": query,
+                    "params": params
+                })
                 
-                base_results = cim_manager.execute_cypher(query, params)
-                
-                # Pre-fetch independent MRID sets for SVG overrides
+                config = rule.get('config', {})
                 overrides_config = config.get('svg_overrides') or []
                 if isinstance(overrides_config, str):
-                    try: 
-                        overrides_config = json.loads(overrides_config)
-                    except: 
-                        overrides_config = []
+                    try: overrides_config = json.loads(overrides_config)
+                    except: overrides_config = []
                 
-                override_mrid_sets = []
-                for ov in overrides_config:
+                for idx, ov in enumerate(overrides_config):
                     ov_conds = self._ensure_dict(ov.get('conditions'))
-                    if not ov_conds:
-                        override_mrid_sets.append(None)
-                        continue
+                    if not ov_conds: continue
                     
-                    try:
-                        # Determine target class for this override standalone
-                        ov_path_steps = ov_conds.get('path_steps')
-                        if ov_path_steps:
-                            ov_target = ov_path_steps[-1]['class']
-                        else:
-                            ov_target = ov_conds.get('target_class') or effective_target
-                        
-                        ov_query, ov_params, _ = builder.build_rule_query(ov_conds, ov_target)
-                        ov_res = cim_manager.execute_cypher(ov_query, ov_params)
-                        
-                        # Normalize MRIDs to uppercase for robust set intersection
-                        mrid_set = {str(row['mrid']).upper() for row in ov_res if row.get('mrid')}
-                        override_mrid_sets.append(mrid_set)
-                        logger.debug("Pre-fetched %d MRIDs for override in rule %s", len(mrid_set), rule.get('id'))
-                    except Exception as e:
-                        logger.error("Error pre-fetching override for rule %s: %s", rule.get('id'), e)
-                        override_mrid_sets.append(set())
-
-                for row in base_results:
-                    raw_mrid = row.get('mrid')
-                    if not raw_mrid:
-                        continue
-                        
-                    mrid = str(raw_mrid).upper()
-                    if mrid not in classification_map:
-                        # Determine active overrides for this specific MRID
-                        active_overrides = []
-                        for idx, ov_set in enumerate(override_mrid_sets):
-                            if ov_set is not None and mrid in ov_set:
-                                ov = overrides_config[idx]
-                                active_overrides.append({
-                                    "icon": ov.get('icon') or ov.get('svg', ""),
-                                    "svg": ov.get('svg', ""),
-                                    "color_hex": ov.get('color_hex'),
-                                    "size": ov.get('size'),
-                                    "visual_type": ov.get('visual_type'),
-                                    "mode": ov.get('mode', "add")
-                                })
-
-                        override_hash = self._calculate_override_hash(active_overrides)
-
-                        # Extract and cast config values
-                        def get_float(k, default):
-                            try: return float(config.get(k, default))
-                            except: return float(default)
-                        
-                        def get_int(k, default):
-                            try: return int(config.get(k, default))
-                            except: return int(default)
-
-                        # Determine final size
-                        final_size = get_float('size', 1.0)
-                        for o in active_overrides:
-                            if o.get('size') is not None:
-                                try: final_size = float(o['size'])
-                                except: pass
-
-                        # Collect per-override tooltip configs
-                        tooltip_overrides = [
-                            {"conditions": o.get("conditions", {}), "tooltip_config": o["tooltip_config"]}
-                            for o in overrides_config
-                            if o.get("tooltip_config")
-                        ] or None
-
-                        classification_map[mrid] = {
-                            "rule_id": rule.get('id'),
-                            "visual_type": config.get('visual_type', 'Custom'),
-                            "size": final_size,
-                            "label": config.get('label', ""),
-                            "icon": config.get('icon'),
-                            "color_hex": config.get('color_hex'),
-                            "radial_offset": get_float('radial_offset', 0.0),
-                            "cluster_enabled": bool(config.get('cluster_enabled', False)),
-                            "cluster_radius": get_float('cluster_radius', 40.0),
-                            "cluster_max_zoom": get_float('cluster_max_zoom', 20.0),
-                            "cluster_min_points": get_int('cluster_min_points', 2),
-                            "min_zoom": get_float('min_zoom', 0.0),
-                            "max_zoom": get_float('max_zoom', 24.0),
-                            "rotate_to_edge": bool(config.get('rotate_to_edge', False)),
-                            "svg_overrides": active_overrides,
-                            "override_hash": override_hash,
-                            "tooltip_config": config.get('tooltip_config'),
-                            "tooltip_overrides": tooltip_overrides,
-                        }
+                    ov_path_steps = ov_conds.get('path_steps')
+                    ov_target = ov_path_steps[-1]['class'] if ov_path_steps else (ov_conds.get('target_class') or effective_target)
+                    
+                    ov_query, ov_params, _ = builder.build_rule_query(ov_conds, ov_target)
+                    tasks.append({
+                        "rule_id": rule['id'],
+                        "is_base": False,
+                        "ov_idx": idx,
+                        "query": ov_query,
+                        "params": ov_params
+                    })
             except Exception as e:
-                logger.error("Error in bulk classification for rule %s: %s", rule.get('id'), e)
+                logger.error("Error preparing queries for rule %s: %s", rule.get('id'), e)
+
+        # 2. Execute all queries in parallel
+        # results_map: (rule_id, is_base, ov_idx) -> MRID set or results list
+        results_map = {}
+        
+        def execute_task(t):
+            try:
+                res = cim_manager.execute_cypher(t['query'], t['params'])
+                if t['is_base']:
+                    return (t['rule_id'], True, None, res)
+                else:
+                    mrid_set = {str(row['mrid']).upper() for row in res if row.get('mrid')}
+                    return (t['rule_id'], False, t['ov_idx'], mrid_set)
+            except Exception as e:
+                logger.error("Parallel query failed: %s", e)
+                return (t['rule_id'], t['is_base'], t.get('ov_idx'), set() if not t['is_base'] else [])
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            for rid, is_base, ov_idx, data in executor.map(execute_task, tasks):
+                results_map[(rid, is_base, ov_idx)] = data
+
+        # 3. Process results into classification_map
+        classification_map = {}
+        for rule in self._rules:
+            rid = rule['id']
+            base_results = results_map.get((rid, True, None), [])
+            
+            config = rule.get('config', {})
+            overrides_config = config.get('svg_overrides') or []
+            if isinstance(overrides_config, str):
+                try: overrides_config = json.loads(overrides_config)
+                except: overrides_config = []
+            
+            # Pre-calculate active override indices for each rule
+            override_mrid_sets = []
+            for idx in range(len(overrides_config)):
+                override_mrid_sets.append(results_map.get((rid, False, idx)))
+
+            for row in base_results:
+                raw_mrid = row.get('mrid')
+                if not raw_mrid: continue
+                    
+                mrid = str(raw_mrid).upper()
+                if mrid not in classification_map:
+                    active_overrides = []
+                    for idx, ov_set in enumerate(override_mrid_sets):
+                        if ov_set is not None and mrid in ov_set:
+                            ov = overrides_config[idx]
+                            active_overrides.append({
+                                "icon": ov.get('icon') or ov.get('svg', ""),
+                                "svg": ov.get('svg', ""),
+                                "color_hex": ov.get('color_hex'),
+                                "size": ov.get('size'),
+                                "visual_type": ov.get('visual_type'),
+                                "mode": ov.get('mode', "add")
+                            })
+
+                    override_hash = self._calculate_override_hash(active_overrides)
+
+                    def get_float(k, default):
+                        try: return float(config.get(k, default))
+                        except: return float(default)
+                    
+                    def get_int(k, default):
+                        try: return int(config.get(k, default))
+                        except: return int(default)
+
+                    final_size = get_float('size', 1.0)
+                    for o in active_overrides:
+                        if o.get('size') is not None:
+                            try: final_size = float(o['size'])
+                            except: pass
+
+                    tooltip_overrides = [
+                        {"conditions": o.get("conditions", {}), "tooltip_config": o["tooltip_config"]}
+                        for o in overrides_config if o.get("tooltip_config")
+                    ] or None
+
+                    classification_map[mrid] = {
+                        "rule_id": rid,
+                        "visual_type": config.get('visual_type', 'Custom'),
+                        "size": final_size,
+                        "label": config.get('label', ""),
+                        "icon": config.get('icon'),
+                        "color_hex": config.get('color_hex'),
+                        "radial_offset": get_float('radial_offset', 0.0),
+                        "cluster_enabled": bool(config.get('cluster_enabled', False)),
+                        "cluster_radius": get_float('cluster_radius', 40.0),
+                        "cluster_max_zoom": get_float('cluster_max_zoom', 20.0),
+                        "cluster_min_points": get_int('cluster_min_points', 2),
+                        "min_zoom": get_float('min_zoom', 0.0),
+                        "max_zoom": get_float('max_zoom', 24.0),
+                        "rotate_to_edge": bool(config.get('rotate_to_edge', False)),
+                        "center_icon_enabled": bool(config.get('center_icon_enabled', False)),
+                        "center_icon_size": get_float('center_icon_size', 1.0),
+                        "center_icon_rotate": bool(config.get('center_icon_rotate', False)),
+                        "line_weight": config.get('line_weight'),
+                        "line_style": config.get('line_style'),
+                        "svg_overrides": active_overrides,
+                        "override_hash": override_hash,
+                        "tooltip_config": config.get('tooltip_config'),
+                        "tooltip_overrides": tooltip_overrides,
+                    }
 
         self._classify_cache[model_id] = classification_map
         logger.info("classify_all: cached %d classifications for model %s", len(classification_map), model_id)
@@ -300,6 +327,11 @@ class DisplayRuleEngine:
                         "min_zoom": get_float('min_zoom', 0.0),
                         "max_zoom": get_float('max_zoom', 24.0),
                         "rotate_to_edge": bool(config.get('rotate_to_edge', False)),
+                        "center_icon_enabled": bool(config.get('center_icon_enabled', False)),
+                        "center_icon_size": get_float('center_icon_size', 1.0),
+                        "center_icon_rotate": bool(config.get('center_icon_rotate', False)),
+                        "line_weight": config.get('line_weight'),
+                        "line_style": config.get('line_style'),
                         "svg_overrides": active_overrides,
                         "override_hash": override_hash,
                     }
@@ -376,6 +408,11 @@ class DisplayRuleEngine:
                         "min_zoom": get_float('min_zoom', 0.0),
                         "max_zoom": get_float('max_zoom', 24.0),
                         "rotate_to_edge": bool(config.get('rotate_to_edge', False)),
+                        "center_icon_enabled": bool(config.get('center_icon_enabled', False)),
+                        "center_icon_size": get_float('center_icon_size', 1.0),
+                        "center_icon_rotate": bool(config.get('center_icon_rotate', False)),
+                        "line_weight": config.get('line_weight'),
+                        "line_style": config.get('line_style'),
                         "svg_overrides": active_overrides,
                         "override_hash": override_hash,
                     }

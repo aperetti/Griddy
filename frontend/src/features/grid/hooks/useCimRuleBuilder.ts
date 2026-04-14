@@ -12,26 +12,11 @@ import type {
     PathStep,
 } from '../model/rules';
 
-const getDefaultNodePath = (): PathStep[] => {
-    const cnId = genId();
-    const tId = genId();
-    return [
-        { id: cnId, class: 'ConnectivityNode', fixed: true },
-        { id: tId, parent_id: cnId, class: 'Terminal', fixed: true },
-    ];
-};
-
 export function useCimRuleBuilder(value: string | any, onChange: (value: string) => void) {
     const parseValue = (val: any): MatchConditions => {
         try {
             const parsed = typeof val === 'string' ? JSON.parse(val || '{}') : val;
             let migrated = ensureIds(parsed?.logical_op ? parsed : { ...parsed, logical_op: 'AND', conditions: parsed?.conditions || [] });
-
-            // Ensure path_steps for node rules are initialized with stable IDs
-            const entityType = migrated.entity_type || 'node';
-            if (entityType === 'node' && (!migrated.path_steps || migrated.path_steps.length === 0)) {
-                migrated.path_steps = getDefaultNodePath();
-            }
 
             // Migrate path_steps to ensure they have IDs and parent_ids
             if (migrated.path_steps && Array.isArray(migrated.path_steps)) {
@@ -55,51 +40,50 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
 
     const [conditions, setConditions] = useState<MatchConditions>(() => parseValue(value));
 
-    // Synchronize local state with external value changes
-    useEffect(() => {
-        const nextConditions = parseValue(value);
-        const currentJson = JSON.stringify(conditions);
-        const incomingJson = JSON.stringify(nextConditions);
-        if (currentJson !== incomingJson) {
-            setConditions(nextConditions);
-        }
-    }, [value]);
-
-    const handleUpdate = useCallback((newConditions: MatchConditions) => {
-        setConditions(newConditions);
-        onChange(JSON.stringify(newConditions));
+    const handleUpdate = useCallback((next: MatchConditions) => {
+        setConditions(next);
+        onChange(JSON.stringify(next));
     }, [onChange]);
+
+    useEffect(() => {
+        setConditions(parseValue(value));
+    }, [value]);
 
     // ── Entity type + rule mode ──────────────────────────────────────────────
 
     const setEntityType = useCallback((type: 'node' | 'edge') => {
         const update: Partial<MatchConditions> = { entity_type: type };
+        // Initialise mode if not set
+        update.rule_mode = conditions.rule_mode || 'guided';
+        
         if (type === 'node') {
-            // Switch to guided node mode — initialise path if not already set
-            update.rule_mode = conditions.rule_mode || 'guided';
-            if (!conditions.path_steps?.length) {
-                update.path_steps = getDefaultNodePath();
-            }
             update.target_class = undefined;
+            // Node rules default to node geometry
+            update.geometry_type = 'node';
         } else {
             // Switch to guided edge mode
-            update.rule_mode = conditions.rule_mode || 'guided';
             if (!conditions.path_steps?.length) {
                 // Initialize with current target_class if available, else default
                 const edgeClass = conditions.target_class || 'ACLineSegment';
                 update.path_steps = [{ id: genId(), class: edgeClass, fixed: false }];
             }
             update.custom_cypher = undefined;
+            // Edge rules default to edge geometry
+            update.geometry_type = 'edge';
         }
         handleUpdate({ ...conditions, ...update });
+    }, [conditions, handleUpdate]);
+
+    const setGeometryType = useCallback((type: 'any' | 'node' | 'edge') => {
+        // Keep entity_type in sync so the query builder anchors correctly.
+        // 'edge' geometry → edge-anchored query; anything else → node-anchored.
+        handleUpdate({ ...conditions, geometry_type: type, entity_type: type === 'edge' ? 'edge' : 'node' });
     }, [conditions, handleUpdate]);
 
     const setRuleMode = useCallback((mode: 'guided' | 'custom_cypher') => {
         const update: Partial<MatchConditions> = { rule_mode: mode };
         if (mode === 'guided') {
-            if (conditions.entity_type === 'node' && !conditions.path_steps?.length) {
-                update.path_steps = getDefaultNodePath();
-            } else if (conditions.entity_type === 'edge' && !conditions.path_steps?.length) {
+            if (conditions.entity_type === 'edge' && !conditions.path_steps?.length) {
                 const edgeClass = conditions.target_class || 'ACLineSegment';
                 update.path_steps = [{ id: genId(), class: edgeClass, fixed: false }];
             }
@@ -114,25 +98,43 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
     // ── Path management ──────────────────────────────────────────────────────
 
     const addPathStep = useCallback((className: string, parentId?: string) => {
-        const current = conditions.path_steps || getDefaultNodePath();
+        const current = conditions.path_steps || [];
         const pId = parentId || (current.length > 0 ? current[current.length - 1].id : undefined);
         handleUpdate({ ...conditions, path_steps: [...current, { id: genId(), parent_id: pId, class: className }] });
     }, [conditions, handleUpdate]);
 
+    /**
+     * Starts a node-rule path by injecting the required ConnectivityNode → Terminal
+     * fixed anchors and then appending the chosen equipment class.
+     * Only called from "Start path" in node-mode UI; addPathStep remains injection-free.
+     */
+    const initNodePath = useCallback((equipmentClass: string) => {
+        const cnId = genId();
+        const tId = genId();
+        handleUpdate({
+            ...conditions,
+            path_steps: [
+                { id: cnId, class: 'ConnectivityNode', fixed: true },
+                { id: tId, class: 'Terminal', fixed: true, parent_id: cnId },
+                { id: genId(), class: equipmentClass, fixed: false, parent_id: tId },
+            ],
+        });
+    }, [conditions, handleUpdate]);
+
     const updatePathStep = useCallback((index: number, className: string) => {
-        const current = [...(conditions.path_steps || getDefaultNodePath())];
+        const current = [...(conditions.path_steps || [])];
         current[index] = { ...current[index], class: className };
         handleUpdate({ ...conditions, path_steps: current });
     }, [conditions, handleUpdate]);
 
     const updatePathStepAttrs = useCallback((index: number, attrs: Array<{ attr: string; alias: string }>) => {
-        const current = [...(conditions.path_steps || getDefaultNodePath())];
+        const current = [...(conditions.path_steps || [])];
         current[index] = { ...current[index], tooltip_attributes: attrs };
         handleUpdate({ ...conditions, path_steps: current });
     }, [conditions, handleUpdate]);
 
     const removePathStep = useCallback((index: number) => {
-        const current = conditions.path_steps || getDefaultNodePath();
+        const current = conditions.path_steps || [];
         if (current[index]?.fixed) return; // cannot remove fixed steps
         const stepId = current[index].id;
         
@@ -216,9 +218,11 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
         handleUpdate,
         // New operations
         setEntityType,
+        setGeometryType,
         setRuleMode,
         setCustomCypher,
         addPathStep,
+        initNodePath,
         updatePathStep,
         updatePathStepAttrs,
         removePathStep,

@@ -2,12 +2,13 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Group, Badge, Select, ActionIcon, Text, Stack, Tooltip, Paper, Divider, Button, Loader, Box } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { Plus, X, Tag, GitBranch } from 'lucide-react';
-import { fetchAdjacentClasses } from '../../../../../shared/api';
+import { fetchAdjacentClasses, fetchConductingEquipmentClasses } from '../../../../../shared/api';
 import { ConditionRow } from './ConditionRow';
 import type { PathStep, Condition } from '../../../model/rules';
 
 interface PathStepBuilderProps {
     steps: PathStep[];
+    entityType: 'node' | 'edge';
     onAddStep: (className: string, parentId?: string) => void;
     onUpdateStep: (index: number, className: string) => void;
     onUpdateStepAttrs: (index: number, attrs: Array<{ attr: string; alias: string }>) => void;
@@ -19,21 +20,31 @@ interface PathStepBuilderProps {
     schema: Record<string, any>;
 }
 
-/** Fetch and cache adjacent classes for a given parent class. */
-function useAdjacentClasses(parentClass: string | null) {
+/** Fetch and cache adjacent classes for a given parent class. 
+ * If parentClass is null, fetches rootable classes (starting classes).
+ */
+function useAdjacentClasses(parentClass: string | null, isRoot = false) {
     const [classes, setClasses] = useState<Array<{ name: string; category: string }>>([]);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
-        if (!parentClass) { setClasses([]); return; }
         let cancelled = false;
         setLoading(true);
-        fetchAdjacentClasses(parentClass)
+
+        const fetchFn = (isRoot || !parentClass)
+            ? async () => {
+                const classes = await fetchConductingEquipmentClasses();
+                return classes.map(name => ({ name, category: 'Conducting Equipment' }));
+              }
+            : () => fetchAdjacentClasses(parentClass!);
+
+        fetchFn()
             .then(result => { if (!cancelled) setClasses(result); })
             .catch(() => { if (!cancelled) setClasses([]); })
             .finally(() => { if (!cancelled) setLoading(false); });
+
         return () => { cancelled = true; };
-    }, [parentClass]);
+    }, [parentClass, isRoot]);
 
     return { classes, loading };
 }
@@ -116,6 +127,7 @@ function TooltipAttrPicker({
 
 export function PathStepBuilder({
     steps,
+    entityType,
     onAddStep,
     onUpdateStep,
     onUpdateStepAttrs,
@@ -170,12 +182,12 @@ export function PathStepBuilder({
 
     // Parent class for adding a step to a specific parentId
     const addParentClass = addingStepTo ? steps.find(s => s.id === addingStepTo)?.class : null;
-    const { classes: addClasses, loading: addLoading } = useAdjacentClasses(addingStepTo ? addParentClass : null);
+    const { classes: addClasses, loading: addLoading } = useAdjacentClasses(addingStepTo ? addParentClass : null, addingStepTo === 'ROOT');
 
     // Parent class for editing step at editingIdx = its parent's class
     const editParentId = editingIdx !== null ? steps[editingIdx].parent_id : null;
     const editParentClass = editParentId ? steps.find(s => s.id === editParentId)?.class : null;
-    const { classes: editClasses, loading: editLoading } = useAdjacentClasses(editingIdx !== null ? editParentClass : null);
+    const { classes: editClasses, loading: editLoading } = useAdjacentClasses(editingIdx !== null ? editParentClass : null, editingIdx !== null && !editParentId);
 
     const addSelectData = useMemo(() => {
         const groups: Record<string, any[]> = {};
@@ -453,8 +465,48 @@ export function PathStepBuilder({
                 {/* Slide Content */}
                 <Box style={{ minHeight: 120 }}>
                     {currentSteps.map(step => renderStepCard(step, activeDepth))}
-                    {currentSteps.length === 0 && (
+                    {currentSteps.length === 0 && steps.length > 0 && (
                         <Text size="xs" c="dimmed" ta="center" py="xl">No steps at this depth</Text>
+                    )}
+                    {steps.length === 0 && addingStepTo !== 'ROOT' && (
+                        <Group justify="center" py="xl">
+                            <Button
+                                size="compact-xs"
+                                variant="light"
+                                color="blue"
+                                leftSection={<Plus size={10} />}
+                                onClick={() => setAddingStepTo('ROOT')}
+                            >
+                                Start path
+                            </Button>
+                        </Group>
+                    )}
+                    {addingStepTo === 'ROOT' && steps.length === 0 && (
+                        <Paper withBorder p="xs" style={{ borderColor: 'rgba(99,179,237,0.3)', background: 'rgba(0,0,0,0.15)' }}>
+                            <Group gap={6}>
+                                <Select
+                                    size="xs"
+                                    data={addSelectData}
+                                    placeholder={addLoading ? 'Loading…' : 'Select starting class…'}
+                                    disabled={addLoading}
+                                    rightSection={addLoading ? <Loader size={12} /> : undefined}
+                                    searchable
+                                    autoFocus
+                                    style={{ flex: 1 }}
+                                    comboboxProps={{ withinPortal: false, zIndex: 2000 }}
+                                    nothingFoundMessage={addLoading ? 'Loading…' : 'No matching classes'}
+                                    onChange={(v) => {
+                                        if (v) {
+                                            onAddStep(v, undefined);
+                                            setAddingStepTo(null);
+                                        }
+                                    }}
+                                />
+                                <ActionIcon size="xs" variant="subtle" color="gray" onClick={() => setAddingStepTo(null)}>
+                                    <X size={12} />
+                                </ActionIcon>
+                            </Group>
+                        </Paper>
                     )}
                 </Box>
                 
@@ -546,7 +598,7 @@ export function PathStepBuilder({
                             nothingFoundMessage={addLoading ? 'Loading…' : 'No matching classes'}
                             onChange={(v) => {
                                 if (v) {
-                                    onAddStep(v, undefined); // No parent for the first step
+                                    onAddStep(v, undefined);
                                     setAddingStepTo(null);
                                 }
                             }}

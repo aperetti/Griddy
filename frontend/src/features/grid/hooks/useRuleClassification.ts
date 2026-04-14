@@ -67,6 +67,9 @@ function buildDisplayProps(config: RuleConfig, ruleId: number, tooltipData?: Rec
         display_min_zoom: config.min_zoom ?? 0.0,
         display_max_zoom: config.max_zoom ?? 24.0,
         display_rotate_to_edge: config.rotate_to_edge ?? false,
+        display_center_icon_enabled: config.center_icon_enabled ?? false,
+        display_center_icon_size: config.center_icon_size ?? 1.0,
+        display_center_icon_rotate: config.center_icon_rotate ?? false,
         display_tooltip: config.tooltip_config ?? undefined,
         display_tooltip_data: tooltipData && Object.keys(tooltipData).length > 0 ? tooltipData : undefined,
         display_line_weight: config.line_weight ?? undefined,
@@ -132,6 +135,18 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
                             if (!res.ok || cancelled) return null;
 
                             const data = await res.json();
+                            // DEBUG: always log for edge geometry rules so we can diagnose mRID matching
+                            if (conditions.geometry_type === 'edge') {
+                                const sampleEdgeIds = rawEdges.slice(0, 5).map(e => e.id);
+                                console.debug('[rule-classify] edge rule query result', {
+                                    ruleId: rule.id,
+                                    returnedCount: data.count,
+                                    returnedMrids: data.mrids?.slice(0, 5),
+                                    activeMridsSample: activeMrids.slice(0, 5),
+                                    sampleEdgeIdsFromTopology: sampleEdgeIds,
+                                    cypher: built.cypher,
+                                });
+                            }
                             const matchingMrids = new Set<string>();
                             const tooltipData = new Map<string, Record<string, any>>();
                             for (const row of (data.rows || []) as any[]) {

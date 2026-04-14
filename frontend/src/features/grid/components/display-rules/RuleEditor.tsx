@@ -130,13 +130,13 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
 
     const targetClass: string = useMemo(() => {
         const conds = parsedConditions;
-        if (conds?.entity_type === 'edge') {
+        if (conds?.geometry_type === 'edge') {
             return conds.path_steps?.[0]?.class || conds.target_class || 'PowerSystemResource';
         }
         return 'ConnectivityNode';
     }, [parsedConditions]);
 
-    const isEdgeRule = parsedConditions?.entity_type === 'edge';
+    const isEdgeRule = parsedConditions?.geometry_type === 'edge';
 
     const handleTest = async () => {
         if (!onTest) return;
@@ -148,7 +148,7 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
             
             // Derive target for testing: Node rules -> ConnectivityNode, Edge rules -> Anchor (first step)
             let testTarget = 'ConnectivityNode';
-            if (conds?.entity_type === 'edge') {
+            if (conds?.geometry_type === 'edge') {
                 testTarget = conds.path_steps?.[0]?.class || conds.target_class || 'PowerSystemResource';
             } else if (conds?.rule_mode !== 'guided') {
                 testTarget = conds?.target_class || 'ConnectivityNode';

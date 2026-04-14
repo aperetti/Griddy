@@ -37,6 +37,12 @@ class RuleConfig(BaseModel):
     max_zoom: float = 24.0
     rotate_to_edge: bool = False
     tooltip_config: Optional[Dict[str, Any]] = None
+    # Edge style fields
+    line_weight: Optional[float] = None
+    line_style: Optional[str] = None  # 'solid' | 'dashed' | 'dotted'
+    center_icon_enabled: bool = False
+    center_icon_size: float = 1.0
+    center_icon_rotate: bool = False
 
 class RuleUpdate(BaseModel):
     name: str

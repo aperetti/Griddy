@@ -223,8 +223,8 @@ function _buildFromPathSteps(
     const matchClause = patternParts.length > 0 ? `MATCH ${patternParts.join(', ')}` : '';
 
     // The anchor node is whose mRID we return. 
-    // Node rules -> cn, Edge rules -> the first node in path_steps (usually 'n')
-    const anchorAlias = entityType === 'node' ? 'cn' : (steps[0]?.id ? aliases.get(steps[0].id) : 'n') || 'n';
+    // Now anchors on the first step of the user-defined path.
+    const anchorAlias = (steps[0]?.id ? aliases.get(steps[0].id) : 'n') || 'n';
 
     // Last non-fixed step is the main target (for inherited-class fallback)
     const lastUserStep = [...steps].reverse().find(s => !s.fixed);
@@ -242,6 +242,17 @@ function _buildFromPathSteps(
 
     const flatConditions = (conditions.conditions as any[]).filter(c => !('logical_op' in c)) as Condition[];
     const whereParts: string[] = [];
+
+    // Geometry type filtering.
+    // In this CIM/n10s graph, both nodes and edges are graphed using Location/PositionPoint.
+    // We assume the root equipment always has a direct relationship to a Location entity.
+    // - node: renders as a point (fewer than 2 distinct position points)
+    // - edge: renders as a polyline (2 or more distinct position points)
+    if (conditions.geometry_type === 'node') {
+        whereParts.push(`EXISTS { MATCH (${anchorAlias})-[:\`PowerSystemResource.Location\`]->(loc:Location) WHERE COUNT { (loc)<-[:\`PositionPoint.Location\`]-(:PositionPoint) } < 2 }`);
+    } else if (conditions.geometry_type === 'edge') {
+        whereParts.push(`EXISTS { MATCH (${anchorAlias})-[:\`PowerSystemResource.Location\`]->(loc:Location) WHERE COUNT { (loc)<-[:\`PositionPoint.Location\`]-(:PositionPoint) } >= 2 }`);
+    }
 
     for (const cond of flatConditions) {
         if (!cond.path || !cond.op) continue;

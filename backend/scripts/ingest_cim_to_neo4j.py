@@ -148,6 +148,23 @@ def _to_container_path(path: Path) -> str:
     return f"/var/lib/neo4j/import/{path.name}"
 
 
+def _create_indexes(session) -> None:
+    """Create performance-critical indexes for display rules and geometry lookups."""
+    try:
+        # Index for equipment lookups by mRID
+        session.run("CREATE INDEX mrid_index IF NOT EXISTS FOR (n:Resource) ON (n.`IdentifiedObject.mRID`)")
+        logger.info("Index created on :Resource(`IdentifiedObject.mRID`)")
+        
+        # Indexes for geographical relationship traversals
+        session.run("CREATE INDEX loc_index IF NOT EXISTS FOR (n:Location) ON (n.uri)")
+        logger.info("Index created on :Location(uri)")
+        
+        session.run("CREATE INDEX pp_index IF NOT EXISTS FOR (n:PositionPoint) ON (n.uri)")
+        logger.info("Index created on :PositionPoint(uri)")
+    except Exception as e:
+        logger.warning("Index creation warning: %s", e)
+
+
 def ingest_cim(xml_path: str, url: str, username: str, password: str,
                database: str, cim_profile: str) -> None:
     path = Path(xml_path)
@@ -159,6 +176,7 @@ def ingest_cim(xml_path: str, url: str, username: str, password: str,
     try:
         with driver.session(database=database) as session:
             _configure_n10s(session)
+            _create_indexes(session)
 
             if path.is_file():
                 _import_file(session, _to_container_path(path))

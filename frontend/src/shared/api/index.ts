@@ -116,6 +116,9 @@ export interface RuleConfig {
     // Edge-specific styling
     line_weight?: number;
     line_style?: 'solid' | 'dashed' | 'dotted';
+    center_icon_enabled?: boolean;
+    center_icon_size?: number;
+    center_icon_rotate?: boolean;
 }
 
 export interface DisplayRule {
@@ -523,6 +526,13 @@ export const fetchCimSchema = async (): Promise<Record<string, any>> => {
 export const fetchConductingEquipmentClasses = async (): Promise<string[]> => {
     const response = await fetch(`${API_BASE}/cim/conducting-equipment`);
     if (!response.ok) throw new Error('Failed to fetch conducting equipment classes');
+    const data = await response.json();
+    return data.classes as string[];
+};
+
+export const fetchRootableClasses = async (): Promise<string[]> => {
+    const response = await fetch(`${API_BASE}/cim/rootable-classes`);
+    if (!response.ok) throw new Error('Failed to fetch rootable classes');
     const data = await response.json();
     return data.classes as string[];
 };

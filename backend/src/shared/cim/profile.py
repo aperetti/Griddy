@@ -198,6 +198,24 @@ class CimProfileService:
                 continue
         return sorted(result)
 
+    def get_rootable_classes(self) -> List[str]:
+        """Return all CIM classes that can have a Location relationship.
+        
+        In the CIM profile, these are typically subclasses of PowerSystemResource.
+        Used to populate the starting class list for display rules.
+        """
+        if not self._initialized:
+            self.initialize()
+        result = []
+        for name, cls_obj in self.classes.items():
+            try:
+                mro_names = {c.__name__ for c in cls_obj.__mro__}
+                if "PowerSystemResource" in mro_names and name != "PowerSystemResource":
+                    result.append(name)
+            except Exception:
+                continue
+        return sorted(result)
+
     def get_static_connections(self, class_name: str) -> List[str]:
         """Returns types that are commonly associated with the given class.
         

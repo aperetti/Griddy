@@ -68,9 +68,9 @@ class TopologyBuilder:
         return len(terminals) == 1
 
     def _is_edge(self, eq_mrid: str) -> bool:
-        """Edge equipment has exactly 2 terminals."""
+        """Edge equipment has at least 2 terminals."""
         terminals = self.idx.eq_terminals.get(eq_mrid, [])
-        return len(terminals) == 2
+        return len(terminals) >= 2
 
     def __init__(self, cim, graph, idx: IndexBuilder):
         self.cim = cim
@@ -120,29 +120,37 @@ class TopologyBuilder:
             node_type = "Bus"
             attached_equipment: list[dict] = []
 
+            # 1. Try ConnectivityNode's own location first
+            cn_coord = idx.eq_coords.get(cn_mrid)
+            if cn_coord and cn_coord != (0.0, 0.0):
+                lat, lon = cn_coord
+                best_priority = -1 # Highest priority
+            else:
+                eq_mrids = idx.cn_equipment.get(cn_mrid, [])
+                best_priority = 99
+
+                for eq_mrid in eq_mrids:
+                    # Terminal-aware coordinate lookup: use first coord for terminal-1 CN,
+                    # last coord for terminal-2 CN, so polyline endpoints map correctly.
+                    term_list = idx.eq_terminals.get(eq_mrid, [])
+                    if len(term_list) >= 2 and term_list[1][1] == cn_mrid:
+                        coord = idx.eq_last_coord.get(eq_mrid)
+                    else:
+                        coord = idx.eq_first_coord.get(eq_mrid)
+
+                    if coord and coord != (0.0, 0.0):
+                        # Prefer point devices (switches, transformers) over polyline equipment
+                        eq_type_check = idx.equipment_types.get(eq_mrid, "")
+                        priority = 0 if eq_type_check in (
+                            "Breaker", "LoadBreakSwitch", "Fuse", "Disconnector", "Recloser",
+                            "PowerTransformer", "Regulator", "TransformerTank"
+                        ) else 1
+                        if priority < best_priority:
+                            lat, lon = coord
+                            best_priority = priority
+
             eq_mrids = idx.cn_equipment.get(cn_mrid, [])
-            best_priority = 99
-
             for eq_mrid in eq_mrids:
-                # Terminal-aware coordinate lookup: use first coord for terminal-1 CN,
-                # last coord for terminal-2 CN, so polyline endpoints map correctly.
-                term_list = idx.eq_terminals.get(eq_mrid, [])
-                if len(term_list) >= 2 and term_list[1][1] == cn_mrid:
-                    coord = idx.eq_last_coord.get(eq_mrid)
-                else:
-                    coord = idx.eq_first_coord.get(eq_mrid)
-
-                if coord and coord != (0.0, 0.0):
-                    # Prefer point devices (switches, transformers) over polyline equipment
-                    eq_type_check = idx.equipment_types.get(eq_mrid, "")
-                    priority = 0 if eq_type_check in (
-                        "Breaker", "LoadBreakSwitch", "Fuse", "Disconnector", "Recloser",
-                        "PowerTransformer", "Regulator", "TransformerTank"
-                    ) else 1
-                    if priority < best_priority:
-                        lat, lon = coord
-                        best_priority = priority
-
                 eq_type = idx.equipment_types.get(eq_mrid)
 
                 # Determine attached vs edge by terminal count
@@ -234,6 +242,12 @@ class TopologyBuilder:
                 "is_single_phase": idx.equipment_is_single_phase.get(eq_mrid, False),
             }
 
+            # Source/target positions from equipment's own location
+            sp = idx.eq_first_coord.get(eq_mrid)
+            tp = idx.eq_last_coord.get(eq_mrid)
+            if sp: edge["sourcePosition"] = [sp[1], sp[0]] # [lon, lat]
+            if tp: edge["targetPosition"] = [tp[1], tp[0]] # [lon, lat]
+
             # Switch/breaker state
             if eq_type in ("Breaker", "LoadBreakSwitch", "Fuse", "Disconnector", "Recloser"):
                 edge["is_open"] = idx.equipment_open.get(eq_mrid, False)
@@ -244,11 +258,13 @@ class TopologyBuilder:
                 if eq_mrid in idx.transformer_tap_changers:
                     edge["ratio_tap_changer"] = idx.transformer_tap_changers[eq_mrid]
 
-            # Line length + polyline waypoints
-            if eq_type == "ACLineSegment" and obj is not None:
-                edge["length_m"] = _safe_float(getattr(obj, "length", None))
+            # Line length + polyline waypoints for ALL equipment types
+            if obj is not None:
+                if eq_type == "ACLineSegment":
+                    edge["length_m"] = _safe_float(getattr(obj, "length", None))
+                
                 polyline = idx.eq_polyline.get(eq_mrid)
-                if polyline and len(polyline) > 2:
+                if polyline and len(polyline) >= 2:
                     # Convert (lat, lon) → [lon, lat] for GeoJSON/deck.gl convention
                     edge["waypoints"] = [[lon, lat] for lat, lon in polyline]
 

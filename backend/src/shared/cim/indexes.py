@@ -106,16 +106,16 @@ class IndexBuilder:
 
         query = """
 MATCH (f:Feeder {uri: $feeder_uri})
-MATCH (eq)-[:`Equipment.EquipmentContainer`]->(f)
-MATCH (eq)-[:`PowerSystemResource.Location`]->(loc:Location)
+MATCH (n)-[:`Equipment.EquipmentContainer`|:`ConnectivityNode.ConnectivityNodeContainer`]->(f)
+MATCH (n)-[:`PowerSystemResource.Location`]->(loc:Location)
 MATCH (pp:PositionPoint)-[:`PositionPoint.Location`]->(loc)
 RETURN
-    REPLACE(eq.uri, 'urn:uuid:', '') AS eq_mrid,
+    REPLACE(n.uri, 'urn:uuid:', '') AS mrid,
     REPLACE(loc.uri, 'urn:uuid:', '') AS loc_mrid,
     pp.`PositionPoint.xPosition` AS x,
     pp.`PositionPoint.yPosition` AS y,
     coalesce(pp.`PositionPoint.sequenceNumber`, 0) AS seq
-ORDER BY eq_mrid, loc_mrid, seq
+ORDER BY mrid, loc_mrid, seq
 """
         try:
             driver = GraphDatabase.driver(neo4j_url, auth=(username, password))
@@ -157,20 +157,20 @@ ORDER BY eq_mrid, loc_mrid, seq
                 lat = (y - min_y) / span_y * 0.1 + 34.0522
                 return lat, lon
 
-        # Group: eq_mrid → loc_mrid → [(seq, latlon), ...]
+        # Group: mrid → loc_mrid → [(seq, latlon), ...]
         eq_loc_points: dict = defaultdict(lambda: defaultdict(list))
         for row in rows:
             x = _safe_float(row["x"])
             y = _safe_float(row["y"])
             seq = int(row["seq"] or 0)
-            eq_mrid = (row["eq_mrid"] or "").upper()
+            mrid = (row["mrid"] or "").upper()
             loc_mrid = (row["loc_mrid"] or "").upper()
-            if x is None or y is None or not eq_mrid:
+            if x is None or y is None or not mrid:
                 continue
             latlon = _to_latlon(x, y)
-            eq_loc_points[eq_mrid][loc_mrid].append((seq, latlon))
+            eq_loc_points[mrid][loc_mrid].append((seq, latlon))
 
-        for eq_mrid, locs in eq_loc_points.items():
+        for mrid, locs in eq_loc_points.items():
             # When multiple Locations exist, prefer the one with fewest PositionPoints.
             # A switch's 1-point Location wins over an adjacent ACLineSegment's 50-point polyline.
             best_loc_mrid, best_points = min(locs.items(), key=lambda kv: len(kv[1]))
@@ -178,10 +178,10 @@ ORDER BY eq_mrid, loc_mrid, seq
             sorted_pts = sorted(best_points, key=lambda p: p[0])  # sort by seq
             coords = [p[1] for p in sorted_pts]                   # [(lat, lon), ...]
 
-            self.eq_first_coord[eq_mrid] = coords[0]
-            self.eq_last_coord[eq_mrid] = coords[-1]
-            self.eq_coords[eq_mrid] = coords[0]   # backward compat
-            self.eq_polyline[eq_mrid] = coords     # full ordered polyline
+            self.eq_first_coord[mrid] = coords[0]
+            self.eq_last_coord[mrid] = coords[-1]
+            self.eq_coords[mrid] = coords[0]   # backward compat
+            self.eq_polyline[mrid] = coords     # full ordered polyline
 
             if best_loc_mrid and best_loc_mrid not in self.location_coords:
                 self.location_coords[best_loc_mrid] = coords[0]

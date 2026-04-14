@@ -20,19 +20,17 @@ export function useClustering({ nodes, edges, viewState, dimensions }: UseCluste
 
     const offsetEdges = useMemo(() => {
         return edges.map(edge => {
-            const sp = nodePositions[edge.source] || edge.sourcePosition;
-            const tp = nodePositions[edge.target] || edge.targetPosition;
-            let updatedWaypoints = edge.waypoints;
-            if (updatedWaypoints && updatedWaypoints.length >= 2) {
-                updatedWaypoints = [...updatedWaypoints];
-                updatedWaypoints[0] = sp;
-                updatedWaypoints[updatedWaypoints.length - 1] = tp;
-            }
+            // Prioritize the edge's own terminal positions (from its Location) over derived node positions
+            const sp = edge.sourcePosition || nodePositions[edge.source];
+            const tp = edge.targetPosition || nodePositions[edge.target];
+            
+            // Preserve exact waypoints from CIM without snapping them to node icons,
+            // as per user requirement to rely solely on location geometries.
             return {
                 ...edge,
                 sourcePosition: sp,
                 targetPosition: tp,
-                waypoints: updatedWaypoints,
+                waypoints: edge.waypoints,
             };
         });
     }, [edges, nodePositions]);
