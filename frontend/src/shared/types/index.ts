@@ -46,6 +46,7 @@ export interface Node {
     display_center_icon_enabled?: boolean;
     display_center_icon_size?: number;
     display_center_icon_rotate?: boolean;
+    display_pixel_offset?: [number, number]; // [x, y] in screen pixels
     display_tooltip?: Record<string, any>;
     display_tooltip_data?: Record<string, any>;
     display_tooltip_overrides?: Array<{ conditions: any; tooltip_config: Record<string, any> }>;
@@ -83,6 +84,7 @@ export interface Edge {
     display_center_icon_enabled?: boolean;
     display_center_icon_size?: number;
     display_center_icon_rotate?: boolean;
+    display_pixel_offset?: [number, number]; // [x, y] in screen pixels
     display_tooltip?: Record<string, any>;
     display_tooltip_data?: Record<string, any>;
     display_tooltip_overrides?: Array<{ conditions: any; tooltip_config: Record<string, any> }>;

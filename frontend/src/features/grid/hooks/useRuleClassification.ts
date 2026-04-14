@@ -229,60 +229,83 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
         return () => { cancelled = true; };
     }, [activeMridsKey, refreshVersion]);
 
-    // Apply rule display props to nodes.  First matching rule wins (sorted by priority DESC).
-    // Matches on either attached_equipment mRIDs (standard rules) or directly on node.id
-    // (rules that use resolve_via_connectivity_node to return ConnectivityNode mRIDs).
+    // Apply rule display props to nodes. Allows multiple matching rules per node by cloning
+    // the node and applying a radial pixel offset.
     const classifiedNodes = useMemo((): Node[] => {
         if (ruleMatches.length === 0) return rawNodes;
 
-        return rawNodes.map(node => {
+        const result: Node[] = [];
+        for (const node of rawNodes) {
             const equipMrids = (node.attached_equipment || []).map(eq => eq.mrid);
-            for (const rule of ruleMatches) {
-                const matchMrid = rule.matchingMrids.has(node.id)
-                    ? node.id
-                    : equipMrids.find(mrid => rule.matchingMrids.has(mrid));
-                if (matchMrid) {
-                    let finalConfig = { ...rule.config };
-                    const activeOverrides: any[] = [];
-                    
-                    // Apply override config if node matches an override
-                    if (rule.overridesData && finalConfig.svg_overrides) {
-                        for (const over of rule.overridesData) {
-                            if (over.mrids.has(matchMrid) && finalConfig.svg_overrides) {
-                                const ovData = finalConfig.svg_overrides[over.index];
-                                activeOverrides.push(ovData);
-                                
-                                finalConfig = {
-                                    ...finalConfig,
-                                    // merge visual properties if override mode is "replace"
-                                    ...(ovData.mode === 'replace' ? {
-                                        visual_type: ovData.visual_type ?? finalConfig.visual_type,
-                                        color_hex: ovData.color_hex ?? finalConfig.color_hex,
-                                        size: ovData.size ?? finalConfig.size,
-                                        icon: (ovData.icon || ovData.svg) ?? finalConfig.icon
-                                    } : {}),
-                                    tooltip_config: ovData.tooltip_config !== undefined ? ovData.tooltip_config : finalConfig.tooltip_config
-                                };
-                                // if override is 'replace', we stop at the first matching override to replace the base
-                                // if 'add', we continue to accumulate overlays
-                                if (ovData.mode === 'replace') break;
-                            }
-                        }
-                    }
+            const matches: Array<{ rule: RuleMatch; mrid: string }> = [];
 
-                    return { 
-                        ...node, 
-                        ...buildDisplayProps(
-                            finalConfig, 
-                            rule.ruleId, 
-                            rule.tooltipData.get(matchMrid),
-                            activeOverrides
-                        ) 
-                    };
+            // 1. Gather all matching rules for this node or its attached equipment
+            for (const rule of ruleMatches) {
+                if (rule.matchingMrids.has(node.id)) {
+                    matches.push({ rule, mrid: node.id });
+                } else {
+                    const matchMrid = equipMrids.find(mrid => rule.matchingMrids.has(mrid));
+                    if (matchMrid) {
+                        matches.push({ rule, mrid: matchMrid });
+                    }
                 }
             }
-            return node;
-        });
+
+            if (matches.length === 0) {
+                result.push(node);
+                continue;
+            }
+
+            // 2. Generate one Node object per matching rule
+            matches.forEach((match, index) => {
+                const { rule, mrid: matchMrid } = match;
+                let finalConfig = { ...rule.config };
+                const activeOverrides: any[] = [];
+                
+                if (rule.overridesData && finalConfig.svg_overrides) {
+                    for (const over of rule.overridesData) {
+                        if (over.mrids.has(matchMrid) && finalConfig.svg_overrides) {
+                            const ovData = finalConfig.svg_overrides[over.index];
+                            activeOverrides.push(ovData);
+                            
+                            finalConfig = {
+                                ...finalConfig,
+                                ...(ovData.mode === 'replace' ? {
+                                    visual_type: ovData.visual_type ?? finalConfig.visual_type,
+                                    color_hex: ovData.color_hex ?? finalConfig.color_hex,
+                                    size: ovData.size ?? finalConfig.size,
+                                    icon: (ovData.icon || ovData.svg) ?? finalConfig.icon
+                                } : {}),
+                                tooltip_config: ovData.tooltip_config !== undefined ? ovData.tooltip_config : finalConfig.tooltip_config
+                            };
+                            if (ovData.mode === 'replace') break;
+                        }
+                    }
+                }
+
+                // Calculate radial offset if there are multiple icons
+                let pixelOffset: [number, number] | undefined = undefined;
+                if (matches.length > 1) {
+                    const radius = 18; // pixels
+                    const angle = (index / matches.length) * 2 * Math.PI - Math.PI / 2;
+                    pixelOffset = [Math.cos(angle) * radius, Math.sin(angle) * radius];
+                }
+
+                result.push({ 
+                    ...node,
+                    // Ensure unique ID for deck.gl if we have multiple icons for one physical node
+                    id: index === 0 ? node.id : `${node.id}_v${index}`,
+                    ...buildDisplayProps(
+                        finalConfig, 
+                        rule.ruleId, 
+                        rule.tooltipData.get(matchMrid),
+                        activeOverrides
+                    ),
+                    display_pixel_offset: pixelOffset,
+                });
+            });
+        }
+        return result;
     }, [rawNodes, ruleMatches]);
 
     // Apply rule display props to edges.  Edge id should equal the CIM equipment mRID.

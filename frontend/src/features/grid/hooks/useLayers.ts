@@ -258,6 +258,7 @@ export function useLayers(p: UseLayersParams) {
                 id: 'grid-nodes-custom',
                 data: p.clusteredData.nodesToRender.filter(n => !!n.display_icon && !!p.spriteMap.mapping[n.display_icon!]),
                 getPosition: (d: Node) => d.position,
+                getPixelOffset: (d: Node) => d.display_pixel_offset || [0, 0],
                 iconAtlas: p.spriteMap.atlasUrl,
                 iconMapping: p.spriteMap.mapping,
                 getIcon: (d: Node) => d.display_icon!,
