@@ -135,7 +135,7 @@ export function useLayers(p: UseLayersParams) {
             },
             onClick: (info: any, event: any) => {
                 const srcEvent = event?.srcEvent as MouseEvent;
-                if (info.object && srcEvent && p.onNodeClick) p.onNodeClick(info.object as Node, srcEvent.shiftKey || srcEvent.ctrlKey);
+                if (info.object && srcEvent && p.onEdgeClick) p.onEdgeClick(info.object as Edge, srcEvent.shiftKey || srcEvent.ctrlKey);
             },
         }),
         new PathLayer({
