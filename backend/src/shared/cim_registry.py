@@ -150,7 +150,7 @@ class CimModelRegistry:
             return None
 
         username = os.getenv("CIMG_USERNAME", "neo4j")
-        password = os.getenv("CIMG_PASSWORD", "password123")
+        password = os.getenv("CIMG_PASSWORD", "")
         database = os.getenv("CIMG_DATABASE", "neo4j")
 
         # Resolve node to its containing Feeder in Neo4j
@@ -260,7 +260,7 @@ class CimModelRegistry:
             return []
 
         username = os.getenv("CIMG_USERNAME", "neo4j")
-        password = os.getenv("CIMG_PASSWORD", "password123")
+        password = os.getenv("CIMG_PASSWORD", "")
         database = os.getenv("CIMG_DATABASE", "neo4j")
 
         # Build label filter clause
