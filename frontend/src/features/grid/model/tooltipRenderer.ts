@@ -241,6 +241,12 @@ export function getTooltipContent(object: any, ctx: TooltipContext): DeckTooltip
     if (edgeRuleHtml) return { html: edgeRuleHtml, style: TOOLTIP_STYLE };
 
     const edgeObj = object as Edge;
+    
+    // Disable default tooltip for switches — only show if a rule specifies one
+    if (edgeObj.edge_type && SWITCH_EDGE_TYPES.has(edgeObj.edge_type)) {
+        return null;
+    }
+
     const phaseData = Array.isArray(edgeObj.phases) ? edgeObj.phases.join('') : (edgeObj.phases || 'ABC');
 
     let details = '';

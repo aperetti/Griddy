@@ -151,18 +151,13 @@ export function ModelSwitcher({ activeModelIds, onModelsChange, onZoomToModel, l
                       </Tooltip>
                     )}
 
-                    <Tooltip
-                      label={isLastActive ? 'At least one feeder must be visible' : ''}
-                      disabled={!isLastActive}
-                    >
-                      <Switch
-                        checked={isActive}
-                        onChange={() => handleToggle(feeder.feeder_id)}
-                        disabled={isLastActive}
-                        size="sm"
-                        color="teal"
-                      />
-                    </Tooltip>
+                    <Switch
+                      checked={isActive}
+                      onChange={() => handleToggle(feeder.feeder_id)}
+                      disabled={isLastActive}
+                      size="sm"
+                      color="teal"
+                    />
                   </Group>
                 </Group>
               </Box>

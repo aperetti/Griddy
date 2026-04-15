@@ -312,10 +312,16 @@ export function useLayers(p: UseLayersParams) {
             }),
             new IconLayer<Edge>({
                 id: 'grid-custom-edge-icons',
-                data: p.offsetEdges.filter(e => 
-                    (e.display_icon || e.display_center_icon_enabled) && 
-                    !!p.spriteMap.mapping[e.display_icon || 'circle']
-                ),
+                data: p.offsetEdges.filter(e => {
+                    const hasIcon = (e.display_icon || e.display_center_icon_enabled) && !!p.spriteMap.mapping[e.display_icon || 'circle'];
+                    if (!hasIcon) return false;
+
+                    const zoom = p.viewState?.zoom ?? 14;
+                    const minZ = e.display_min_zoom ?? 0;
+                    const maxZ = (e.display_max_zoom === 0 || e.display_max_zoom === undefined) ? 24 : e.display_max_zoom;
+                    
+                    return zoom >= minZ && zoom <= maxZ;
+                }),
                 getPosition: (d: Edge) => edgeMidpoint(d),
                 getPixelOffset: (d: Edge) => d.display_pixel_offset || [0, 0],
                 iconAtlas: p.spriteMap.atlasUrl,
