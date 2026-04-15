@@ -117,7 +117,7 @@ export function useLayers(p: UseLayersParams) {
         }),
         new PathLayer({
             id: 'grid-lines-hit-area',
-            data: p.visualEdgePaths,
+            data: p.visualEdgePaths.filter((e, idx, self) => idx === self.findIndex(t => (t.id || `${t.source}-${t.target}`) === (e.id || `${e.source}-${e.target}`))),
             getPath: (d: any) => d.path,
             getColor: () => [0, 0, 0, 0],
             getWidth: () => 15,
@@ -131,12 +131,12 @@ export function useLayers(p: UseLayersParams) {
             },
             onClick: (info: any, event: any) => {
                 const srcEvent = event?.srcEvent as MouseEvent;
-                if (info.object && srcEvent && p.onEdgeClick) p.onEdgeClick(info.object as Edge, srcEvent.shiftKey || srcEvent.ctrlKey);
+                if (info.object && srcEvent && p.onNodeClick) p.onNodeClick(info.object as Node, srcEvent.shiftKey || srcEvent.ctrlKey);
             },
         }),
         new PathLayer({
             id: 'grid-lines',
-            data: p.visualEdgePaths,
+            data: p.visualEdgePaths.filter((e, idx, self) => idx === self.findIndex(t => (t.id || `${t.source}-${t.target}`) === (e.id || `${e.source}-${e.target}`))),
             getPath: (d: any) => d.path,
             getColor: (d: Edge) => {
                 // 1. Voltage-based coloring (Node averages) - Per Unit (PU)
@@ -313,6 +313,7 @@ export function useLayers(p: UseLayersParams) {
                     !!p.spriteMap.mapping[e.display_icon || 'circle']
                 ),
                 getPosition: (d: Edge) => edgeMidpoint(d),
+                getPixelOffset: (d: Edge) => d.display_pixel_offset || [0, 0],
                 iconAtlas: p.spriteMap.atlasUrl,
                 iconMapping: p.spriteMap.mapping,
                 getIcon: (d: Edge) => d.display_icon || 'circle',

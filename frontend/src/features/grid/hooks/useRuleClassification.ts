@@ -308,21 +308,54 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
         return result;
     }, [rawNodes, ruleMatches]);
 
-    // Apply rule display props to edges.  Edge id should equal the CIM equipment mRID.
+    // Apply rule display props to edges. Allows multiple matching rules per edge by cloning
+    // the edge and applying a radial pixel offset for icons.
     const classifiedEdges = useMemo((): Edge[] => {
         if (ruleMatches.length === 0) return rawEdges;
 
-        return rawEdges.map(edge => {
-            if (!edge.id) return edge;
+        const result: Edge[] = [];
+        for (const edge of rawEdges) {
+            if (!edge.id) {
+                result.push(edge);
+                continue;
+            }
+
+            const matches: Array<{ rule: RuleMatch }> = [];
             for (const rule of ruleMatches) {
                 if (rule.matchingMrids.has(edge.id)) {
-                    const { cluster_enabled, cluster_radius, cluster_max_zoom, cluster_min_points, ...edgeProps } =
-                        buildDisplayProps(rule.config, rule.ruleId, rule.tooltipData.get(edge.id), []);
-                    return { ...edge, ...edgeProps };
+                    matches.push({ rule });
                 }
             }
-            return edge;
-        });
+
+            if (matches.length === 0) {
+                result.push(edge);
+                continue;
+            }
+
+            // Generate one Edge object per matching rule
+            matches.forEach((match, index) => {
+                const { rule } = match;
+                const { cluster_enabled, cluster_radius, cluster_max_zoom, cluster_min_points, ...edgeProps } =
+                    buildDisplayProps(rule.config, rule.ruleId, rule.tooltipData.get(edge.id!), []);
+
+                // Calculate radial offset if there are multiple icons
+                let pixelOffset: [number, number] | undefined = undefined;
+                if (matches.length > 1) {
+                    const radius = 15; // pixels (slightly smaller radius for edge midpoints)
+                    const angle = (index / matches.length) * 2 * Math.PI - Math.PI / 2;
+                    pixelOffset = [Math.cos(angle) * radius, Math.sin(angle) * radius];
+                }
+
+                result.push({ 
+                    ...edge,
+                    // Ensure unique ID for deck.gl
+                    id: index === 0 ? edge.id : `${edge.id}_v${index}`,
+                    ...edgeProps,
+                    display_pixel_offset: pixelOffset,
+                });
+            });
+        }
+        return result;
     }, [rawEdges, ruleMatches]);
 
     return { classifiedNodes, classifiedEdges, loading, refresh };
