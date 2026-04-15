@@ -18,6 +18,7 @@ import { buildPathQuery } from '../model/ruleQueryBuilder';
 interface RuleMatch {
     ruleId: number;
     priority: number;
+    entityType: 'node' | 'edge';
     config: RuleConfig;
     matchingMrids: Set<string>;
     /** Per-mRID projected tooltip attribute values (keyed by alias, stripped of `tp_` prefix) */
@@ -207,7 +208,15 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
                                 }));
                             }
 
-                            return { ruleId: rule.id, priority: rule.priority, config: rule.config, matchingMrids, tooltipData, overridesData };
+                            return { 
+                                ruleId: rule.id, 
+                                priority: rule.priority, 
+                                entityType: conditions.entity_type || 'node',
+                                config: rule.config, 
+                                matchingMrids, 
+                                tooltipData, 
+                                overridesData 
+                            };
                         } catch {
                             return null;
                         }
@@ -241,6 +250,9 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
 
             // 1. Gather all matching rules for this node or its attached equipment
             for (const rule of ruleMatches) {
+                // Node rules only match in Node list
+                if (rule.entityType !== 'node') continue;
+
                 if (rule.matchingMrids.has(node.id)) {
                     matches.push({ rule, mrid: node.id });
                 } else {
@@ -322,6 +334,9 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
 
             const matches: Array<{ rule: RuleMatch }> = [];
             for (const rule of ruleMatches) {
+                // Edge rules only match in Edge list
+                if (rule.entityType !== 'edge') continue;
+
                 if (rule.matchingMrids.has(edge.id)) {
                     matches.push({ rule });
                 }
