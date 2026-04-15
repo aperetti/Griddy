@@ -314,6 +314,7 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
                         activeOverrides
                     ),
                     display_pixel_offset: pixelOffset,
+                    is_rule_clone: index > 0,
                 });
             });
         }
@@ -367,6 +368,7 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
                     id: index === 0 ? edge.id : `${edge.id}_v${index}`,
                     ...edgeProps,
                     display_pixel_offset: pixelOffset,
+                    is_rule_clone: index > 0,
                 });
             });
         }

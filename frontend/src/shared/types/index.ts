@@ -53,6 +53,7 @@ export interface Node {
     // Edge-specific display overrides from rules
     display_line_weight?: number;
     display_line_style?: 'solid' | 'dashed' | 'dotted';
+    is_rule_clone?: boolean;
 }
 
 
@@ -91,4 +92,5 @@ export interface Edge {
     display_line_weight?: number;
     display_line_style?: 'solid' | 'dashed' | 'dotted';
     waypoints?: [number, number][];  // ordered polyline points [lon, lat] for ACLineSegments
+    is_rule_clone?: boolean;
 }

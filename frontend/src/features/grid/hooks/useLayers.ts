@@ -104,13 +104,7 @@ export function useLayers(p: UseLayersParams) {
     }, [p.nodeAverages, p.edges, p.nodes]);
 
     const uniqueVisualEdgePaths = useMemo(() => {
-        const seen = new Set<string>();
-        return p.visualEdgePaths.filter(e => {
-            const key = e.id || `${e.source}-${e.target}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
+        return p.visualEdgePaths.filter(e => !e.is_rule_clone);
     }, [p.visualEdgePaths]);
 
     return useMemo(() => [
