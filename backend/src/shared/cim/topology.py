@@ -142,7 +142,7 @@ class TopologyBuilder:
                         # Prefer point devices (switches, transformers) over polyline equipment
                         eq_type_check = idx.equipment_types.get(eq_mrid, "")
                         priority = 0 if eq_type_check in (
-                            "Breaker", "LoadBreakSwitch", "Fuse", "Disconnector", "Recloser",
+                            "Breaker", "LoadBreakSwitch", "Fuse", "Disconnector", "Recloser", "Sectionaliser", "Switch",
                             "PowerTransformer", "Regulator", "TransformerTank"
                         ) else 1
                         if priority < best_priority:
@@ -249,7 +249,7 @@ class TopologyBuilder:
             if tp: edge["targetPosition"] = [tp[1], tp[0]] # [lon, lat]
 
             # Switch/breaker state
-            if eq_type in ("Breaker", "LoadBreakSwitch", "Fuse", "Disconnector", "Recloser"):
+            if eq_type in ("Breaker", "LoadBreakSwitch", "Fuse", "Disconnector", "Recloser", "Sectionaliser", "Switch"):
                 edge["is_open"] = idx.equipment_open.get(eq_mrid, False)
 
             # Transformer kVA

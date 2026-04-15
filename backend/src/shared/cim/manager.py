@@ -139,7 +139,7 @@ class CimModelManager:
         
         # Add the rest of the discovered labels
         for label in sorted(discovered_labels):
-            if label not in load_sequence and label != "Terminal":
+            if label not in load_sequence:
                 load_sequence.append(label)
 
         logger.info("Loading discovered CIM classes into memory...")

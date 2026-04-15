@@ -76,13 +76,26 @@ class IndexBuilder:
     # ------------------------------------------------------------------
 
     def _index_equipment(self):
-        """Populate equipment_index: mRID → (cls_name, obj) for every CIM object."""
+        """Populate equipment_index: mRID → (cls_name, obj) for every CIM object.
+        
+        Prioritizes specific classes over generic base classes (Equipment, ConductingEquipment, Switch).
+        """
+        GENERIC_CLASSES = {"Equipment", "ConductingEquipment", "Switch", "ProtectedSwitch"}
+        
         for cim_cls, objs in self.graph.items():
             cls_name = cim_cls.__name__
             for _eid, obj in objs.items():
                 m = _mrid_str(obj)
-                if m:
-                    self.equipment_index[m] = (cls_name, obj)
+                if not m:
+                    continue
+                
+                # If we already have a specific class indexed, don't overwrite it with a generic one
+                if m in self.equipment_index:
+                    existing_cls = self.equipment_index[m][0]
+                    if cls_name in GENERIC_CLASSES and existing_cls not in GENERIC_CLASSES:
+                        continue
+                
+                self.equipment_index[m] = (cls_name, obj)
 
     def _build_coordinate_index_neo4j(self):
         """Build eq_coords directly from Neo4j.
@@ -239,7 +252,7 @@ ORDER BY mrid, loc_mrid, seq
             self.equipment_types[mrid] = label
 
             # Switch state
-            if any(s in cls_name for s in ["Breaker", "Switch", "Fuse", "Disconnector", "Recloser"]):
+            if any(s in cls_name for s in ["Breaker", "Switch", "Fuse", "Disconnector", "Recloser", "Sectionaliser"]):
                 is_open = getattr(eq, "normalOpen", None) or getattr(eq, "open", None)
                 if is_open is not None:
                     self.equipment_open[mrid] = bool(is_open)

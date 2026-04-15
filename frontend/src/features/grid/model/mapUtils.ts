@@ -1,6 +1,6 @@
 import type { Node, Edge } from '../../../shared/types';
 
-export const SWITCH_EDGE_TYPES = new Set(['Breaker', 'LoadBreakSwitch', 'Fuse', 'Disconnector', 'Recloser']);
+export const SWITCH_EDGE_TYPES = new Set(['Breaker', 'LoadBreakSwitch', 'Fuse', 'Disconnector', 'Recloser', 'Sectionaliser', 'Switch']);
 
 export const getBearing = (start: [number, number], end: [number, number]): number => {
     const startLat = (start[1] * Math.PI) / 180;
