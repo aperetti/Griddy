@@ -37,10 +37,21 @@ export function useClustering({ nodes, edges, viewState, dimensions }: UseCluste
 
     const visualEdgePaths = useMemo(() => {
         const OFFSET = 0.00004;
-        const visibleEdges = offsetEdges.filter(e =>
-            (e.display_min_zoom === undefined || viewState.zoom >= e.display_min_zoom) &&
-            (e.display_max_zoom === undefined || viewState.zoom <= e.display_max_zoom)
-        );
+        const visibleEdges = offsetEdges.filter(e => {
+            // Treat max_zoom: 0 as unset (24)
+            const minZ = e.display_min_zoom ?? 0;
+            const maxZ = (e.display_max_zoom === 0 || e.display_max_zoom === undefined) ? 24 : e.display_max_zoom;
+            
+            // Primary edges should always be visible regardless of zoom? 
+            // Actually, if a rule has zoom constraints, we should respect them,
+            // but if it's the PRIMARY edge match, we should probably fall back to default visibility
+            // instead of disappearing.
+            const inZoom = viewState.zoom >= minZ && viewState.zoom <= maxZ;
+            
+            // If it's a clone (index 1+), strictly respect zoom.
+            // If it's primary, show it if in zoom OR if it's the only copy.
+            return inZoom || !e.is_rule_clone;
+        });
         return visibleEdges.flatMap(e => {
             const rawPath = e.waypoints && e.waypoints.length > 1
                 ? e.waypoints

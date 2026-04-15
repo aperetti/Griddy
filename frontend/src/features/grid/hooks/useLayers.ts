@@ -45,7 +45,7 @@ export function useLayers(p: UseLayersParams) {
     const edgeBearings = useMemo(() => {
         const bearings: Record<string, number> = {};
         p.offsetEdges.forEach(edge => {
-            if (edge.display_rotate_to_edge) {
+            if (edge.display_rotate_to_edge || edge.display_center_icon_rotate) {
                 const key = edge.id || `${edge.source}-${edge.target}`;
                 if (edge.waypoints && edge.waypoints.length >= 2) {
                     bearings[key] = getPathMidpoint(edge.waypoints).bearing;
