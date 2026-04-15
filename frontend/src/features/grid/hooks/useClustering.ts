@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { WebMercatorViewport } from '@deck.gl/core';
 import Supercluster from 'supercluster';
 import type { Node, Edge } from '../../../shared/types';
-import { SWITCH_EDGE_TYPES, edgeMidpoint, getPathMidpoint } from '../model/mapUtils';
+import { SWITCH_EDGE_TYPES, getPathMidpoint } from '../model/mapUtils';
 
 interface UseClusteringParams {
     nodes: Node[];

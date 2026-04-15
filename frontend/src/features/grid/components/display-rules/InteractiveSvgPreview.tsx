@@ -18,12 +18,12 @@ function cleanSvgContent(raw: string): string {
     if (!svg) return '';
 
     const cleanNode = (el: Element) => {
-        const style = (el as HTMLElement).style;
+        const style = (el as SVGElement).style;
         if (style && style.transform) {
             const currentAttr = el.getAttribute('transform') || '';
             const styleAttr = style.transform.replace(/px/g, '');
             el.setAttribute('transform', (currentAttr + ' ' + styleAttr).trim());
-            el.style.transform = '';
+            (el as SVGElement).style.transform = '';
         }
         el.removeAttribute('xmlns');
         Array.from(el.children).forEach(cleanNode);
@@ -33,7 +33,7 @@ function cleanSvgContent(raw: string): string {
     return svg.innerHTML;
 }
 
-function getConsolidatedTransform(el: SVGGraphicsElement, dx: number = 0, dy: number = 0): string {
+function getConsolidatedTransform(el: SVGElement, dx: number = 0, dy: number = 0): string {
     const attrT = el.getAttribute('transform') || '';
     const styleT = el.style.transform || '';
     const baseTransform = (attrT + ' ' + styleT).replace(/px/g, '');
@@ -63,7 +63,7 @@ export const InteractiveSvgPreview: React.FC<InteractiveSvgPreviewProps> = ({
     value, baseSvg, baseColor, onChange 
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
-    const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [, setSelectedId] = useState<string | null>(null);
     const dragStateRef = useRef<{
         startX: number;
         startY: number;

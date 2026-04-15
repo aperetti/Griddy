@@ -127,7 +127,7 @@ function TooltipAttrPicker({
 
 export function PathStepBuilder({
     steps,
-    entityType,
+    entityType: _entityType,
     onAddStep,
     onUpdateStep,
     onUpdateStepAttrs,
@@ -182,12 +182,12 @@ export function PathStepBuilder({
 
     // Parent class for adding a step to a specific parentId
     const addParentClass = addingStepTo ? steps.find(s => s.id === addingStepTo)?.class : null;
-    const { classes: addClasses, loading: addLoading } = useAdjacentClasses(addingStepTo ? addParentClass : null, addingStepTo === 'ROOT');
+    const { classes: addClasses, loading: addLoading } = useAdjacentClasses(addingStepTo ? (addParentClass ?? null) : null, addingStepTo === 'ROOT');
 
     // Parent class for editing step at editingIdx = its parent's class
     const editParentId = editingIdx !== null ? steps[editingIdx].parent_id : null;
     const editParentClass = editParentId ? steps.find(s => s.id === editParentId)?.class : null;
-    const { classes: editClasses, loading: editLoading } = useAdjacentClasses(editingIdx !== null ? editParentClass : null, editingIdx !== null && !editParentId);
+    const { classes: editClasses, loading: editLoading } = useAdjacentClasses(editingIdx !== null ? (editParentClass ?? null) : null, editingIdx !== null && !editParentId);
 
     const addSelectData = useMemo(() => {
         const groups: Record<string, any[]> = {};

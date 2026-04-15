@@ -24,7 +24,7 @@ interface RuleEditorProps {
     onChange: (val: any) => void;
     onSave: () => void;
     onCancel: () => void;
-    onOpenLiveEditor?: (initialValue: string, onSave: (val: string) => void) => void;
+    onOpenLiveEditor?: (initialValue: string, onSave: (val: string) => void, baseSvg?: string, baseColor?: string) => void;
     onTest?: (conditions: any, targetClass: string) => Promise<RuleTestResponse>;
     error?: string | null;
 }

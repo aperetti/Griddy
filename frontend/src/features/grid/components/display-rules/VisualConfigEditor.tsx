@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import {
     Stack, Group, Text, TextInput, NumberInput,
     Select, Grid, Paper, Tooltip, ActionIcon,
-    FileButton, ColorInput, Fieldset, Button
+    FileButton, ColorInput, Fieldset
 } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { 

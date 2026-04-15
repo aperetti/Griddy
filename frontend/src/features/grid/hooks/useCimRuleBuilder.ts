@@ -9,7 +9,6 @@ import type {
     Condition,
     GraphPathStep,
     MatchConditions,
-    PathStep,
 } from '../model/rules';
 
 export function useCimRuleBuilder(value: string | any, onChange: (value: string) => void) {
@@ -33,7 +32,7 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
 
             return migrated;
         } catch (e) {
-            const base = { id: genId(), logical_op: 'AND', conditions: [] };
+            const base: MatchConditions = { id: genId(), logical_op: 'AND', conditions: [] };
             return base;
         }
     };

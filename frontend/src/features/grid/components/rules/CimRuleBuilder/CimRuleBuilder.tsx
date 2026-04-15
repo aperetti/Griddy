@@ -1,13 +1,12 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback } from 'react';
 import {
-    Button, Group, Text, Stack,
-    Box, Tooltip, SegmentedControl, Fieldset,
-    Collapse, Select as MantineSelect, Badge
+    Button, Group, Stack,
+    Box, SegmentedControl, Fieldset,
+    Collapse, Badge
 } from '@mantine/core';
 import { Sparkles, Waypoints } from 'lucide-react';
 import { RuleAssistant } from '../RuleAssistant/RuleAssistant';
 import { useCimRuleBuilder } from '../../../hooks/useCimRuleBuilder';
-import { ConditionGroup } from './ConditionGroup';
 import { PathStepBuilder } from './PathStepBuilder';
 import { CustomCypherEditor } from './CustomCypherEditor';
 import { useSchema } from '../../../context/SchemaContext';
@@ -74,12 +73,8 @@ export const CimRuleBuilder = ({ value, onChange }: CimRuleBuilderProps) => {
         updatePathStep,
         updatePathStepAttrs,
         removePathStep,
-        setTargetClass,
-        setLogicalOp,
-        addCondition,
         addConditionForClass,
         addFilledCondition,
-        addGroup,
         updateCondition,
         removeNodeItem,
     } = useCimRuleBuilder(value, onChange);

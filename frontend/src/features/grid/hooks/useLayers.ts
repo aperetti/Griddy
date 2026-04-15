@@ -2,7 +2,7 @@ import { useMemo, type MutableRefObject } from 'react';
 import { ScatterplotLayer, PathLayer, IconLayer, TextLayer } from '@deck.gl/layers';
 import { PathStyleExtension } from '@deck.gl/extensions';
 import type { Node, Edge } from '../../../shared/types';
-import { getBearing, stringToColor, getVisualType, getNodeColor, getEdgeColor, edgeMidpoint } from '../model/mapUtils';
+import { getBearing, stringToColor, getVisualType, getNodeColor, getEdgeColor, edgeMidpoint, getPathMidpoint } from '../model/mapUtils';
 
 interface UseLayersParams {
     clusteredData: { nodesToRender: Node[]; clusters: any[] };
