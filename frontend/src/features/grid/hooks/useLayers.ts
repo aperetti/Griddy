@@ -103,6 +103,16 @@ export function useLayers(p: UseLayersParams) {
         return result;
     }, [p.nodeAverages, p.edges, p.nodes]);
 
+    const uniqueVisualEdgePaths = useMemo(() => {
+        const seen = new Set<string>();
+        return p.visualEdgePaths.filter(e => {
+            const key = e.id || `${e.source}-${e.target}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }, [p.visualEdgePaths]);
+
     return useMemo(() => [
         new ScatterplotLayer({
             id: 'selection-halo',
@@ -117,7 +127,7 @@ export function useLayers(p: UseLayersParams) {
         }),
         new PathLayer({
             id: 'grid-lines-hit-area',
-            data: p.visualEdgePaths.filter((e, idx, self) => idx === self.findIndex(t => (t.id || `${t.source}-${t.target}`) === (e.id || `${e.source}-${e.target}`))),
+            data: uniqueVisualEdgePaths,
             getPath: (d: any) => d.path,
             getColor: () => [0, 0, 0, 0],
             getWidth: () => 15,
@@ -136,7 +146,7 @@ export function useLayers(p: UseLayersParams) {
         }),
         new PathLayer({
             id: 'grid-lines',
-            data: p.visualEdgePaths.filter((e, idx, self) => idx === self.findIndex(t => (t.id || `${t.source}-${t.target}`) === (e.id || `${e.source}-${e.target}`))),
+            data: uniqueVisualEdgePaths,
             getPath: (d: any) => d.path,
             getColor: (d: Edge) => {
                 // 1. Voltage-based coloring (Node averages) - Per Unit (PU)
