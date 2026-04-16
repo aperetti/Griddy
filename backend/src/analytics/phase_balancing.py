@@ -3,6 +3,12 @@ import duckdb
 from typing import Dict, Any
 from src.shared.graph_engine import GraphEngine
 
+def _safe_parquet_path(path: str) -> str:
+    """Return a SQL-safe parquet directory path or raise ValueError."""
+    if "'" in path or '"' in path:
+        raise ValueError(f"PARQUET_DIR contains invalid characters: {path!r}")
+    return path.replace("\\", "/")
+
 class PhaseBalancingUseCase:
     """Aggregates energy or current across phases to identify imbalances."""
     
@@ -32,6 +38,8 @@ class PhaseBalancingUseCase:
         placeholders = ",".join(["?"] * len(nodes_to_query))
         query_params = nodes_to_query + [start_time, end_time]
         
+        safe_dir = _safe_parquet_path(self.parquet_dir)
+
         # Security enhancement: Use parameterized query to prevent SQL Injection
         query = f"""
             SELECT 
@@ -40,7 +48,7 @@ class PhaseBalancingUseCase:
                 SUM(COALESCE(current_b, 0)) as current_b,
                 SUM(COALESCE(current_c, 0)) as current_c,
                 SUM(COALESCE(kwh_dlv, 0)) as kwh
-            FROM read_parquet('{self.parquet_dir}/*.parquet')
+            FROM read_parquet('{safe_dir}/*.parquet')
             WHERE node_id IN ({placeholders})
               AND timestamp >= CAST(? AS TIMESTAMP)
               AND timestamp <= CAST(? AS TIMESTAMP)
@@ -49,7 +57,7 @@ class PhaseBalancingUseCase:
         
         prefetch_query = f"""
             SELECT COUNT(*) as estimated_rows
-            FROM read_parquet('{self.parquet_dir}/*.parquet')
+            FROM read_parquet('{safe_dir}/*.parquet')
             WHERE node_id IN ({placeholders})
               AND timestamp >= CAST(? AS TIMESTAMP)
               AND timestamp <= CAST(? AS TIMESTAMP)
