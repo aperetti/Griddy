@@ -19,15 +19,19 @@ export function makeNodeRenderer(expandNode: (id: string) => void) {
   }) => {
     const fill = selected ? '#ffd43b' : active ? '#74c0fc' : (node.fill ?? '#4dabf7');
     const labelColor = selected ? '#ffd43b' : '#888888';
-    const nameColor = '#c1c2c5';
+    const nameColor  = selected ? '#ffd43b' : '#c1c2c5';
     const r = size ?? 7;
     const textSize = Math.max(r * 0.55, 2.5);
     const gap = r * 1.6;
+    const isBox = node.data?.shape === 'box';
 
     return (
       <group onDoubleClick={() => expandNode(node.id)}>
         <mesh>
-          <sphereGeometry args={[r, 20, 20]} />
+          {isBox
+            ? <boxGeometry args={[r * 1.8, r * 1.8, r * 1.8]} />
+            : <sphereGeometry args={[r, 20, 20]} />
+          }
           <meshBasicMaterial color={fill} opacity={opacity ?? 1} transparent />
         </mesh>
         <ThreeText
@@ -106,6 +110,7 @@ export function GraphCanvasView({
         selections={selections}
         actives={actives}
         layoutType="forceDirected2d"
+        layoutOverrides={{ linkDistance: 50 }}
         theme={appTheme}
         labelType="none"
         draggable

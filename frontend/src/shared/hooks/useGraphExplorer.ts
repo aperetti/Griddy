@@ -7,7 +7,17 @@ export interface GNode {
     subLabel?: string;
     fill: string;
     size: number;
-    data?: { cimType: string; isRoot?: boolean };
+    /** Fixed positions for force-directed layout — set on Terminal nodes to pin them to their parent CN. */
+    fx?: number;
+    fy?: number;
+    data?: {
+        cimType: string;
+        isRoot?: boolean;
+        isTerminal?: boolean;
+        parentId?: string;
+        /** Node shape — defaults to 'sphere'. Conducting equipment uses 'box'. */
+        shape?: 'sphere' | 'box';
+    };
 }
 
 // Detect UUID-format or long hex strings — show truncated, not the full MRID
@@ -23,21 +33,92 @@ export interface GEdge {
     source: string;
     target: string;
     rel?: string;  // relationship type from Neo4j (e.g. "TransformerTank.PowerTransformer")
+    fill?: string; // edge colour — set to canvas bg to hide terminal edges
 }
 
-function nodeColor(cimType: string, isRoot = false): string {
-    if (isRoot) return '#fcc419';
-    return cimType === 'ConnectivityNode' ? '#40c057' : '#4dabf7';
+// ── CIM package classification ──────────────────────────────────────────────
+
+/** IEC 61970-301 Topology / Connectivity package */
+const TOPOLOGY_TYPES = new Set([
+    'ConnectivityNode', 'Terminal',
+    'TopologicalNode', 'TopologicalIsland',
+    'BusbarSection',
+]);
+
+/** IEC 61970-301 Wires / Core package — ConductingEquipment subclasses */
+const CONDUCTING_EQUIPMENT = new Set([
+    'ACLineSegment', 'DCLineSegment', 'Conductor',
+    'PowerTransformer', 'TransformerTank', 'PowerTransformerEnd',
+    'TapChanger', 'RatioTapChanger', 'PhaseTapChanger',
+    'Breaker', 'LoadBreakSwitch', 'Fuse', 'Disconnector', 'Recloser',
+    'GroundDisconnector', 'Jumper', 'ProtectedSwitch', 'Switch',
+    'EnergyConsumer', 'EnergySource', 'ConformLoad', 'NonConformLoad', 'StationSupply',
+    'LinearShuntCompensator', 'NonlinearShuntCompensator',
+    'StaticVarCompensator', 'SeriesCompensator',
+    'SynchronousMachine', 'AsynchronousMachine', 'ExternalNetworkInjection',
+    'PowerElectronicsConnection', 'BatteryUnit', 'PhotovoltaicUnit',
+    'EquivalentBranch', 'EquivalentInjection', 'EquivalentShunt', 'EquivalentSource',
+    'Ground', 'PetersenCoil', 'RectifierInverter', 'ControlArea',
+    'Substation', 'VoltageLevel', 'Bay',
+]);
+
+/** IEC 61968 Asset Management package */
+function isAssetMgmt(cimType: string): boolean {
+    return (
+        cimType.endsWith('Info') || cimType.endsWith('Test') ||
+        cimType === 'Asset' || cimType.startsWith('Asset') ||
+        cimType === 'Manufacturer' || cimType === 'ProductAssetModel' ||
+        cimType === 'AssetOrganisationRole' || cimType === 'Medium'
+    );
+}
+
+/** Geographic / GML package */
+function isLocation(cimType: string): boolean {
+    return (
+        cimType === 'Location' || cimType === 'PositionPoint' ||
+        cimType === 'CoordinateSystem' || cimType.includes('Location')
+    );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+
+interface NodeStyle {
+    fill: string;
+    size: number;
+    shape?: 'sphere' | 'box';
+}
+
+function getNodeStyle(cimType: string, isRoot: boolean): NodeStyle {
+    if (isRoot) return { fill: '#fcc419', size: 2 };
+
+    if (TOPOLOGY_TYPES.has(cimType)) {
+        return { fill: '#51cf66', size: 2 };
+    }
+    if (CONDUCTING_EQUIPMENT.has(cimType)) {
+        return { fill: '#74c0fc', size: 2, shape: 'box' };
+    }
+    if (isAssetMgmt(cimType)) {
+        return { fill: '#cc5de8', size: 2 };
+    }
+    if (isLocation(cimType)) {
+        return { fill: '#f76707', size: 2 };
+    }
+    return { fill: '#ffd43b', size: 2 };
 }
 
 function makeNode(id: string, name: string, cimType: string, isRoot = false): GNode {
+    const style = getNodeStyle(cimType, isRoot);
     return {
         id,
-        label: cimType || 'Object',        // class shown closest to node circle
-        subLabel: cleanName(name, id),     // human-readable name shown below
-        fill: nodeColor(cimType, isRoot),
-        size: isRoot ? 8 : 5,
-        data: { cimType, isRoot },
+        label: cimType || 'Object',
+        subLabel: cleanName(name, id),
+        fill: style.fill,
+        size: style.size,
+        data: {
+            cimType,
+            isRoot,
+            ...(style.shape && { shape: style.shape }),
+        },
     };
 }
 
@@ -118,6 +199,7 @@ export function useGraphExplorer() {
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
     const [pendingExpansion, setPendingExpansion] = useState<PendingExpansion | null>(null);
+    const [hoveredId, setHoveredId] = useState<string | null>(null);
 
     // Use refs for synchronous guard checks (avoids stale closure issues)
     const expandedRef = useRef(new Set<string>());
@@ -177,7 +259,18 @@ export function useGraphExplorer() {
             const toAdd: GNode[] = [];
             for (const nb of result.neighbors ?? []) {
                 if (!nb.id || existingIds.has(nb.id)) continue;
-                toAdd.push(makeNode(nb.id, nb.name || nb.id, nb.cim_class || nb.type || 'Equipment'));
+                const cimType = nb.cim_class || nb.type || 'Equipment';
+                const isTerminal = cimType === 'Terminal';
+                if (isTerminal) {
+                    toAdd.push({
+                        ...makeNode(nb.id, nb.name || nb.id, 'Terminal'),
+                        size: 2,
+                        fill: '#51cf66',
+                        data: { cimType: 'Terminal', isTerminal: true, parentId: id },
+                    });
+                } else {
+                    toAdd.push(makeNode(nb.id, nb.name || nb.id, cimType));
+                }
             }
             return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
         });
@@ -190,7 +283,8 @@ export function useGraphExplorer() {
                 const fwd = `${id}-${nb.id}`;
                 const rev = `${nb.id}-${id}`;
                 if (!existingIds.has(fwd) && !existingIds.has(rev)) {
-                    toAdd.push({ id: fwd, source: id, target: nb.id, rel: nb.relation });
+                    const isTerminal = (nb.cim_class || nb.type || '') === 'Terminal';
+                    toAdd.push({ id: fwd, source: id, target: nb.id, rel: nb.relation, fill: isTerminal ? '#0d0d0d' : undefined });
                 }
             }
             return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
@@ -224,6 +318,16 @@ export function useGraphExplorer() {
             }
 
             _commitExpansion(id, result);
+
+            // When expanding a ConnectivityNode, also expand each Terminal
+            // neighbour so the equipment they connect to becomes visible.
+            const expandedCimType = result.cim_class || result.type || '';
+            if (expandedCimType === 'ConnectivityNode') {
+                const terminals = (result.neighbors ?? []).filter(
+                    (nb: any) => nb.id && (nb.cim_class || nb.type || '') === 'Terminal'
+                );
+                terminals.forEach((nb: any) => expandNode(nb.id));
+            }
         } finally {
             if (!deferred) setLoading(id, false);
         }
@@ -244,6 +348,66 @@ export function useGraphExplorer() {
             return prev;
         });
     }, []);
+
+    /**
+     * Pin Terminal nodes close to their parent ConnectivityNode by fixing their
+     * force-layout position.  Call this after the simulation has had time to run
+     * (typically ~700 ms) and pass a getter that returns the current x/y of any
+     * node id (read from the reagraph graphology instance).
+     */
+    const pinTerminals = useCallback(
+        (getPos: (id: string) => { x: number; y: number } | null) => {
+            setNodes(prev => {
+                const unpinned = prev.filter(
+                    n => n.data?.isTerminal && n.data?.parentId && n.fx === undefined,
+                );
+                if (!unpinned.length) return prev;
+
+                const byParent = new Map<string, GNode[]>();
+                for (const t of unpinned) {
+                    const pid = t.data!.parentId!;
+                    if (!byParent.has(pid)) byParent.set(pid, []);
+                    byParent.get(pid)!.push(t);
+                }
+
+                const updates = new Map<string, { fx: number; fy: number }>();
+                for (const [parentId, terminals] of byParent) {
+                    const pos = getPos(parentId);
+                    if (!pos) continue;
+                    terminals.forEach((t, i) => {
+                        const angle = (i / terminals.length) * Math.PI * 2;
+                        updates.set(t.id, {
+                            fx: pos.x + Math.cos(angle) * 8,
+                            fy: pos.y + Math.sin(angle) * 8,
+                        });
+                    });
+                }
+
+                if (!updates.size) return prev;
+                return prev.map(n => {
+                    const u = updates.get(n.id);
+                    return u ? { ...n, ...u } : n;
+                });
+            });
+        },
+        [],
+    );
+
+    const hoverNode = useCallback((id: string) => {
+        setHoveredId(id);
+        // Prefetch details on hover so they're ready when needed
+        setDetailCache(prev => {
+            if (prev[id] || detailPendingRef.current.has(id)) return prev;
+            detailPendingRef.current.add(id);
+            fetchDetails(id).then(details => {
+                detailPendingRef.current.delete(id);
+                if (details) setDetailCache(p => ({ ...p, [id]: details }));
+            });
+            return prev;
+        });
+    }, []);
+
+    const unhoverNode = useCallback(() => setHoveredId(null), []);
 
     const reset = useCallback(() => {
         setNodes([]);
@@ -268,11 +432,15 @@ export function useGraphExplorer() {
         expandedIds: expandedRef.current,
         detailCache,
         selectedId,
+        hoveredId,
         loadingIds,
         pendingExpansion,
         loadRoot,
         expandNode,
         selectNode,
+        pinTerminals,
+        hoverNode,
+        unhoverNode,
         reset,
         getPathTo,
     };
