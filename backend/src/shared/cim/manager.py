@@ -369,7 +369,7 @@ class CimModelManager:
 
         url = os.getenv("CIMG_URL")
         username = os.getenv("CIMG_USERNAME", "neo4j")
-        password = os.getenv("CIMG_PASSWORD", "password123")
+        password = os.getenv("CIMG_PASSWORD", "")
         database = os.getenv("CIMG_DATABASE", "neo4j")
 
         # Normalize URI
