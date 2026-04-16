@@ -6,7 +6,8 @@ import { usersRoutes } from './features/users/routes.js';
 import { pluginsRoutes } from './features/plugins/routes.js';
 
 const fastify = Fastify({
-  logger: true
+  logger: true,
+  bodyLimit: 104857600
 });
 
 // Register plugins
