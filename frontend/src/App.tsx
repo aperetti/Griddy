@@ -470,6 +470,7 @@ export default function App() {
           <SystemSidebar
             plugins={allPlugins}
             onRunPlugin={(plugin: PluginDefinition) => plugin.handleRun(pluginCtx)}
+            isMobile={isMobile}
           />
           {/* Selection HUD - positioned under search */}
           <Box style={{
