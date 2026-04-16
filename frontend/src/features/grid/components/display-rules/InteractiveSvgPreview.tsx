@@ -12,10 +12,12 @@ interface InteractiveSvgPreviewProps {
  * Strips px units, redundant namespaces, and style transforms from SVG strings.
  */
 function cleanSvgContent(raw: string): string {
+    if (!raw) return '';
     const parser = new DOMParser();
+    // Wrap in a parent to allow parsing partial content
     const doc = parser.parseFromString(`<svg xmlns="http://www.w3.org/2000/svg">${raw}</svg>`, 'image/svg+xml');
-    const svg = doc.querySelector('svg');
-    if (!svg) return '';
+    const root = doc.querySelector('svg');
+    if (!root) return '';
 
     const cleanNode = (el: Element) => {
         const style = (el as SVGElement).style;
@@ -29,8 +31,16 @@ function cleanSvgContent(raw: string): string {
         Array.from(el.children).forEach(cleanNode);
     };
 
-    Array.from(svg.children).forEach(cleanNode);
-    return svg.innerHTML;
+    // If the user provided a full <svg> tag, parser.parseFromString nested it.
+    // We want the inner content of the user's SVG if it exists.
+    const userSvg = root.querySelector('svg');
+    if (userSvg) {
+        Array.from(userSvg.children).forEach(cleanNode);
+        return userSvg.innerHTML;
+    }
+
+    Array.from(root.children).forEach(cleanNode);
+    return root.innerHTML;
 }
 
 function getConsolidatedTransform(el: SVGElement, dx: number = 0, dy: number = 0): string {

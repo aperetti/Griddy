@@ -286,7 +286,12 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
                                     visual_type: ovData.visual_type ?? finalConfig.visual_type,
                                     color_hex: ovData.color_hex ?? finalConfig.color_hex,
                                     size: ovData.size ?? finalConfig.size,
-                                    icon: (ovData.icon || ovData.svg) ?? finalConfig.icon
+                                    icon: (ovData.icon || ovData.svg) ?? finalConfig.icon,
+                                    line_weight: ovData.line_weight ?? finalConfig.line_weight,
+                                    line_style: ovData.line_style ?? finalConfig.line_style,
+                                    center_icon_enabled: ovData.center_icon_enabled ?? finalConfig.center_icon_enabled,
+                                    center_icon_size: ovData.center_icon_size ?? finalConfig.center_icon_size,
+                                    center_icon_rotate: ovData.center_icon_rotate ?? finalConfig.center_icon_rotate,
                                 } : {}),
                                 tooltip_config: ovData.tooltip_config !== undefined ? ovData.tooltip_config : finalConfig.tooltip_config
                             };
@@ -351,8 +356,38 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
             // Generate one Edge object per matching rule
             matches.forEach((match, index) => {
                 const { rule } = match;
+                const matchMrid = edge.id!;
+                let finalConfig = { ...rule.config };
+                const activeOverrides: any[] = [];
+                
+                if (rule.overridesData && finalConfig.svg_overrides) {
+                    for (const over of rule.overridesData) {
+                        if (over.mrids.has(matchMrid) && finalConfig.svg_overrides) {
+                            const ovData = finalConfig.svg_overrides[over.index];
+                            activeOverrides.push(ovData);
+                            
+                            finalConfig = {
+                                ...finalConfig,
+                                ...(ovData.mode === 'replace' ? {
+                                    visual_type: ovData.visual_type ?? finalConfig.visual_type,
+                                    color_hex: ovData.color_hex ?? finalConfig.color_hex,
+                                    size: ovData.size ?? finalConfig.size,
+                                    icon: (ovData.icon || ovData.svg) ?? finalConfig.icon,
+                                    line_weight: ovData.line_weight ?? finalConfig.line_weight,
+                                    line_style: ovData.line_style ?? finalConfig.line_style,
+                                    center_icon_enabled: ovData.center_icon_enabled ?? finalConfig.center_icon_enabled,
+                                    center_icon_size: ovData.center_icon_size ?? finalConfig.center_icon_size,
+                                    center_icon_rotate: ovData.center_icon_rotate ?? finalConfig.center_icon_rotate,
+                                } : {}),
+                                tooltip_config: ovData.tooltip_config !== undefined ? ovData.tooltip_config : finalConfig.tooltip_config
+                            };
+                            if (ovData.mode === 'replace') break;
+                        }
+                    }
+                }
+
                 const { cluster_enabled, cluster_radius, cluster_max_zoom, cluster_min_points, ...edgeProps } =
-                    buildDisplayProps(rule.config, rule.ruleId, rule.tooltipData.get(edge.id!), []);
+                    buildDisplayProps(finalConfig, rule.ruleId, rule.tooltipData.get(matchMrid), activeOverrides);
 
                 // Calculate radial offset if there are multiple icons
                 let pixelOffset: [number, number] | undefined = undefined;

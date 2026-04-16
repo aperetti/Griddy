@@ -205,7 +205,12 @@ class DisplayRuleEngine:
                                 "color_hex": ov.get('color_hex'),
                                 "size": ov.get('size'),
                                 "visual_type": ov.get('visual_type'),
-                                "mode": ov.get('mode', "add")
+                                "mode": ov.get('mode', "add"),
+                                "line_weight": ov.get('line_weight'),
+                                "line_style": ov.get('line_style'),
+                                "center_icon_enabled": ov.get('center_icon_enabled', False),
+                                "center_icon_size": ov.get('center_icon_size', 1.0),
+                                "center_icon_rotate": ov.get('center_icon_rotate', False),
                             })
 
                     override_hash = self._calculate_override_hash(active_overrides)
@@ -291,7 +296,12 @@ class DisplayRuleEngine:
                                 "color_hex": override.get('color_hex'),
                                 "size": override.get('size'),
                                 "visual_type": override.get('visual_type'),
-                                "mode": override.get('mode', "add")
+                                "mode": override.get('mode', "add"),
+                                "line_weight": override.get('line_weight'),
+                                "line_style": override.get('line_style'),
+                                "center_icon_enabled": override.get('center_icon_enabled', False),
+                                "center_icon_size": override.get('center_icon_size', 1.0),
+                                "center_icon_rotate": override.get('center_icon_rotate', False),
                             })
                     
                     override_hash = self._calculate_override_hash(active_overrides)
@@ -368,13 +378,17 @@ class DisplayRuleEngine:
                         if self._check_conditions(override_cond, objects_to_check):
                             active_overrides.append({
                                 "icon": override.get('icon') or override.get('svg', ""),
-                                "svg": override.get('svg', ""),
+                                "svg": override.get('svg', ""), 
                                 "color_hex": override.get('color_hex'),
                                 "size": override.get('size'),
                                 "visual_type": override.get('visual_type'),
-                                "mode": override.get('mode', "add")
-                            })
-                    
+                                "mode": override.get('mode', "add"),
+                                "line_weight": override.get('line_weight'),
+                                "line_style": override.get('line_style'),
+                                "center_icon_enabled": override.get('center_icon_enabled', False),
+                                "center_icon_size": override.get('center_icon_size', 1.0),
+                                "center_icon_rotate": override.get('center_icon_rotate', False),
+                            })                    
                     override_hash = self._calculate_override_hash(active_overrides)
                     
                     # Helper for casting

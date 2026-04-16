@@ -156,10 +156,10 @@ class CimModelRegistry:
         # Resolve node to its containing Feeder in Neo4j
         # We traverse memberships or direct associations.
         query = """
-        MATCH (n)
+        MATCH (n:Resource)
         WHERE n.`IdentifiedObject.mRID` = $node_id OR n.`IdentifiedObject.name` = $node_id
-        OPTIONAL MATCH (n)-[:MemberOf|`Equipment.EquipmentContainer`*0..8]-(f:Feeder)
-        RETURN f.`IdentifiedObject.name` AS feeder_id, n.`IdentifiedObject.mRID` AS mrid, n.`IdentifiedObject.name` AS name
+        OPTIONAL MATCH (n)-[:`Equipment.EquipmentContainer`|`ConnectivityNode.ConnectivityNodeContainer`|`Terminal.ConductingEquipment`|`Terminal.ConnectivityNode`|`PowerTransformerEnd.PowerTransformer`|`TransformerTank.PowerTransformer`|`TransformerTankEnd.TransformerTank`*0..8]-(f:Feeder)
+        RETURN head(collect(DISTINCT f.`IdentifiedObject.name`)) AS feeder_id, n.`IdentifiedObject.mRID` AS mrid, n.`IdentifiedObject.name` AS name
         LIMIT 1
         """
         
@@ -266,16 +266,21 @@ class CimModelRegistry:
         # Build label filter clause
         label_clause = f"AND any(lbl IN labels(n) WHERE toLower(lbl) CONTAINS toLower('{class_name}'))" if class_name else ""
 
+        # Improved Cypher:
+        # 1. Case-insensitive search using toLower()
+        # 2. Broader relationship types for Feeder navigation
+        # 3. Use collect() and head() to ensure only one feeder is returned per result node
+        # 4. Limit unique results to 50
         cypher = f"""
-        MATCH (n)
-        WHERE n.`IdentifiedObject.name` CONTAINS $query {label_clause}
-        OPTIONAL MATCH (n)-[:`Equipment.EquipmentContainer`|MemberOf*0..6]-(f:Feeder)
+        MATCH (n:Resource)
+        WHERE toLower(n.`IdentifiedObject.name`) CONTAINS toLower($query) {label_clause}
+        WITH n LIMIT 50
+        OPTIONAL MATCH (n)-[:`Equipment.EquipmentContainer`|`ConnectivityNode.ConnectivityNodeContainer`|`Terminal.ConductingEquipment`|`Terminal.ConnectivityNode`|`PowerTransformerEnd.PowerTransformer`|`TransformerTank.PowerTransformer`|`TransformerTankEnd.TransformerTank`*0..6]-(f:Feeder)
         RETURN
             n.`IdentifiedObject.mRID`      AS id,
             n.`IdentifiedObject.name`      AS name,
-            labels(n)[0]                   AS cim_type,
-            f.`IdentifiedObject.name`      AS model_id
-        LIMIT 50
+            [lbl IN labels(n) WHERE lbl <> 'Resource'][0] AS cim_type,
+            head(collect(DISTINCT f.`IdentifiedObject.name`)) AS model_id
         """
 
         try:
@@ -291,7 +296,7 @@ class CimModelRegistry:
                         "type": "equipment",
                         "model_id": mid,
                         "cim_type": record["cim_type"] or "Equipment",
-                        "loaded": mid in self._active_models,
+                        "loaded": mid in self._active_models if mid else False,
                     })
             driver.close()
             return results

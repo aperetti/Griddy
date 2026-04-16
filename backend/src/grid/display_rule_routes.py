@@ -15,10 +15,19 @@ router = APIRouter(prefix="/api/display-rules", tags=["display-rules"])
 # ── Models ────────────────────────────────────────────────────────
 class SVGOverride(BaseModel):
     conditions: Any = {}
+    visual_type: Optional[str] = "Custom"
     svg: Optional[str] = ""
     icon: Optional[str] = None
+    color_hex: Optional[str] = None
+    size: Optional[float] = 1.0
     mode: str = "add"
     tooltip_config: Optional[Dict[str, Any]] = None
+    # Edge style fields
+    line_weight: Optional[float] = None
+    line_style: Optional[str] = None  # 'solid' | 'dashed' | 'dotted'
+    center_icon_enabled: bool = False
+    center_icon_size: float = 1.0
+    center_icon_rotate: bool = False
 
 class RuleConfig(BaseModel):
     visual_type: str = "Custom"

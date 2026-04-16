@@ -110,6 +110,11 @@ export interface RuleConfig {
         size?: number;
         mode: 'replace' | 'add';
         tooltip_config?: any;
+        line_weight?: number;
+        line_style?: 'solid' | 'dashed' | 'dotted';
+        center_icon_enabled?: boolean;
+        center_icon_size?: number;
+        center_icon_rotate?: boolean;
     }>;
     rotate_to_edge?: boolean;
     tooltip_config?: any;

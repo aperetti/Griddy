@@ -1,3 +1,4 @@
+import React, { useMemo } from 'react';
 import { Grid, ColorInput, NumberInput, Select, Fieldset, Stack, Text, Group, Paper, Button, ActionIcon, Tooltip, FileButton, Switch, Divider } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { Upload, Maximize2, Circle as CircleIcon, Square as SquareIcon, Triangle as TriangleIcon, Star } from 'lucide-react';
@@ -6,7 +7,9 @@ import type { RuleConfig } from '../../../../shared/api';
 interface EdgeStyleEditorProps {
     config: Pick<RuleConfig, 'color_hex' | 'line_weight' | 'line_style' | 'icon' | 'center_icon_enabled' | 'center_icon_size' | 'center_icon_rotate'>;
     onChange: (patch: Partial<RuleConfig>) => void;
-    onOpenLiveEditor?: (initialValue: string, onSave: (val: string) => void) => void;
+    onOpenLiveEditor?: (initialValue: string, onSave: (val: string) => void, baseSvg?: string, baseColor?: string) => void;
+    baseSvg?: string;
+    baseColor?: string;
 }
 
 const LINE_STYLE_DATA = [
@@ -22,11 +25,41 @@ const templates = [
     { name: 'Diamond', icon: <Star size={14} />, content: '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">\n  <path d="M50 10 L90 50 L50 90 L10 50 Z" stroke="currentColor" stroke-width="4" fill="none" />\n</svg>' },
 ];
 
-const SVGPreview = ({ content, color }: { content: string; color?: string }) => {
+const SVGPreview = ({ content, color, baseSvg, baseColor }: { content: string; color?: string; baseSvg?: string; baseColor?: string }) => {
     const bg = '#141517';
     const checkerColor = 'rgba(255,255,255,0.03)';
+    
+    const VIEWBOX_SIZE = 100;
 
-    if (!content || !content.includes('<svg')) {
+    const workspaceContent = useMemo(() => {
+        const parser = new DOMParser();
+        
+        // BASE LAYER
+        let baseContent = '';
+        if (baseSvg) {
+            const baseStr = baseSvg.includes('<svg') ? baseSvg : `<svg xmlns="http://www.w3.org/2000/svg">${baseSvg}</svg>`;
+            const doc = parser.parseFromString(baseStr, 'image/svg+xml');
+            const svg = doc.querySelector('svg');
+            if (svg) {
+                const vb = svg.getAttribute('viewBox')?.split(/[,\s]+/).map(parseFloat);
+                let scaleStr = '';
+                if (vb && vb.length === 4) {
+                    const s = Math.min(VIEWBOX_SIZE / vb[2], VIEWBOX_SIZE / vb[3]);
+                    scaleStr = `transform="scale(${s.toFixed(3)})"`;
+                }
+                baseContent = `<g opacity="0.3" fill="${baseColor || 'currentColor'}" stroke="${baseColor || 'none'}" pointer-events="none" ${scaleStr}>${svg.innerHTML}</g>`;
+            }
+        }
+
+        // OVERLAY LAYER
+        const overlayContent = `<g color="${color || '#339AF0'}">${content || ''}</g>`;
+
+        return `${baseContent}${overlayContent}`;
+    }, [content, color, baseSvg, baseColor]);
+
+    const hasContent = !!content || !!baseSvg;
+
+    if (!hasContent) {
         return (
             <Paper
                 withBorder
@@ -42,11 +75,6 @@ const SVGPreview = ({ content, color }: { content: string; color?: string }) => 
                 <Text size="xs" c="dimmed">No icon</Text>
             </Paper>
         );
-    }
-
-    let previewContent = content;
-    if (!content.includes('width=') && !content.includes('height=')) {
-        previewContent = content.replace('<svg', '<svg width="100%" height="100%"');
     }
 
     return (
@@ -74,16 +102,23 @@ const SVGPreview = ({ content, color }: { content: string; color?: string }) => 
                 style={{
                     width: 60,
                     height: 60,
-                    color: color || '#339AF0',
+                    position: 'relative',
                     filter: 'drop-shadow(0 0 2px rgba(0,0,0,0.5))',
                 }}
-                dangerouslySetInnerHTML={{ __html: previewContent }}
-            />
+            >
+                <svg 
+                    viewBox={`0 0 ${VIEWBOX_SIZE} ${VIEWBOX_SIZE}`}
+                    width="100%"
+                    height="100%"
+                    style={{ display: 'block' }}
+                    dangerouslySetInnerHTML={{ __html: workspaceContent }}
+                />
+            </div>
         </Paper>
     );
 };
 
-export function EdgeStyleEditor({ config, onChange, onOpenLiveEditor }: EdgeStyleEditorProps) {
+export function EdgeStyleEditor({ config, onChange, onOpenLiveEditor, baseSvg, baseColor }: EdgeStyleEditorProps) {
     const isMobile = useMediaQuery('(max-width: 768px)');
 
     const handleFileUpload = (file: File | null) => {
@@ -199,7 +234,7 @@ export function EdgeStyleEditor({ config, onChange, onOpenLiveEditor }: EdgeStyl
                                             <ActionIcon
                                                 variant="light"
                                                 size={isMobile ? 'md' : 'lg'}
-                                                onClick={() => onOpenLiveEditor(config.icon || '', (val) => onChange({ icon: val }))}
+                                                onClick={() => onOpenLiveEditor(config.icon || '', (val) => onChange({ icon: val }), baseSvg, baseColor)}
                                             >
                                                 <Maximize2 size={isMobile ? 14 : 18} />
                                             </ActionIcon>
@@ -223,7 +258,7 @@ export function EdgeStyleEditor({ config, onChange, onOpenLiveEditor }: EdgeStyl
                             </Stack>
                         </Grid.Col>
                         <Grid.Col span={{ base: 12, md: 4 }}>
-                            <SVGPreview content={config.icon || ''} color={config.color_hex} />
+                            <SVGPreview content={config.icon || ''} color={config.color_hex} baseSvg={baseSvg} baseColor={baseColor} />
                         </Grid.Col>
                     </Grid>
                 </Stack>
