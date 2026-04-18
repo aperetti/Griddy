@@ -1,6 +1,6 @@
 """Core graph engine interface."""
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Dict
 from src.grid.graph_node import GraphNode
 
 class GraphEngine(ABC):
@@ -22,6 +22,11 @@ class GraphEngine(ABC):
         pass
 
     @abstractmethod
-    def get_node_phases(self, node_ids: List[str]) -> dict[str, List[str]]:
+    def get_all_edges(self) -> List[dict]:
+        """Returns a list of all edges in the graph as dictionaries."""
+        pass
+
+    @abstractmethod
+    def get_node_phases(self, node_ids: List[str]) -> Dict[str, List[str]]:
         """Returns a mapping of node IDs to their phase lists."""
         pass

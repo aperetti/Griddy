@@ -171,14 +171,9 @@ class PluginAnalyticsService:
         return graph_engine
 
     @property
-    def _db_path(self) -> str:
-        from src.shared.database_setup import DB_PATH
-        return DB_PATH
-
-    @property
-    def _parquet_dir(self) -> str:
-        from src.shared.database_setup import PARQUET_DIR
-        return PARQUET_DIR
+    def _meter_repo(self):
+        from src.shared.dependencies import meter_data_repo
+        return meter_data_repo
 
     def get_consumption(
         self,
@@ -189,7 +184,7 @@ class PluginAnalyticsService:
         """Aggregate consumption time series for the given nodes."""
         self._check("analytics:consumption")
         from src.analytics.calculate_consumption import CalculateAggregateConsumptionUseCase
-        uc = CalculateAggregateConsumptionUseCase(self._engine, self._db_path, self._parquet_dir)
+        uc = CalculateAggregateConsumptionUseCase(self._engine, self._meter_repo)
         return uc.execute(node_ids, start_time, end_time)
 
     def get_voltage_distribution(
@@ -202,7 +197,7 @@ class PluginAnalyticsService:
         """Voltage distribution (KDE + timeseries) for the given nodes."""
         self._check("analytics:voltage")
         from src.analytics.calculate_voltage import CalculateVoltageDistributionUseCase
-        uc = CalculateVoltageDistributionUseCase(self._engine, self._db_path, self._parquet_dir)
+        uc = CalculateVoltageDistributionUseCase(self._engine, self._meter_repo)
         return uc.execute(node_ids, start_time, end_time, degrees=degrees)
 
     def estimate_consumption(
@@ -214,7 +209,7 @@ class PluginAnalyticsService:
         """Estimate row count before running a full consumption query."""
         self._check("analytics:consumption")
         from src.analytics.calculate_consumption import CalculateAggregateConsumptionUseCase
-        uc = CalculateAggregateConsumptionUseCase(self._engine, self._db_path, self._parquet_dir)
+        uc = CalculateAggregateConsumptionUseCase(self._engine, self._meter_repo)
         return uc.estimate(node_ids, start_time, end_time)
 
     def estimate_voltage(
@@ -227,7 +222,7 @@ class PluginAnalyticsService:
         """Estimate row count before running a full voltage distribution query."""
         self._check("analytics:voltage")
         from src.analytics.calculate_voltage import CalculateVoltageDistributionUseCase
-        uc = CalculateVoltageDistributionUseCase(self._engine, self._db_path, self._parquet_dir)
+        uc = CalculateVoltageDistributionUseCase(self._engine, self._meter_repo)
         return uc.estimate(node_ids, start_time, end_time, degrees=degrees)
 
     def get_voltage_map(
@@ -240,7 +235,7 @@ class PluginAnalyticsService:
         """Calculate aggregated voltage values for map-wide visualization."""
         self._check("analytics:voltage")
         from src.analytics.map_voltage import MapVoltageUseCase
-        uc = MapVoltageUseCase(self._engine, self._db_path, self._parquet_dir)
+        uc = MapVoltageUseCase(self._engine, self._meter_repo)
         return uc.execute(start_time, end_time, agg, start_node_id=start_node_id)
 
     def estimate_voltage_map(
@@ -253,7 +248,7 @@ class PluginAnalyticsService:
         """Estimate row count before running a full voltage map query."""
         self._check("analytics:voltage")
         from src.analytics.map_voltage import MapVoltageUseCase
-        uc = MapVoltageUseCase(self._engine, self._db_path, self._parquet_dir)
+        uc = MapVoltageUseCase(self._engine, self._meter_repo)
         return uc.estimate(start_time, end_time, agg, start_node_id=start_node_id)
 
     def get_edge_load_map(
@@ -266,7 +261,7 @@ class PluginAnalyticsService:
         """Calculate aggregated edge load for map-wide visualization."""
         self._check("analytics:load")
         from src.analytics.map_edge_load import MapEdgeLoadUseCase
-        uc = MapEdgeLoadUseCase(self._engine, self._db_path, self._parquet_dir)
+        uc = MapEdgeLoadUseCase(self._engine, self._meter_repo)
         return uc.execute(start_time, end_time, agg, start_node_id=start_node_id)
 
     def estimate_edge_load_map(
@@ -279,7 +274,7 @@ class PluginAnalyticsService:
         """Estimate row count before running a full edge load query."""
         self._check("analytics:load")
         from src.analytics.map_edge_load import MapEdgeLoadUseCase
-        uc = MapEdgeLoadUseCase(self._engine, self._db_path, self._parquet_dir)
+        uc = MapEdgeLoadUseCase(self._engine, self._meter_repo)
         return uc.estimate(start_time, end_time, agg, start_node_id=start_node_id)
 
 

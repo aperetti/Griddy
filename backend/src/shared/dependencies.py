@@ -8,6 +8,8 @@ from src.shared.cim_registry import CimModelRegistry
 from src.shared.sqlite_repository import AlarmRepository
 from src.grid.topology_engine import TopologyEngine
 from src.grid.display_rule_engine import DisplayRuleEngine
+from src.shared.meter_data_repository import IMeterDataRepository
+from src.shared.duckdb_meter_data_repository import DuckDBMeterDataRepository
 from src.shared.database_setup import DB_PATH, ADMIN_SQLITE_PATH, PARQUET_DIR
 
 # ── Global Instances ─────────────────────────────────────────────
@@ -22,6 +24,9 @@ display_engine = DisplayRuleEngine(ADMIN_SQLITE_PATH)
 
 # Topology graph engine (dependency-free BFS over pre-computed CIM edges)
 graph_engine = TopologyEngine()
+
+# Meter data repository for analytics
+meter_data_repo: IMeterDataRepository = DuckDBMeterDataRepository(DB_PATH, PARQUET_DIR)
 
 # Mutable state for graph tracking
 _graph_built_for: set[str] = set()

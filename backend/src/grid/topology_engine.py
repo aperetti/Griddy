@@ -139,6 +139,18 @@ class TopologyEngine(GraphEngine):
                 result.append(nb)
         return result
 
+    def get_all_edges(self) -> List[dict]:
+        """Return all edges in the graph as dictionaries."""
+        all_edges = []
+        for src, edges in self._forward_adj.items():
+            for dst, eid in edges:
+                all_edges.append({
+                    "from_node_id": src,
+                    "to_node_id": dst,
+                    "edge_id": eid
+                })
+        return all_edges
+
     def get_node_phases(self, node_ids: List[str]) -> Dict[str, List[str]]:
         return {nid: self._nodes[nid].phases for nid in node_ids if nid in self._nodes}
 

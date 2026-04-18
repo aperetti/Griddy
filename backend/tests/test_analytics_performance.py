@@ -6,6 +6,7 @@ import numpy as np
 from datetime import datetime, timedelta
 from src.analytics.calculate_consumption import CalculateAggregateConsumptionUseCase
 from src.grid.networkx_engine import NetworkXEngine
+from src.shared.duckdb_meter_data_repository import DuckDBMeterDataRepository
 
 def setup_test_data(parquet_dir, num_nodes=100, readings_per_node=1000):
     os.makedirs(parquet_dir, exist_ok=True)
@@ -54,6 +55,9 @@ class MockGraphEngine(NetworkXEngine):
     def find_downstream(self, node_id, max_depth=None):
         return [node_id], []
 
+    def get_all_edges(self):
+        return []
+
 def test_performance():
     test_dir = "./tmp/perf_test"
     num_nodes = 50
@@ -63,7 +67,8 @@ def test_performance():
     node_ids, db_path, total = setup_test_data(test_dir, num_nodes, readings_per_node)
     
     graph_engine = MockGraphEngine()
-    use_case = CalculateAggregateConsumptionUseCase(graph_engine, db_path, test_dir)
+    meter_repo = DuckDBMeterDataRepository(db_path, test_dir)
+    use_case = CalculateAggregateConsumptionUseCase(graph_engine, meter_repo)
     
     start_time = "2024-01-01T00:00:00"
     end_time = "2024-02-01T00:00:00"

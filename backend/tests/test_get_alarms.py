@@ -14,6 +14,9 @@ class TestGetActiveAlarmsUseCase(unittest.TestCase):
         self.mock_repo = MagicMock(spec=IAlarmRepository)
         self.mock_graph = MagicMock(spec=GraphEngine)
 
+        # Default mock graph behavior
+        self.mock_graph.find_downstream.return_value = ([], [])
+
         # Instantiate the use case with mocks
         self.use_case = GetActiveAlarmsUseCase(
             repository=self.mock_repo,
@@ -79,7 +82,7 @@ class TestGetActiveAlarmsUseCase(unittest.TestCase):
     def test_get_alarms_with_downstream(self):
         """Test fetching alarms with downstream nodes included."""
         # Setup mock graph to return downstream nodes
-        self.mock_graph.find_downstream.return_value = ["NODE-2", "NODE-4"]
+        self.mock_graph.find_downstream.return_value = (["NODE-2", "NODE-4"], [])
 
         # Execute
         result = self.use_case.execute(node_id="NODE-1", include_downstream=True)
@@ -100,7 +103,7 @@ class TestGetActiveAlarmsUseCase(unittest.TestCase):
         """Test that node IDs are correctly deduplicated."""
         # Setup mock graph to return downstream nodes that include duplicates
         # e.g., if there are multiple paths or graph cycles
-        self.mock_graph.find_downstream.return_value = ["NODE-1", "NODE-2", "NODE-2"]
+        self.mock_graph.find_downstream.return_value = (["NODE-1", "NODE-2", "NODE-2"], [])
 
         # Execute
         result = self.use_case.execute(node_id="NODE-1", include_downstream=True)
@@ -115,7 +118,7 @@ class TestGetActiveAlarmsUseCase(unittest.TestCase):
     def test_get_alarms_filtering_empty_results(self):
         """Test filtering when no active alarms match target nodes."""
         # Setup mock graph
-        self.mock_graph.find_downstream.return_value = ["NODE-4"]
+        self.mock_graph.find_downstream.return_value = (["NODE-4"], [])
 
         # Execute (no alarms for NODE-99 or NODE-4)
         result = self.use_case.execute(node_id="NODE-99", include_downstream=True)

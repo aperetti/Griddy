@@ -118,9 +118,7 @@ export default function App() {
   }, [topology.nodes, topology.edges, topology.topologyLoading, navTrigger]);
 
   useEffect(() => {
-    if (analytics.globalConfig.endDateType === 'now') {
-      setDateRange(calculateRange(analytics.globalConfig));
-    }
+    setDateRange(calculateRange(analytics.globalConfig));
   }, [analytics.globalConfig]);
 
   const [pluginRegistry, setPluginRegistry] = useState<Map<string, PluginDefinition>>(new Map());
