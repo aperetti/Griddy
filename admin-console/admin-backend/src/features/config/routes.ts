@@ -21,12 +21,27 @@ interface DisplayRule {
   config: RuleConfig;
 }
 
+const MAIN_BACKEND_URL = process.env.MAIN_BACKEND_URL || 'http://localhost:8000';
+
 export async function configRoutes(fastify: FastifyInstance) {
   
   // ── Config Overrides (Legacy/Shared) ───────────────────────────
   fastify.get('/overrides', async () => {
     const db = await getDb();
     return db.all('SELECT * FROM config_overrides');
+  });
+
+  fastify.get('/ami-adapters', async (_request, reply) => {
+    try {
+      const response = await fetch(`${MAIN_BACKEND_URL}/api/cim/ami-adapters`);
+      if (!response.ok) {
+        return reply.status(502).send({ error: 'Failed to reach main backend' });
+      }
+      return response.json();
+    } catch (err) {
+      fastify.log.error(err);
+      return reply.status(502).send({ error: 'Main backend unreachable' });
+    }
   });
 
   fastify.post('/overrides', async (request, reply) => {

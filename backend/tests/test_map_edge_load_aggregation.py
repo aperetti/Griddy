@@ -5,7 +5,7 @@ import duckdb
 from unittest.mock import MagicMock
 import networkx as nx
 from src.analytics.map_edge_load import MapEdgeLoadUseCase
-from src.shared.duckdb_meter_data_repository import DuckDBMeterDataRepository
+from src.shared.meter_adapters.duckdb_adapter import DuckDBMeterDataRepository
 
 @pytest.fixture
 def mock_graph_engine():

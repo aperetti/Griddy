@@ -9,7 +9,7 @@ from src.shared.sqlite_repository import AlarmRepository
 from src.grid.topology_engine import TopologyEngine
 from src.grid.display_rule_engine import DisplayRuleEngine
 from src.shared.meter_data_repository import IMeterDataRepository
-from src.shared.duckdb_meter_data_repository import DuckDBMeterDataRepository
+from src.shared.meter_adapters.duckdb_adapter import DuckDBMeterDataRepository
 from src.shared.database_setup import DB_PATH, ADMIN_SQLITE_PATH, PARQUET_DIR
 
 # ── Global Instances ─────────────────────────────────────────────
@@ -22,11 +22,56 @@ alarm_repo = AlarmRepository(ADMIN_SQLITE_PATH)
 # Display rule engine for node classification
 display_engine = DisplayRuleEngine(ADMIN_SQLITE_PATH)
 
-# Topology graph engine (dependency-free BFS over pre-computed CIM edges)
+# topology graph engine (dependency-free BFS over pre-computed CIM edges)
 graph_engine = TopologyEngine()
 
-# Meter data repository for analytics
-meter_data_repo: IMeterDataRepository = DuckDBMeterDataRepository(DB_PATH, PARQUET_DIR)
+class MeterDataRepositoryProxy(IMeterDataRepository):
+    """Proxy to dynamically resolve the active AMI adapter."""
+    
+    def __init__(self, default_db_path: str, default_parquet_dir: str):
+        self.default_db_path = default_db_path
+        self.default_parquet_dir = default_parquet_dir
+        self._duckdb_repo = DuckDBMeterDataRepository(default_db_path, default_parquet_dir)
+        # In the future, other repositories (Snowflake, Databricks) can be initialized here
+        
+    def _get_active_repo(self) -> IMeterDataRepository:
+        import os
+        adapter = os.getenv("ami_adapter", "duckdb").lower()
+        # Fallback to DuckDB if adapter is unrecognized or set to duckdb
+        if adapter == "duckdb":
+            return self._duckdb_repo
+        # Other adapters would be returned here
+        return self._duckdb_repo
+
+    def estimate_aggregate_consumption(self, node_ids: list[str], start_time: str, end_time: str):
+        return self._get_active_repo().estimate_aggregate_consumption(node_ids, start_time, end_time)
+
+    def get_aggregate_consumption(self, node_ids: list[str], node_weights: dict[str, dict[str, float]], start_time: str, end_time: str):
+        return self._get_active_repo().get_aggregate_consumption(node_ids, node_weights, start_time, end_time)
+
+    def estimate_voltage_distribution(self, node_ids: list[str], start_time: str, end_time: str):
+        return self._get_active_repo().estimate_voltage_distribution(node_ids, start_time, end_time)
+
+    def get_voltage_distribution(self, node_ids: list[str], start_time: str, end_time: str):
+        return self._get_active_repo().get_voltage_distribution(node_ids, start_time, end_time)
+
+    def estimate_map_voltage(self, start_time: str, end_time: str, agg: str, node_filter: Optional[list[str]] = None):
+        return self._get_active_repo().estimate_map_voltage(start_time, end_time, agg, node_filter)
+
+    def get_map_voltage(self, start_time: str, end_time: str, agg: str, node_filter: Optional[list[str]] = None):
+        return self._get_active_repo().get_map_voltage(start_time, end_time, agg, node_filter)
+
+    def estimate_map_edge_load(self, start_time: str, end_time: str, agg: str, node_filter: Optional[list[str]] = None):
+        return self._get_active_repo().estimate_map_edge_load(start_time, end_time, agg, node_filter)
+
+    def get_map_edge_load(self, start_time: str, end_time: str, agg: str, node_filter: Optional[list[str]] = None):
+        return self._get_active_repo().get_map_edge_load(start_time, end_time, agg, node_filter)
+
+    def get_phase_balancing(self, node_ids: list[str], start_time: str, end_time: str):
+        return self._get_active_repo().get_phase_balancing(node_ids, start_time, end_time)
+
+# Meter data repository for analytics (uses proxy to support runtime adapter switching)
+meter_data_repo: IMeterDataRepository = MeterDataRepositoryProxy(DB_PATH, PARQUET_DIR)
 
 # Mutable state for graph tracking
 _graph_built_for: set[str] = set()

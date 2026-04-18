@@ -1,6 +1,6 @@
 from unittest.mock import patch, MagicMock
 from src.analytics.calculate_voltage import CalculateVoltageDistributionUseCase
-from src.shared.duckdb_meter_data_repository import DuckDBMeterDataRepository
+from src.shared.meter_adapters.duckdb_adapter import DuckDBMeterDataRepository
 
 def test_voltage_distribution_error():
     """Test voltage distribution error path by mocking a database failure."""

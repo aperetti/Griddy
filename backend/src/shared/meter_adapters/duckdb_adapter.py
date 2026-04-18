@@ -4,7 +4,7 @@ import logging
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
-from .meter_data_repository import (
+from src.shared.meter_data_repository import (
     IMeterDataRepository, 
     EstimateResult, 
     ConsumptionTimeseriesPoint, 
@@ -23,6 +23,9 @@ def _safe_parquet_path(path: str) -> str:
 
 class DuckDBMeterDataRepository(IMeterDataRepository):
     """DuckDB implementation of the meter data repository."""
+    
+    name = "duckdb"
+    label = "DuckDB (Local Parquet)"
 
     def __init__(self, db_path: str, parquet_dir: str):
         self.db_path = db_path

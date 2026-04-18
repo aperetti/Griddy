@@ -250,6 +250,13 @@ async def get_class_connections(class_name: str):
     }
 
 
+@router.get("/ami-adapters")
+async def get_ami_adapters():
+    """List all installed AMI data adapters."""
+    from src.shared.meter_adapters.registry import discover_adapters
+    return await run_in_threadpool(discover_adapters)
+
+
 # ── Client-side Cypher execution ──────────────────────────────────
 
 # Pattern of write keywords that must not appear in read-only queries.

@@ -6,7 +6,7 @@ import numpy as np
 from datetime import datetime, timedelta
 from src.analytics.calculate_consumption import CalculateAggregateConsumptionUseCase
 from src.grid.networkx_engine import NetworkXEngine
-from src.shared.duckdb_meter_data_repository import DuckDBMeterDataRepository
+from src.shared.meter_adapters.duckdb_adapter import DuckDBMeterDataRepository
 
 def setup_test_data(parquet_dir, num_nodes=100, readings_per_node=1000):
     os.makedirs(parquet_dir, exist_ok=True)

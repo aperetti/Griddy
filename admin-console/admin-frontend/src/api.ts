@@ -19,6 +19,8 @@ export const dataApi = {
 export const configApi = {
   get: () => api.get('/display-rules/overrides').then(res => res.data),
   set: (key: string, value: string) => api.post('/display-rules/overrides', { key, value }).then(res => res.data),
+  getAmiAdapters: (): Promise<{ name: string; label: string }[]> =>
+    api.get('/display-rules/ami-adapters').then(res => res.data),
   
   // ── Display Profiles ───────────────────────────────────────────
   getDisplayProfiles: (): Promise<any[]> => 

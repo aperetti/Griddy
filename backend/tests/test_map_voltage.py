@@ -1,7 +1,7 @@
 import pytest
 from src.analytics.map_voltage import MapVoltageUseCase
 from src.grid.networkx_engine import NetworkXEngine
-from src.shared.duckdb_meter_data_repository import DuckDBMeterDataRepository
+from src.shared.meter_adapters.duckdb_adapter import DuckDBMeterDataRepository
 
 def test_map_voltage_error_path():
     """Test the error path for map voltage use case when DB connection fails."""
