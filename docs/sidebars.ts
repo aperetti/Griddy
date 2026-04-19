@@ -20,6 +20,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'overview',
         'architecture',
+        'user-interface',
       ],
     },
     {
@@ -31,6 +32,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'getting-started/installation',
         'getting-started/data-setup',
+        'getting-started/enterprise-integration',
       ],
     },
     {
@@ -43,6 +45,7 @@ const sidebars: SidebarsConfig = {
         'sdk/index',
         'sdk/installation',
         'sdk/api-reference',
+        'sdk/ami-adapters',
       ],
     },
     {

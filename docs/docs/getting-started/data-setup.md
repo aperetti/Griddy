@@ -49,29 +49,38 @@ If you prefer to load a model manually without the automated service, place it i
 To trigger the ingestion manually, run the following command from the `backend/` directory:
 
 ```bash
-# Ingest the CIM graph into DuckDB
-python scripts/ingest_cim_graph.py
+# Ingest the CIM graph into Neo4j
+python scripts/ingest_cim_to_neo4j.py
 ```
 
-This script extracts the topology, device metadata, and connectivity from the XML model and populates the `grid_data_cim.duckdb` file.
+This script extracts the topology, device metadata, and connectivity from the XML model and populates the property graph.
 
 ## 3. Generating Synthetic Readings
 
-If you don't have real AMI readings, you can generate synthetic ones based on the grid model and a weather profile:
+If you don't have real AMI readings, you can generate synthetic ones based on the grid model and a weather profile. By default, Griddy uses the **DuckDB Adapter** to query these readings from local Parquet files.
 
 ```bash
 # Ingest weather data (EPW format)
 python scripts/ingest_weather.py
 
 # Generate time-series readings for all meters
-python scripts/generate_cim_readings.py
+python scripts/generate_all.py
 ```
 
-Generating readings for the full 8500-node model can take several minutes. The output is stored in **Parquet format** in the `backend/data/cim_readings/` directory to ensure high-performance analytical queries.
+Generating readings for the full model can take several minutes. The output is stored in **Parquet format** in the `backend/data/cim_readings/` directory.
 
-## 4. Troubleshooting
+## 4. Configuring the AMI Adapter
+
+Griddy supports multiple data sources for meter readings. You can switch the active adapter through the **Admin Console**:
+
+1.  Navigate to the **Configuration** tab.
+2.  Locate the **AMI Data Source** panel.
+3.  Select your desired adapter (e.g., `DuckDB`, `Snowflake`, `Databricks`).
+4.  The system will dynamically switch the analytical engine without requiring a restart.
+
+## 5. Troubleshooting
 
 If your map appears empty:
-1.  Check that the `grid_topology.sqlite` and `grid_data_cim.duckdb` files exist in the `backend/data/` or `backend/` root.
-2.  Verify the `DB_PATH` and `PARQUET_DIR` environment variables match your file locations.
-3.  Restart the backend service to refresh the in-memory graph cache.
+1.  Check that the `admin.sqlite` and `grid_data_cim.duckdb` (if using DuckDB) files exist in the `/data` or `backend/` root.
+2.  Verify the `DB_PATH`, `PARQUET_DIR`, and `ami_adapter` configuration settings in the Admin Console.
+3.  Ensure the correct models are enabled in the **Layers** panel of the main map.

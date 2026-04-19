@@ -21,6 +21,7 @@ docker compose up --build
 
 Once the containers are running, you can access the services:
 - **Web Dashboard**: [http://localhost:8080](http://localhost:8080)
+- **Admin Console**: [http://localhost:8091](http://localhost:8091)
 - **API Swagger**: [http://localhost:8000/docs](http://localhost:8000/docs)
 - **Neo4j Browser**: [http://localhost:7474](http://localhost:7474)
 - **Documentation**: [http://localhost:3002](http://localhost:3002)

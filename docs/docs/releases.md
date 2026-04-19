@@ -3,7 +3,22 @@ title: Release Updates
 ---
 # Release Updates
 
-This page tracks the evolution of the Griddy project. We are currently in **Alpha** (v0.2.6-alpha).
+This page tracks the evolution of the Griddy project. We are currently in **Alpha** (v0.2.7-alpha).
+
+## [0.2.7-alpha] - 2026-04-16
+### Added
+- **AMI Data Adapter Abstraction**: Introduced the `IMeterDataRepository` interface to abstract meter data access. This allows developers to easily build and integrate custom adapters for enterprise data lakes and data warehouses (e.g., Snowflake, Databricks, PostgreSQL, BigQuery) while preserving high-performance analytical pushdown computation.
+- **Dynamic Adapter Discovery**: The backend now dynamically scans and registers installed AMI adapters in the `src.shared.meter_adapters` package on startup.
+- **Admin Configuration Reorganization**: Overhauled the Admin Console's Configuration Panel with a categorized accordion layout (System, Plugins, Advanced), making it much easier to manage plugin-specific settings and system overrides.
+- **Admin AMI Adapter Selection**: Added a dedicated, mobile-friendly panel in the Admin Console to select the active AMI data source from the dynamically discovered adapters.
+- **Global Search Improvements**: Enhanced global search capabilities and added end-to-end (e.g. Playwright) tests to ensure reliability across features.
+- **Smooth Sidebar Transitions**: The main application sidebar now features hover-to-expand behavior with smooth CSS transitions for a cleaner, more responsive UI experience.
+
+### Changed
+- **Default AMI Adapter**: DuckDB (Local Parquet) has been migrated to the new adapter architecture but remains the default, edge-optimized storage provider for time-series readings.
+- **Admin Mobile UX**: The configuration editor in the Admin Console is now fully responsive, automatically transitioning between horizontal and vertical layouts based on screen size.
+- **Security hardening**: Removed the "Add Manual Override" form from the Admin Console to prevent arbitrary configuration injection and reduce the system's attack surface.
+- **Graph Engine API**: Added `get_all_edges()` to the core `GraphEngine` to support complex topological analytics independent of the primary CIM registry.
 
 ## [0.2.6-alpha] - 2026-04-02
 ### Added

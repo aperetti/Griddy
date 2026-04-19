@@ -4,7 +4,7 @@ title: Overview
 # Griddy: Grid-Scale AMI Analytics
 
 :::warning Alpha Project
-**Griddy is currently in Alpha (v0.2.1-alpha).**  
+**Griddy is currently in Alpha (v0.2.7-alpha).**  
 This project is under active development. We frequently introduce **breaking changes** to the database schema, API contracts, and grid model structure. There is currently **no guarantee of stability** or backward compatibility.
 :::
 

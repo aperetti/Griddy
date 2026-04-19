@@ -29,7 +29,7 @@ Backend plugin route           ← uses PluginSDK, never opens its own DB connec
 PluginSDK (sdk.cim / sdk.topology / sdk.analytics)
         │
         ▼
-Shared infrastructure (Neo4j CIM registry, NetworkX engine, DuckDB parquet)
+Shared infrastructure (Neo4j CIM registry, NetworkX engine, AMI Data Adapters)
 ```
 
 The SDK enforces one important rule: **plugins never create database connections**. All data access flows through `sdk.cim`, `sdk.topology`, or `sdk.analytics`, which delegate to the shared infrastructure that the rest of the application already manages.
