@@ -149,8 +149,20 @@ export function useCimRuleBuilder(value: string | any, onChange: (value: string)
                 }
             }
         }
+
+        // Purge any conditions that referenced these steps
+        const cleanConditions = conditions.conditions.filter(c => {
+            if ('step_id' in c) {
+                return !toRemove.has((c as Condition).step_id!);
+            }
+            return true;
+        });
         
-        handleUpdate({ ...conditions, path_steps: current.filter((s) => !toRemove.has(s.id)) });
+        handleUpdate({ 
+            ...conditions, 
+            path_steps: current.filter((s) => !toRemove.has(s.id)),
+            conditions: cleanConditions
+        });
     }, [conditions, handleUpdate]);
 
     // ── Legacy: target_class + resolve_via_connectivity_node ─────────────────

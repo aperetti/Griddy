@@ -48,7 +48,10 @@ _MRID_KEY = "IdentifiedObject.mRID"
 _CIM_PREFIXES = [
     "Switch", "ConductingEquipment", "Equipment", "PowerSystemResource", 
     "IdentifiedObject", "EnergyConnection", "ConnectivityNodeContainer", 
-    "EquipmentContainer", "PowerTransformerEnd", "TransformerEnd"
+    "EquipmentContainer", "PowerTransformerEnd", "TransformerEnd",
+    "TransformerEndInfo", "PowerTransformerInfo", "AsynchronousMachine",
+    "RotatingMachine", "GeneratingUnit", "ACLineSegment", "Conductor",
+    "BaseVoltage", "VoltageLevel", "Substation", "Bay"
 ]
 
 class CypherRuleBuilder:
@@ -104,8 +107,6 @@ class CypherRuleBuilder:
             cls = step.get("class", "")
             if step.get("fixed"):
                 alias = "cn" if cls == "ConnectivityNode" else "t"
-            elif entity_type == "edge" and i == 0:
-                alias = "n"
             else:
                 alias = "n" if user_idx == 0 else f"n{user_idx}"
                 user_idx += 1
@@ -163,6 +164,13 @@ class CypherRuleBuilder:
         for cond in rule_config.get("conditions", []):
             if "logical_op" in cond: continue
             step_id = cond.get("step_id")
+            
+            # If step_id is provided but not in our active aliases, ignore this condition.
+            # It is an orphan from a deleted path step.
+            if step_id and step_id not in aliases:
+                self.warnings.append(f"Ignoring orphaned condition referencing missing step {step_id}")
+                continue
+
             cond_alias = aliases.get(step_id) if step_id else None
             if not cond_alias:
                 path = cond.get("path", "")
@@ -216,12 +224,23 @@ class CypherRuleBuilder:
         dot = path.find(".")
         attr = path[dot+1:] if dot > -1 else path
         
-        alternatives = [path]
-        if dot > -1:
-            alternatives.append(attr)
+        # Determine alternatives based on prefix trust
+        if dot == -1:
+            # Unprefixed property: attempt fuzzy match across all common CIM prefixes
+            alternatives = [path]
             for p in _CIM_PREFIXES:
-                alt = f"{p}.{attr}"
-                if alt not in alternatives: alternatives.append(alt)
+                alternatives.append(f"{p}.{path}")
+        else:
+            prefix = path[:dot]
+            if prefix in _INHERITED_CLASSES:
+                # Weak/Abstract prefix: fuzz it across all common CIM prefixes
+                alternatives = [path, attr]
+                for p in _CIM_PREFIXES:
+                    alt = f"{p}.{attr}"
+                    if alt not in alternatives: alternatives.append(alt)
+            else:
+                # Strong/Specific prefix (e.g. BaseVoltage): trust it!
+                alternatives = [path]
         
         prop_exprs = [f"{alias}.`{alt}`" for alt in alternatives]
         
