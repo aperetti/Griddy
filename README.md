@@ -1,5 +1,11 @@
 # Griddy — Grid-Scale AMI Analytics App
 
+> [!CAUTION]
+> **HIGHLY EXPERIMENTAL DEVELOPMENT**
+> This project is currently in a pre-alpha/alpha state and is under active development. It contains experimental features, breaking architectural changes, and unoptimized code paths. **DO NOT USE THIS IN PRODUCTION SYSTEMS.**
+>
+> **AGENTIC CODING & SECURITY NOTICE**: This codebase has been developed with heavy assistance from AI agents. While this accelerates development, it may introduce subtle security vulnerabilities or non-idiomatic patterns. Users should perform a thorough security audit before any deployment.
+
 An interactive, full-stack application for analyzing electrical distribution grids. Griddy ingests a CIM-based grid model, generates synthetic AMI time-series data, and exposes a rich geospatial dashboard for voltage analysis, phase balancing, load-flow tracing, and alarm correlation.
 
 [Griddy App](https://griddy.peretti.xyz)
