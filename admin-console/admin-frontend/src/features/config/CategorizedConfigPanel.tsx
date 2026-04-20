@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { Accordion, Stack, Title, Paper, Group, ActionIcon, TextInput, Button, Box, Text } from '@mantine/core';
-import { Settings, Puzzle, Terminal, Plus } from 'lucide-react';
+import { Accordion, Stack, Text } from '@mantine/core';
+import { Settings, Puzzle, Terminal } from 'lucide-react';
 import { ConfigItemEditor } from './ConfigItemEditor';
 
 interface ConfigItem {
