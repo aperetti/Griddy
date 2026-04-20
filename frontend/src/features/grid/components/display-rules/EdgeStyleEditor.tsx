@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { Grid, ColorInput, NumberInput, Select, Fieldset, Stack, Text, Group, Paper, Button, ActionIcon, Tooltip, FileButton, Switch, Divider } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { Upload, Maximize2, Circle as CircleIcon, Square as SquareIcon, Triangle as TriangleIcon, Star } from 'lucide-react';

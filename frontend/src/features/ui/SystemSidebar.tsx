@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Box, ActionIcon, Tooltip, Stack, Paper, Text, Group } from '@mantine/core';
-import { ChevronRight, ChevronLeft } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import type { PluginDefinition } from '../../plugins/types';
 
 interface SystemSidebarProps {

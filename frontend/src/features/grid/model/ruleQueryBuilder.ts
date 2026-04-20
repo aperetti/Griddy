@@ -160,8 +160,6 @@ function _buildFromPathSteps(
 ): BuiltQuery | null {
     if (steps.length < 1) return null;
 
-    const entityType = conditions.entity_type || 'node';
-
     // Assign aliases: ConnectivityNode → cn, Terminal → t, rest → n, n1, n2…
     const aliases = new Map<string, string>(); // step.id -> alias
     const classToAlias = new Map<string, string>(); // Legacy support

@@ -161,7 +161,7 @@ function StyleRow({
                         baseSvg={baseSvg}
                         baseColor={baseColor}
                         onChange={(val) => {
-                            const patch = { ...val };
+                            const patch: any = { ...val };
                             // If updating icon content, clear shadowing svg
                             if ('icon' in patch) patch.svg = undefined;
                             onChange(patch);

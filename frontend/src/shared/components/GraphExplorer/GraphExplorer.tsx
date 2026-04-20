@@ -148,7 +148,7 @@ export function GraphExplorer({ rootId, onSelectAttribute, schema, isMobile, onN
 
     // On mobile, tapping the canvas deselects — clear the tooltip too.
     const handleCanvasClick = (event: any) => {
-        onCanvasClick(event);
+        if (onCanvasClick) onCanvasClick(event);
         if (isMobile) {
             unhoverNode();
             setHoverPos(null);
