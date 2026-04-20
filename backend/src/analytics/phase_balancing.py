@@ -3,6 +3,12 @@ from typing import Dict, Any
 from src.shared.graph_engine import GraphEngine
 from src.shared.meter_data_repository import IMeterDataRepository
 
+def _safe_parquet_path(path: str) -> str:
+    """Return a SQL-safe parquet directory path or raise ValueError."""
+    if "'" in path or '"' in path:
+        raise ValueError(f"PARQUET_DIR contains invalid characters: {path!r}")
+    return path.replace("\\", "/")
+
 class PhaseBalancingUseCase:
     """Aggregates energy or current across phases to identify imbalances."""
     
