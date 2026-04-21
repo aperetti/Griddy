@@ -8,12 +8,7 @@ import {
 } from '@mantine/core';
 import { AnalysisWindow } from '../../analytics/components/AnalysisWindow';
 
-function constrainSvg(content: string): string {
-    return content
-        .replace(/\s+width="[^"]*"/g, '')
-        .replace(/\s+height="[^"]*"/g, '')
-        .replace('<svg', '<svg height="20"');
-}
+import { RuleIconPreview } from './display-rules/RuleIconPreview';
 import { type DisplayRule } from '../../../shared/api';
 import { useDisplayRules } from '../hooks/useDisplayRules';
 import { RuleEditor } from './display-rules/RuleEditor';
@@ -404,22 +399,11 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                                                     >
                                                         <Table.Td>
-                                                            {rule.config?.icon && rule.config.icon.includes('<svg') ? (
-                                                                <Box
-                                                                    style={{
-                                                                        height: 20,
-                                                                        color: rule.config?.color_hex || '#ccc',
-                                                                        filter: 'drop-shadow(0 0 1px rgba(0,0,0,0.4))',
-                                                                        lineHeight: 0,
-                                                                    }}
-                                                                    dangerouslySetInnerHTML={{ __html: constrainSvg(rule.config.icon) }}
-                                                                />
-                                                            ) : (
-                                                                <Box style={{
-                                                                    width: 14, height: 14, borderRadius: '50%',
-                                                                    backgroundColor: rule.config?.color_hex || '#ccc'
-                                                                }} />
-                                                            )}
+                                                            <RuleIconPreview 
+                                                                icon={rule.config?.icon} 
+                                                                color={rule.config?.color_hex} 
+                                                                size={20}
+                                                            />
                                                         </Table.Td>
                                                         <Table.Td>
                                                             <Text size="sm" fw={500}>{rule.name}</Text>
