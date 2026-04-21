@@ -1,6 +1,7 @@
 import type { Node, Edge } from '../../../shared/types';
 
-const SWITCH_EDGE_TYPES = new Set(['Breaker', 'LoadBreakSwitch', 'Fuse', 'Disconnector', 'Recloser']);
+const SWITCH_EDGE_TYPES = new Set(['Breaker', 'LoadBreakSwitch', 'Fuse', 'Disconnector', 'Recloser', 'ACLineSegment', 'PowerTransformer']);
+const SUPPRESSED_ATTACHED_TYPES = new Set(['EnergyConsumer']);
 
 // ── Condition evaluator (mirrors CimRuleEngine.evaluate_group) ────────────────
 
@@ -176,8 +177,9 @@ export function renderRuleTooltip(obj: any, cimData?: any): string | null {
     // Check per-override tooltip configs first — use the first whose conditions match
     const overrides: Array<{ conditions: any; tooltip_config: any }> = obj.display_tooltip_overrides ?? [];
     for (const ov of overrides) {
-        if (ov.tooltip_config && evaluateConditions(ov.conditions, merged)) {
-            return renderTooltipConfig(ov.tooltip_config, merged);
+        if (evaluateConditions(ov.conditions, merged)) {
+            // Use override config if provided, otherwise fall back to base rule config
+            return renderTooltipConfig(ov.tooltip_config || cfg, merged);
         }
     }
 
@@ -205,10 +207,22 @@ export function getTooltipContent(object: any, ctx: TooltipContext): DeckTooltip
         const ruleHtml = renderRuleTooltip(node);
         if (ruleHtml) return { html: ruleHtml, style: TOOLTIP_STYLE };
 
+        // Suppress default tooltip for ConnectivityNodes that have no non-suppressed equipment
+        const isConnectivityNode = !node.type || node.type === 'ConnectivityNode';
+        const attached = node.attached_equipment ?? [];
+        const hasRelevantEquipment = attached.some(eq => !SUPPRESSED_ATTACHED_TYPES.has(eq.type));
+        
+        if (isConnectivityNode && !hasRelevantEquipment) {
+            return null;
+        }
+
         let attachedInfo = '';
-        if (node.attached_equipment && node.attached_equipment.length > 0) {
+        if (attached.length > 0) {
             attachedInfo = `<div style="margin-top: 8px; border-top: 1px solid #373A40; padding-top: 5px;">`;
-            node.attached_equipment.forEach(eq => {
+            attached.forEach(eq => {
+                // Skip rendering suppressed types in the default tooltip too
+                if (SUPPRESSED_ATTACHED_TYPES.has(eq.type)) return;
+
                 attachedInfo += `<div style="margin-top: 2px;">• <strong>${eq.type}:</strong> ${eq.name}`;
                 if (eq.active_power_w != null) {
                     attachedInfo += `<br/>&nbsp;&nbsp;Rating: ${(eq.active_power_w / 1000).toFixed(1)} kVA`;

@@ -63,16 +63,17 @@ export function useClustering({ nodes, edges, viewState, dimensions }: UseCluste
 
             // Calculate midpoint and local bearing along the path
             const { position: mid, bearing, segmentIndex } = getPathMidpoint(rawPath);
-            
-            // Calculate gap bounds based on local segment angle
-            const rad = (bearing * Math.PI) / 180;
+
+            // Calculate gap bounds based on local segment angle.
+            // We need to invert the bearing back to compass space for sin/cos
+            const compassBearing = (360 - bearing + 90) % 360;
+            const rad = (compassBearing * Math.PI) / 180;
             const ux = Math.sin(rad);
             const uy = Math.cos(rad);
             const lonScale = Math.cos((mid[1] * Math.PI) / 180);
-            
+
             const gapStart: [number, number] = [mid[0] - ux * (OFFSET / lonScale), mid[1] - uy * OFFSET];
             const gapEnd: [number, number] = [mid[0] + ux * (OFFSET / lonScale), mid[1] + uy * OFFSET];
-
             // Check if line is too short for a gap
             const dx = (e.targetPosition[0] - e.sourcePosition[0]) * Math.cos((e.sourcePosition[1] * Math.PI) / 180);
             const dy = e.targetPosition[1] - e.sourcePosition[1];

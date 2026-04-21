@@ -72,6 +72,7 @@ function buildDisplayProps(config: RuleConfig, ruleId: number, tooltipData?: Rec
         display_center_icon_size: config.center_icon_size ?? 1.0,
         display_center_icon_rotate: config.center_icon_rotate ?? false,
         display_tooltip: config.tooltip_config ?? undefined,
+        display_tooltip_overrides: config.svg_overrides ?? undefined,
         display_tooltip_data: tooltipData && Object.keys(tooltipData).length > 0 ? tooltipData : undefined,
         display_line_weight: config.line_weight ?? undefined,
         display_line_style: config.line_style ?? undefined,
@@ -293,8 +294,10 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
                                     center_icon_size: ovData.center_icon_size ?? finalConfig.center_icon_size,
                                     center_icon_rotate: ovData.center_icon_rotate ?? finalConfig.center_icon_rotate,
                                 } : {}),
-                                tooltip_config: ovData.tooltip_config !== undefined ? ovData.tooltip_config : finalConfig.tooltip_config
                             };
+                            if (ovData.tooltip_config) {
+                                finalConfig.tooltip_config = ovData.tooltip_config;
+                            }
                             if (ovData.mode === 'replace') break;
                         }
                     }
@@ -379,8 +382,10 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
                                     center_icon_size: ovData.center_icon_size ?? finalConfig.center_icon_size,
                                     center_icon_rotate: ovData.center_icon_rotate ?? finalConfig.center_icon_rotate,
                                 } : {}),
-                                tooltip_config: ovData.tooltip_config !== undefined ? ovData.tooltip_config : finalConfig.tooltip_config
                             };
+                            if (ovData.tooltip_config) {
+                                finalConfig.tooltip_config = ovData.tooltip_config;
+                            }
                             if (ovData.mode === 'replace') break;
                         }
                     }

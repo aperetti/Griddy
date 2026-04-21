@@ -271,6 +271,8 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
                             onChange={(tc) => updateConfig({ tooltip_config: tc })}
                             targetClass={targetClass}
                             pathSteps={parsedConditions?.path_steps}
+                            testMrids={testResults?.mrids}
+                            isEdge={isEdgeRule}
                         />
                     </Fieldset>
 

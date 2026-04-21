@@ -222,6 +222,8 @@ function StyleRow({
                                 onChange={(tc) => onChange({ tooltip_config: tc })}
                                 targetClass={localTargetClass}
                                 pathSteps={mergedPathSteps}
+                                testMrids={testResults?.mrids}
+                                isEdge={isEdgeRule}
                             />
                         )}
                     </Stack>

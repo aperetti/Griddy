@@ -1,11 +1,12 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
-    Stack, Group, Text, Paper, Button, Textarea,
+    Stack, Group, Text, Paper, Button,
     TextInput, Select, ActionIcon, Badge, Tooltip,
-    Fieldset, Box, SegmentedControl,
+    Fieldset, Box, SegmentedControl, Loader,
 } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
-import { Plus, Trash2, RotateCcw, List, Code2 } from 'lucide-react';
+import { Plus, Trash2, RotateCcw, List, Code2, ChevronRight, ChevronLeft, RefreshCw } from 'lucide-react';
+import Editor from '@monaco-editor/react';
 import { type TooltipConfig, type TooltipAttribute, type PathStep, genId } from '../../model/rules';
 import { useSchema } from '../../context/SchemaContext';
 
@@ -15,72 +16,66 @@ interface TooltipConfigEditorProps {
     targetClass?: string;
     /** Path steps from the CIM rule builder — exposes projected attributes as suggestions */
     pathSteps?: PathStep[];
+    /** Resulting mRIDs from a 'Test Rule' action to use as live preview samples */
+    testMrids?: string[];
+    isEdge?: boolean;
 }
 
 // ── Sample data for live preview ────────────────────────────────────────────
 
-// Sample data mirrors the structured response from fetchCimNode / fetchCimEquipmentExpanded.
-// Keys are unqualified (matching API output). Class-qualified paths like "IdentifiedObject.name"
-// resolve via prefix-stripping in resolvePath — represented here by both forms for preview accuracy.
-const SAMPLE_FLAT: Record<string, string> = {
-    // Unqualified (actual API keys)
+const STATIC_SAMPLE: Record<string, string> = {
     name:              'XFMR-4207',
     mrid:              'A1B2C3D4-0000',
     description:       'Main feeder transformer',
     cim_class:         'PowerTransformer',
     base_voltage_kv:   '12.47',
     ratedS:            '500000',
-    ratedU:            '12470',
-    length_m:          '245.3',
-    r:                 '0.31',
-    x:                 '0.29',
-    is_open:           'false',
-    // Nested paths (resolved via dot traversal)
     'container.name':  'Main Feeder',
-    'terminals.0.phases': 'ABC',
-    // Class-qualified aliases (resolved via prefix stripping)
-    'IdentifiedObject.name':        'XFMR-4207',
-    'IdentifiedObject.mRID':        'A1B2C3D4-0000',
-    'IdentifiedObject.description': 'Main feeder transformer',
-    'PowerTransformer.ratedS':      '500000',
-    'ACLineSegment.length':         '245.3',
-    'ACLineSegment.r':              '0.31',
-    'ACLineSegment.x':              '0.29',
 };
 
-function sampleResolve(alias: string, attrMap: Record<string, string>): string {
-    const path = attrMap[alias] ?? alias;
-    return SAMPLE_FLAT[path] ?? SAMPLE_FLAT[alias] ?? alias;
-}
-
-function renderPreview(tpl: string, attrMap: Record<string, string>): string {
-    return tpl.replace(/\{\{([\w.]+)\}\}/g, (_m, token) => sampleResolve(token, attrMap));
-}
-
-function sampleResolvePath(path: string): string {
+function resolvePath(merged: any, path: string): string {
     if (!path || path.endsWith('.')) return '';
-    if (SAMPLE_FLAT[path]) return SAMPLE_FLAT[path];
-    // Nested traversal on SAMPLE_FLAT
+    
+    // 1. Exact match
+    if (merged[path] !== undefined) return String(merged[path]);
+
+    // 2. Nested traversal
     const parts = path.split('.');
-    let val: any = SAMPLE_FLAT;
+    let val: any = merged;
     for (const p of parts) {
         if (val == null || typeof val !== 'object') { val = null; break; }
         val = (val as any)[p];
     }
     if (val != null && val !== '') return String(val);
-    // Strip class prefix
+
+    // 3. Strip class prefix
     if (parts.length >= 2) {
         const unqualified = parts.slice(1).join('.');
-        return SAMPLE_FLAT[unqualified] ?? '';
+        if (merged[unqualified] !== undefined) return String(merged[unqualified]);
+        
+        let uval: any = merged;
+        for (const p of parts.slice(1)) {
+            if (uval == null || typeof uval !== 'object') { uval = null; break; }
+            uval = (uval as any)[p];
+        }
+        if (uval != null && uval !== '') return String(uval);
     }
     return '';
 }
 
-function renderEasyPreview(attrs: TooltipAttribute[]): string {
+function renderPreview(tpl: string, attrMap: Record<string, string>, data: any): string {
+    return tpl.replace(/\{\{([\w.]+)\}\}/g, (_m, token) => {
+        const path = attrMap[token] ?? token;
+        const resolved = resolvePath(data, path);
+        return resolved || `{{${token}}}`;
+    });
+}
+
+function renderEasyPreview(attrs: TooltipAttribute[], data: any): string {
     const rows = attrs
         .filter(a => a.path && !a.path.endsWith('.'))
         .map(a => {
-            const val = sampleResolvePath(a.path);
+            const val = resolvePath(data, a.path);
             const displayLabel = a.label || a.alias || a.path.split('.').pop() || a.path;
             if (!val) return '';
             return `<div style="font-size:12px;margin-bottom:2px;"><strong>${displayLabel}:</strong> ${val}</div>`;
@@ -102,8 +97,7 @@ const DEFAULT_TEMPLATE =
   <div style="font-size:14px;font-weight:700;color:#4dabf7;margin-bottom:2px">{{name}}</div>
   <div style="opacity:.5;font-size:11px;margin-bottom:8px">{{mrid}}</div>
   <div style="font-size:12px;margin-bottom:2px"><strong>Class:</strong> {{cim_class}}</div>
-  <div style="font-size:12px;margin-bottom:2px"><strong>Voltage:</strong> {{base_voltage_kv}} kV</div>
-  <div style="font-size:12px"><strong>Container:</strong> {{container.name}}</div>
+  <div style="font-size:12px"><strong>Voltage:</strong> {{base_voltage_kv}} kV</div>
 </div>`;
 
 // ── Easy-mode attribute row ──────────────────────────────────────────────────
@@ -151,7 +145,6 @@ function EasyAttributeRow({
             ...attr,
             path: fullPath,
             alias: derived,
-            // Auto-fill label from attribute name only if still empty
             label: attr.label || derived,
         });
     };
@@ -448,12 +441,40 @@ function LockedAttributeRow({
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export function TooltipConfigEditor({ value, onChange, targetClass, pathSteps }: TooltipConfigEditorProps) {
+export function TooltipConfigEditor({ value, onChange, targetClass, pathSteps, testMrids, isEdge }: TooltipConfigEditorProps) {
     const { schema } = useSchema();
-    const [cursorPos, setCursorPos] = useState<number | null>(null);
     const isMobile = useMediaQuery('(max-width: 768px)');
 
-    // Infer mode: explicit field wins; fall back on config content so existing html_template rules open in html mode
+    // Preview sample data management
+    const [sampleIndex, setSampleIndex] = useState(0);
+    const [sampleData, setSampleData] = useState<any>(STATIC_SAMPLE);
+    const [isLoadingSample, setIsLoadingSample] = useState(false);
+
+    useEffect(() => {
+        const fetchSample = async () => {
+            if (!testMrids || testMrids.length === 0) {
+                setSampleData(STATIC_SAMPLE);
+                return;
+            }
+            const mrid = testMrids[sampleIndex % testMrids.length];
+            setIsLoadingSample(true);
+            try {
+                const endpoint = isEdge ? `/api/cim/equipment/${encodeURIComponent(mrid)}/expanded` : `/api/cim/node/${encodeURIComponent(mrid)}`;
+                const res = await fetch(endpoint);
+                if (res.ok) {
+                    const data = await res.json();
+                    setSampleData(data);
+                }
+            } catch (err) {
+                console.error('Failed to fetch sample data', err);
+            } finally {
+                setIsLoadingSample(false);
+            }
+        };
+        fetchSample();
+    }, [testMrids, sampleIndex, isEdge]);
+
+    // Infer mode
     const mode = value.tooltip_mode ?? (value.html_template ? 'html' : 'easy');
     const update = (patch: Partial<TooltipConfig>) => onChange({ ...value, ...patch });
 
@@ -466,7 +487,6 @@ export function TooltipConfigEditor({ value, onChange, targetClass, pathSteps }:
         return m;
     }, [attributes]);
 
-    // Collect all tooltip_attributes projected from path steps
     const projectedAttrs = useMemo((): Array<{ attr: string; alias: string }> => {
         if (!pathSteps) return [];
         return pathSteps.flatMap(s => s.tooltip_attributes ?? []);
@@ -488,23 +508,14 @@ export function TooltipConfigEditor({ value, onChange, targetClass, pathSteps }:
     const removeAttribute = (id: string) =>
         update({ attributes: attributes.filter(a => a.id !== id) });
 
-    const insertToken = (token: string) => {
-        const pos = cursorPos ?? template.length;
-        const next = template.slice(0, pos) + token + template.slice(pos);
-        update({ html_template: next });
-        setCursorPos(pos + token.length);
-    };
-
     const previewHtml = mode === 'easy'
-        ? renderEasyPreview(attributes)
-        : (template ? renderPreview(template, attrMap) : '');
+        ? renderEasyPreview(attributes, sampleData)
+        : (template ? renderPreview(template, attrMap, sampleData) : '');
 
-    // When path steps have projected attributes, restrict to those only
     const isPathLocked = projectedAttrs.length > 0;
 
     return (
         <Stack gap="sm">
-            {/* Mode toggle */}
             <SegmentedControl
                 size="xs"
                 value={mode}
@@ -515,11 +526,9 @@ export function TooltipConfigEditor({ value, onChange, targetClass, pathSteps }:
                 ]}
             />
 
-            {/* Attributes */}
             <Fieldset legend="Attributes" variant="default" p="xs">
                 <Stack gap="xs">
                     {isPathLocked ? (
-                        /* Path-locked: only projected attributes can be added */
                         <>
                             {projectedAttrs.length === 0 ? (
                                 <Text size="xs" c="dimmed">No attributes exposed in the rule editor yet.</Text>
@@ -532,7 +541,7 @@ export function TooltipConfigEditor({ value, onChange, targetClass, pathSteps }:
                                             projected={pa}
                                             active={active}
                                             mode={mode}
-                                            onInsertToken={insertToken}
+                                            onInsertToken={() => {}} // Handle via editor
                                             onAdd={() => update({
                                                 attributes: [
                                                     ...attributes,
@@ -545,33 +554,9 @@ export function TooltipConfigEditor({ value, onChange, targetClass, pathSteps }:
                                     );
                                 })
                             )}
-                            {projectedAttrs.length > 0 && (
-                                <Text size="10px" c="dimmed" fs="italic">
-                                    Expose more attributes in the rule editor path steps to add them here.
-                                </Text>
-                            )}
                         </>
                     ) : (
-                        /* Free mode: full class/attribute picker */
                         <>
-                            {attributes.length > 0 && !isMobile && (
-                                mode === 'easy' ? (
-                                    <Group gap="xs">
-                                        <Text size="10px" c="dimmed" fw={600} tt="uppercase" style={{ width: 120, flexShrink: 0 }}>Label</Text>
-                                        <Text size="10px" c="dimmed" fw={600} tt="uppercase" style={{ flex: 1 }}>Class</Text>
-                                        <Text size="10px" c="dimmed" fw={600} tt="uppercase" style={{ flex: 1 }}>Attribute</Text>
-                                        <div style={{ width: 28 }} />
-                                    </Group>
-                                ) : (
-                                    <Group gap="xs">
-                                        <Text size="10px" c="dimmed" fw={600} tt="uppercase" style={{ width: 80, flexShrink: 0 }}>Token</Text>
-                                        <Text size="10px" c="dimmed" fw={600} tt="uppercase" style={{ width: 90, flexShrink: 0 }}>Alias</Text>
-                                        <Text size="10px" c="dimmed" fw={600} tt="uppercase" style={{ flex: 1 }}>Class</Text>
-                                        <Text size="10px" c="dimmed" fw={600} tt="uppercase" style={{ flex: 1 }}>Attribute</Text>
-                                        <div style={{ width: 28 }} />
-                                    </Group>
-                                )
-                            )}
                             {attributes.map(attr => (
                                 mode === 'easy' ? (
                                     <EasyAttributeRow
@@ -588,7 +573,7 @@ export function TooltipConfigEditor({ value, onChange, targetClass, pathSteps }:
                                         attr={attr}
                                         schema={schema}
                                         targetClass={targetClass}
-                                        onInsertToken={insertToken}
+                                        onInsertToken={() => {}} // Use badge above editor
                                         onChange={(updated) => updateAttribute(attr.id, updated)}
                                         onRemove={() => removeAttribute(attr.id)}
                                     />
@@ -609,7 +594,6 @@ export function TooltipConfigEditor({ value, onChange, targetClass, pathSteps }:
                 </Stack>
             </Fieldset>
 
-            {/* HTML Template (html mode only) */}
             {mode === 'html' && (
                 <Fieldset
                     legend={
@@ -631,14 +615,6 @@ export function TooltipConfigEditor({ value, onChange, targetClass, pathSteps }:
                     p="xs"
                 >
                     <Stack gap="xs">
-                        <Text size="xs" c="dimmed">
-                            Use{' '}
-                            <code style={{ background: 'rgba(255,255,255,0.07)', padding: '1px 4px', borderRadius: 3, fontFamily: 'monospace', fontSize: 11 }}>
-                                {'{{alias}}'}
-                            </code>{' '}
-                            tokens — click an attribute badge above to insert at cursor
-                        </Text>
-
                         {attributes.some(a => a.alias) && (
                             <Group gap={4} wrap="wrap">
                                 {attributes.filter(a => a.alias).map(a => (
@@ -648,7 +624,10 @@ export function TooltipConfigEditor({ value, onChange, targetClass, pathSteps }:
                                         color="violet"
                                         radius="sm"
                                         style={{ cursor: 'pointer', fontFamily: 'monospace', fontSize: 10 }}
-                                        onClick={() => insertToken(`{{${a.alias}}}`)}
+                                        title="Copy to clipboard"
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(`{{${a.alias}}}`);
+                                        }}
                                     >
                                         {`{{${a.alias}}}`}
                                     </Badge>
@@ -656,29 +635,73 @@ export function TooltipConfigEditor({ value, onChange, targetClass, pathSteps }:
                             </Group>
                         )}
 
-                        <Textarea
-                            rows={9}
-                            value={template}
-                            onChange={(e) => update({ html_template: e.currentTarget.value })}
-                            onSelect={(e) => setCursorPos((e.target as HTMLTextAreaElement).selectionStart)}
-                            onClick={(e) => setCursorPos((e.target as HTMLTextAreaElement).selectionStart)}
-                            onKeyUp={(e) => setCursorPos((e.target as HTMLTextAreaElement).selectionStart)}
-                            styles={{ input: { fontFamily: 'monospace', fontSize: 12 } }}
-                            placeholder={DEFAULT_TEMPLATE}
-                        />
+                        <Box style={{ border: '1px solid #373A40', borderRadius: 4, overflow: 'hidden' }}>
+                            <Editor
+                                height="250px"
+                                defaultLanguage="html"
+                                theme="vs-dark"
+                                value={template}
+                                onChange={(v) => update({ html_template: v || '' })}
+                                options={{
+                                    minimap: { enabled: false },
+                                    fontSize: 12,
+                                    lineNumbers: 'off',
+                                    scrollBeyondLastLine: false,
+                                    wordWrap: 'on',
+                                    padding: { top: 8, bottom: 8 }
+                                }}
+                            />
+                        </Box>
                     </Stack>
                 </Fieldset>
             )}
 
-            {/* Preview */}
-            {previewHtml && (
-                <Box>
-                    <Text size="10px" c="dimmed" tt="uppercase" fw={600} mb={4}>Preview (sample data)</Text>
-                    <Paper withBorder p="xs" bg="rgba(0,0,0,0.3)" style={{ overflow: 'hidden' }}>
+            {/* Preview Section */}
+            <Box>
+                <Group justify="space-between" mb={4}>
+                    <Text size="10px" c="dimmed" tt="uppercase" fw={600}>
+                        Preview {testMrids && testMrids.length > 0 ? `(Sample ${sampleIndex % testMrids.length + 1} of ${testMrids.length})` : '(Static Sample)'}
+                    </Text>
+                    
+                    {testMrids && testMrids.length > 1 && (
+                        <Group gap={4}>
+                            {isLoadingSample && <Loader size={10} />}
+                            <ActionIcon 
+                                size="xs" 
+                                variant="subtle" 
+                                onClick={() => setSampleIndex(prev => prev === 0 ? testMrids.length - 1 : prev - 1)}
+                            >
+                                <ChevronLeft size={12} />
+                            </ActionIcon>
+                            <ActionIcon 
+                                size="xs" 
+                                variant="subtle" 
+                                onClick={() => setSampleIndex(prev => prev + 1)}
+                            >
+                                <ChevronRight size={12} />
+                            </ActionIcon>
+                        </Group>
+                    )}
+                    
+                    {testMrids && testMrids.length === 0 && (
+                        <Text size="10px" c="dimmed" fs="italic">Click "Test Rule Match" below to use real samples</Text>
+                    )}
+                </Group>
+                
+                <Paper withBorder p="xs" bg="rgba(0,0,0,0.3)" style={{ position: 'relative', minHeight: 60, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                    {isLoadingSample && sampleIndex > 0 ? (
+                        <Loader size="sm" />
+                    ) : (
                         <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
-                    </Paper>
-                </Box>
-            )}
+                    )}
+                </Paper>
+                
+                {sampleData && sampleData.mrid && (
+                    <Text size="10px" c="dimmed" mt={4} ta="right" style={{ fontFamily: 'monospace' }}>
+                        Previewing mRID: {sampleData.mrid}
+                    </Text>
+                )}
+            </Box>
         </Stack>
     );
 }
