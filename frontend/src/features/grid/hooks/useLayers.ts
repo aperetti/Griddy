@@ -34,9 +34,17 @@ interface UseLayersParams {
 export function useLayers(p: UseLayersParams) {
     const nodeBearings = useMemo(() => {
         const bearings: Record<string, number> = {};
+        
+        // Build map of node ID to one of its connected edges for rotation
+        const nodeToEdge = new Map<string, Edge>();
+        p.offsetEdges.forEach(edge => {
+            if (!nodeToEdge.has(edge.source)) nodeToEdge.set(edge.source, edge);
+            if (!nodeToEdge.has(edge.target)) nodeToEdge.set(edge.target, edge);
+        });
+
         p.nodes.forEach(node => {
             if (!node.display_rotate_to_edge) return;
-            const edge = p.offsetEdges.find(e => e.source === node.id || e.target === node.id);
+            const edge = nodeToEdge.get(node.id);
             if (edge) bearings[node.id] = getBearing(edge.sourcePosition, edge.targetPosition);
         });
         return bearings;

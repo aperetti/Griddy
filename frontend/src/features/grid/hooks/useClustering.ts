@@ -89,16 +89,15 @@ export function useClustering({ nodes, edges, viewState, dimensions }: UseCluste
         });
     }, [offsetEdges, viewState.zoom]);
 
-    const clusteredData = useMemo(() => {
-        const zoom = Math.floor(viewState.zoom);
-        const visibleNodes = nodes.filter(n =>
-            (n.display_min_zoom === undefined || viewState.zoom >= n.display_min_zoom) &&
-            (n.display_max_zoom === undefined || viewState.zoom <= n.display_max_zoom)
-        );
-
+    const { superclusters, staticNodes } = useMemo(() => {
         const configs = new Map<string, { nodes: Node[]; radius: number; maxZoom: number; minPoints: number }>();
-        visibleNodes.forEach(node => {
-            if (!node.cluster_enabled) return;
+        const staticList: Node[] = [];
+
+        nodes.forEach(node => {
+            if (!node.cluster_enabled) {
+                staticList.push(node);
+                return;
+            }
             const key = `${node.cluster_radius}-${node.cluster_max_zoom}-${node.cluster_min_points}`;
             if (!configs.has(key)) {
                 configs.set(key, { nodes: [], radius: node.cluster_radius || 40, maxZoom: node.cluster_max_zoom || 20, minPoints: node.cluster_min_points || 2 });
@@ -106,11 +105,9 @@ export function useClustering({ nodes, edges, viewState, dimensions }: UseCluste
             configs.get(key)!.nodes.push(node);
         });
 
-        const allClusteredNodes = new Set<string>();
-        const clusters: any[] = [];
-        const unclusteredNodes: Node[] = [];
-
-        configs.forEach(cfg => {
+        const clustersMap = new Map<string, { sc: Supercluster; config: any }>();
+        
+        configs.forEach((cfg, key) => {
             const sc = new Supercluster({ radius: cfg.radius, maxZoom: cfg.maxZoom, minPoints: cfg.minPoints });
             const points = cfg.nodes.map((n: Node) => ({
                 type: 'Feature' as const,
@@ -118,15 +115,33 @@ export function useClustering({ nodes, edges, viewState, dimensions }: UseCluste
                 geometry: { type: 'Point' as const, coordinates: n.position },
             }));
             sc.load(points);
+            clustersMap.set(key, { sc, config: cfg });
+        });
 
-            let bounds: any = [-180, -85, 180, 85];
-            if (dimensions.width > 0) {
-                try {
-                    const viewport = new WebMercatorViewport({ width: dimensions.width, height: dimensions.height, ...viewState });
-                    bounds = viewport.getBounds();
-                } catch (e) {}
-            }
+        return { superclusters: clustersMap, staticNodes: staticList };
+    }, [nodes]);
 
+    const clusteredData = useMemo(() => {
+        const zoom = Math.floor(viewState.zoom);
+        
+        // Filter static nodes by zoom
+        const visibleStatic = staticNodes.filter(n =>
+            (n.display_min_zoom === undefined || viewState.zoom >= n.display_min_zoom) &&
+            (n.display_max_zoom === undefined || viewState.zoom <= n.display_max_zoom)
+        );
+
+        let bounds: any = [-180, -85, 180, 85];
+        if (dimensions.width > 0) {
+            try {
+                const viewport = new WebMercatorViewport({ width: dimensions.width, height: dimensions.height, ...viewState });
+                bounds = viewport.getBounds();
+            } catch (e) {}
+        }
+
+        const clusters: any[] = [];
+        const unclusteredNodes: Node[] = [];
+
+        superclusters.forEach(({ sc, config }) => {
             sc.getClusters(bounds, zoom).forEach(feat => {
                 if (feat.properties.cluster) {
                     clusters.push({
@@ -134,18 +149,21 @@ export function useClustering({ nodes, edges, viewState, dimensions }: UseCluste
                         position: feat.geometry.coordinates,
                         pointCount: feat.properties.point_count,
                         pointCountAbbreviated: feat.properties.point_count_abbreviated,
-                        config: cfg,
+                        config: config,
                     });
                 } else {
-                    unclusteredNodes.push(feat.properties.node);
+                    const n = feat.properties.node;
+                    // Filter unclustered points from Supercluster by zoom too
+                    if ((n.display_min_zoom === undefined || viewState.zoom >= n.display_min_zoom) &&
+                        (n.display_max_zoom === undefined || viewState.zoom <= n.display_max_zoom)) {
+                        unclusteredNodes.push(n);
+                    }
                 }
             });
-            cfg.nodes.forEach(n => allClusteredNodes.add(n.id));
         });
 
-        const staticNodes = visibleNodes.filter(n => !n.cluster_enabled);
-        return { nodesToRender: [...staticNodes, ...unclusteredNodes], clusters };
-    }, [nodes, viewState.zoom, viewState.longitude, viewState.latitude, dimensions]);
+        return { nodesToRender: [...visibleStatic, ...unclusteredNodes], clusters };
+    }, [superclusters, staticNodes, viewState.zoom, viewState.longitude, viewState.latitude, dimensions]);
 
     return { clusteredData, nodePositions, visualEdgePaths, offsetEdges };
 }
