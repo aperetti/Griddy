@@ -5,7 +5,7 @@ import {
     Fieldset, Box, SegmentedControl, Loader,
 } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
-import { Plus, Trash2, RotateCcw, List, Code2, ChevronRight, ChevronLeft, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, RotateCcw, List, Code2, ChevronRight, ChevronLeft } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { type TooltipConfig, type TooltipAttribute, type PathStep, genId } from '../../model/rules';
 import { useSchema } from '../../context/SchemaContext';
@@ -443,7 +443,6 @@ function LockedAttributeRow({
 
 export function TooltipConfigEditor({ value, onChange, targetClass, pathSteps, testMrids, isEdge }: TooltipConfigEditorProps) {
     const { schema } = useSchema();
-    const isMobile = useMediaQuery('(max-width: 768px)');
 
     // Preview sample data management
     const [sampleIndex, setSampleIndex] = useState(0);

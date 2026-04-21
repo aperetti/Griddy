@@ -61,7 +61,7 @@ function StyleRow({
 }) {
     const [showTooltip, setShowTooltip] = useState(false);
     const [isTesting, setIsTesting] = useState(false);
-    const [testResults, setTestResults] = useState<{ match_count: number } | null>(null);
+    const [testResults, setTestResults] = useState<{ match_count: number; mrids?: string[] } | null>(null);
     const hasTooltip = !!symbol.tooltip_config;
 
     const handleTest = async () => {
