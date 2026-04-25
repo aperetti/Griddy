@@ -65,34 +65,48 @@ def _get_node_metrics():
     for n in nodes_raw:
         nid = n["node_id"]
         attached = n.get("attached_equipment", [])
+        node_phases = n.get("phases") or ["A", "B", "C"]
         
-        p_total = 0.0
-        q_total = 0.0
-        gen_p_total = 0.0
+        # Per-phase scales
+        p_scales = {"A": 0.0, "B": 0.0, "C": 0.0, "S1": 0.0, "S2": 0.0}
+        q_scales = {"A": 0.0, "B": 0.0, "C": 0.0, "S1": 0.0, "S2": 0.0}
+        gen_p_scales = {"A": 0.0, "B": 0.0, "C": 0.0, "S1": 0.0, "S2": 0.0}
         has_gen = False
         
         for eq in attached:
             eq_type = eq.get("type")
+            eq_phases = eq.get("phases") or node_phases
+            
+            # Filter to phases actually on this equipment
+            target_phases = [ph for ph in eq_phases if ph in p_scales]
+            if not target_phases: target_phases = ["A", "B", "C"] # Fallback
+            
             # EnergyConsumer -> load scale
             if eq_type == "EnergyConsumer":
-                p_total += eq.get("active_power_w", 1200.0)
-                q_total += eq.get("reactive_power_var", 400.0)
+                p_total = float(eq.get("active_power_w", 1200.0))
+                q_total = float(eq.get("reactive_power_var", 400.0))
+                
+                # Split total equipment load across its phases
+                for ph in target_phases:
+                    p_scales[ph] += p_total / len(target_phases)
+                    q_scales[ph] += q_total / len(target_phases)
             
             # Generation units
             if eq_type in ("PhotovoltaicUnit", "BatteryUnit", "SynchronousMachine", "PowerElectronicsConnection"):
                 has_gen = True
-                g_p = eq.get("max_p_w") or eq.get("active_power_w") or eq.get("rated_s_va") or 5000.0
-                gen_p_total += float(g_p)
+                g_p = float(eq.get("max_p_w") or eq.get("active_power_w") or eq.get("rated_s_va") or 5000.0)
+                for ph in target_phases:
+                    gen_p_scales[ph] += g_p / len(target_phases)
 
         node_metrics[nid] = {
             "model_id": n.get("model_id", "unknown"),
             "base_voltage": n.get("base_voltage_kv") or 12.47,
             "depth": depths.get(nid, 20),
-            "p_scale": p_total / 1000.0, # scale in kW
-            "q_scale": q_total / 1000.0,
-            "gen_p_scale": gen_p_total / 1000.0,
+            "p_scales": {k: v / 1000.0 for k, v in p_scales.items()}, # kW
+            "q_scales": {k: v / 1000.0 for k, v in q_scales.items()},
+            "gen_p_scales": {k: v / 1000.0 for k, v in gen_p_scales.items()},
             "has_gen": has_gen,
-            "phases": n.get("phases") or ["A", "B", "C"]
+            "phases": node_phases
         }
     
     return node_metrics
@@ -125,8 +139,8 @@ def generate_month(node_metrics, weather_map, start_dt, end_dt, out_file):
     cooling = np.maximum(0, temps - 24) * 0.05 # 5% per deg above 24
     weather_multiplier = 1.0 + heating + cooling
 
-    # Final combined factors
-    load_factors = load_factors * weather_multiplier
+    # Final load factor curve
+    base_load_factors = load_factors * weather_multiplier
 
     # Build columns for PyArrow
     all_nids = []
@@ -144,54 +158,69 @@ def generate_month(node_metrics, weather_map, start_dt, end_dt, out_file):
     for nid in node_ids:
         meta = node_metrics[nid]
         mid = meta["model_id"]
-        p_scale = meta["p_scale"]
-        gen_p_scale = meta["gen_p_scale"]
+        p_scales = meta["p_scales"]
+        gen_p_scales = meta["gen_p_scales"]
         depth = meta["depth"]
-        has_gen = meta["has_gen"]
         phases = meta["phases"]
 
-        # Random noise per node
-        noise = 0.8 + 0.4 * np.random.rand(num_steps)
-        
-        # Energy Delivered (Load)
-        kwh_dlv = p_scale * load_factors * noise / 4.0
-        
-        # Energy Received (Generation)
-        if has_gen:
-            # Use gen_p_scale instead of p_scale
-            kwh_rcv = gen_p_scale * 1.5 * solar_factors * (0.9 + 0.2 * np.random.rand(num_steps)) / 4.0
-        else:
-            kwh_rcv = np.zeros(num_steps)
+        # Phase flags
+        is_a = "A" in phases or "S1" in phases
+        is_b = "B" in phases or "S2" in phases
+        is_c = "C" in phases
 
-        # Voltage physics: V = BaseV * (1.0 - depth*0.001 - load*0.04)
-        v_nominal = 120.0
-        v_drop = (depth * 0.001) + (load_factors * 0.04)
-        v_noise = 0.995 + 0.01 * np.random.rand(num_steps)
-        v_base = v_nominal * (1.0 - v_drop) * v_noise
+        # 1. Unbalanced Energy Delivered (Load) - used for internal physics calculation
+        # Independent noise per phase to ensure unbalance
+        noise_a = 0.8 + 0.4 * np.random.rand(num_steps) if is_a else np.zeros(num_steps)
+        noise_b = 0.8 + 0.4 * np.random.rand(num_steps) if is_b else np.zeros(num_steps)
+        noise_c = 0.8 + 0.4 * np.random.rand(num_steps) if is_c else np.zeros(num_steps)
+
+        kwh_a = (p_scales["A"] + p_scales["S1"]) * base_load_factors * noise_a / 4.0
+        kwh_b = (p_scales["B"] + p_scales["S2"]) * base_load_factors * noise_b / 4.0
+        kwh_c = p_scales["C"] * base_load_factors * noise_c / 4.0
         
-        # Current: I = (P / V) / phases
-        phase_count = len([p for p in phases if p in ("A","B","C","S1","S2")])
-        if phase_count == 0: phase_count = 1
-        i_base = (kwh_dlv * 4.0 * 1000.0 / v_nominal) / phase_count
+        # Output total delivered energy
+        total_kwh_dlv = kwh_a + kwh_b + kwh_c
+
+        # 2. Energy Received (Generation)
+        noise_gen = 0.9 + 0.2 * np.random.rand(num_steps)
+        kwh_rcv_a = (gen_p_scales["A"] + gen_p_scales["S1"]) * 1.5 * solar_factors * noise_gen / 4.0
+        kwh_rcv_b = (gen_p_scales["B"] + gen_p_scales["S2"]) * 1.5 * solar_factors * noise_gen / 4.0
+        kwh_rcv_c = gen_p_scales["C"] * 1.5 * solar_factors * noise_gen / 4.0
+        
+        # Output total received energy
+        total_kwh_rcv = kwh_rcv_a + kwh_rcv_b + kwh_rcv_c
+
+        # 3. Unbalanced Voltage Physics: V = BaseV * (1.0 - depth*0.001 - phase_load*0.06)
+        v_nominal = 120.0
+        depth_drop = (depth * 0.001)
+        
+        v_noise_a = 0.995 + 0.01 * np.random.rand(num_steps)
+        v_noise_b = 0.995 + 0.01 * np.random.rand(num_steps)
+        v_noise_c = 0.995 + 0.01 * np.random.rand(num_steps)
+        
+        # Load-based drop is per-phase
+        va = v_nominal * (1.0 - depth_drop - (kwh_a * 4.0 / (p_scales["A"]+p_scales["S1"]+0.1)) * 0.04) * v_noise_a if is_a else [None]*num_steps
+        vb = v_nominal * (1.0 - depth_drop - (kwh_b * 4.0 / (p_scales["B"]+p_scales["S2"]+0.1)) * 0.04) * v_noise_b if is_b else [None]*num_steps
+        vc = v_nominal * (1.0 - depth_drop - (kwh_c * 4.0 / (p_scales["C"]+0.1)) * 0.04) * v_noise_c if is_c else [None]*num_steps
+        
+        # 4. Current: I = (P / V)
+        ia = (kwh_a * 4.0 * 1000.0 / v_nominal) if is_a else [None]*num_steps
+        ib = (kwh_b * 4.0 * 1000.0 / v_nominal) if is_b else [None]*num_steps
+        ic = (kwh_c * 4.0 * 1000.0 / v_nominal) if is_c else [None]*num_steps
 
         all_nids.extend([nid] * num_steps)
         all_mids.extend([mid] * num_steps)
         all_tss.extend(timestamps)
-        all_kwh_dlv.extend(kwh_dlv.tolist())
-        all_kwh_rcv.extend(kwh_rcv.tolist())
+        all_kwh_dlv.extend(total_kwh_dlv.tolist())
+        all_kwh_rcv.extend(total_kwh_rcv.tolist())
         
-        # Phase specific
-        has_a = "A" in phases or "S1" in phases
-        has_b = "B" in phases or "S2" in phases
-        has_c = "C" in phases
+        all_va.extend(va if isinstance(va, list) else va.tolist())
+        all_vb.extend(vb if isinstance(vb, list) else vb.tolist())
+        all_vc.extend(vc if isinstance(vc, list) else vc.tolist())
         
-        all_va.extend(v_base.tolist() if has_a else [None] * num_steps)
-        all_vb.extend(v_base.tolist() if has_b else [None] * num_steps)
-        all_vc.extend(v_base.tolist() if has_c else [None] * num_steps)
-        
-        all_ia.extend(i_base.tolist() if has_a else [None] * num_steps)
-        all_ib.extend(i_base.tolist() if has_b else [None] * num_steps)
-        all_ic.extend(i_base.tolist() if has_c else [None] * num_steps)
+        all_ia.extend(ia if isinstance(ia, list) else ia.tolist())
+        all_ib.extend(ib if isinstance(ib, list) else ib.tolist())
+        all_ic.extend(ic if isinstance(ic, list) else ic.tolist())
 
     # Create Table
     table = pa.Table.from_pydict({
