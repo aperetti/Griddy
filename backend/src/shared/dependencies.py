@@ -10,6 +10,7 @@ from src.grid.topology_engine import TopologyEngine
 from src.grid.display_rule_engine import DisplayRuleEngine
 from src.shared.meter_data_repository import IMeterDataRepository
 from src.shared.meter_adapters.duckdb_adapter import DuckDBMeterDataRepository
+from src.shared.meter_adapters.in_memory_adapter import InMemoryMeterDataRepository
 from src.shared.database_setup import DB_PATH, ADMIN_SQLITE_PATH, PARQUET_DIR
 
 # ── Global Instances ─────────────────────────────────────────────
@@ -32,15 +33,17 @@ class MeterDataRepositoryProxy(IMeterDataRepository):
         self.default_db_path = default_db_path
         self.default_parquet_dir = default_parquet_dir
         self._duckdb_repo = DuckDBMeterDataRepository(default_db_path, default_parquet_dir)
-        # In the future, other repositories (Snowflake, Databricks) can be initialized here
+        self._in_memory_repo = InMemoryMeterDataRepository()
         
     def _get_active_repo(self) -> IMeterDataRepository:
         import os
+        # Default to duckdb (storage) but allow switching to in_memory
         adapter = os.getenv("ami_adapter", "duckdb").lower()
-        # Fallback to DuckDB if adapter is unrecognized or set to duckdb
         if adapter == "duckdb":
             return self._duckdb_repo
-        # Other adapters would be returned here
+        if adapter == "in_memory":
+            return self._in_memory_repo
+        # Fallback
         return self._duckdb_repo
 
     def estimate_aggregate_consumption(self, node_ids: list[str], start_time: str, end_time: str):

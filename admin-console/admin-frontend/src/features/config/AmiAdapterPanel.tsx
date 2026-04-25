@@ -70,8 +70,8 @@ export function AmiAdapterPanel() {
               </ActionIcon>
             </Tooltip>
             {loading && !adapter ? <Loader size="xs" /> : (
-              <Badge color={adapter === 'duckdb' ? 'blue' : 'green'} variant="light">
-                {adapter === 'duckdb' ? 'Edge Optimized' : 'Cloud Data Lake'}
+              <Badge color={adapter === 'duckdb' ? 'blue' : adapter === 'in_memory' ? 'cyan' : 'green'} variant="light">
+                {adapter === 'duckdb' ? 'Edge Optimized' : adapter === 'in_memory' ? 'Synthetic Engine' : 'Cloud Data Lake'}
               </Badge>
             )}
           </Group>

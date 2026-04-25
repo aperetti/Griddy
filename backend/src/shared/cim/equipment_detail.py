@@ -83,6 +83,10 @@ class EquipmentDetailService:
             "EnergyConsumer":         self._enricher.enrich_energy_consumer,
             "EnergySource":           self._enricher.enrich_energy_source,
             "LinearShuntCompensator": self._enricher.enrich_capacitor,
+            "PhotovoltaicUnit":       self._enricher.enrich_generation,
+            "BatteryUnit":            self._enricher.enrich_generation,
+            "SynchronousMachine":     self._enricher.enrich_generation,
+            "PowerElectronicsConnection": self._enricher.enrich_generation,
         }
         enricher_fn = enrichers.get(cls_name)
         if enricher_fn:

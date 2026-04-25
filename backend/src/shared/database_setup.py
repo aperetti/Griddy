@@ -23,6 +23,9 @@ ADMIN_SQLITE_PATH = os.getenv("ADMIN_DB_PATH") or os.getenv("CONFIG_DB_PATH") or
 # ── DuckDB: analytics engine (weather_recordings + parquet reads) ─
 DB_PATH = os.getenv("DB_PATH", str(BASE_DIR / "grid_data_cim.duckdb"))
 
+# Legacy path for topology ingestion scripts
+SQLITE_PATH = os.getenv("TOPOLOGY_DB_PATH", str(BASE_DIR / "grid_topology.sqlite"))
+
 # ── Parquet directories ───────────────────────────────────────────
 PARQUET_DIR = os.getenv("PARQUET_DIR", str(_PROJECT_ROOT / "cim_readings"))
 PARQUET_ALARMS_DIR = os.getenv("PARQUET_ALARMS_DIR", str(_PROJECT_ROOT / "cim_alarms"))

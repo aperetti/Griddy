@@ -9,10 +9,9 @@ from pathlib import Path
 
 SCRIPT_PATH = Path(__file__).resolve()
 BACKEND_DIR = SCRIPT_PATH.parents[1]
-SAMPLE_DATA_DIR = BACKEND_DIR / "sample_data"
+MODELS_DIR = BACKEND_DIR / "cim" / "models"
 
-INGEST_SCRIPT = BACKEND_DIR / "scripts" / "ingest_cim_graph.py"
-GENERATE_SCRIPT = BACKEND_DIR / "scripts" / "generate_cim_readings.py"
+INGEST_SCRIPT = BACKEND_DIR / "scripts" / "ingest_cim_to_neo4j.py"
 
 def run_step(cmd, env=None):
     print(f"\n>>> Executing: {cmd}")
@@ -35,43 +34,32 @@ def run_step(cmd, env=None):
     return True
 
 def main():
-    if not SAMPLE_DATA_DIR.exists():
-        print(f"Directory not found: {SAMPLE_DATA_DIR}")
+    if not MODELS_DIR.exists():
+        print(f"Directory not found: {MODELS_DIR}")
         sys.exit(1)
 
-    xml_files = sorted([f for f in SAMPLE_DATA_DIR.glob("*.xml")])
+    xml_files = sorted([f for f in MODELS_DIR.glob("*.xml")])
     if not xml_files:
-        print("No .xml files found in sample_data.")
+        print("No .xml files found in cim/models.")
         sys.exit(0)
 
     print(f"Found {len(xml_files)} models to process.")
 
-    # 1. Clean existing readings
-    parquet_dir = BACKEND_DIR / "cim_readings"
-    if parquet_dir.exists():
-        print(f"\nCleaning existing readings in {parquet_dir}...")
-        for f in parquet_dir.glob("*.parquet"):
-            f.unlink()
-
     print(f"\n{'='*60}")
-    print(" STARTING UNIFIED BULK GENERATION")
+    print(" STARTING UNIFIED BULK INGESTION")
     print(f"{'='*60}")
 
-    # Step 1: Ingest ALL models into SQLite
-    print("\n[STEP 1/2] Ingesting all models into topology database...")
-    if not run_step(f"python {INGEST_SCRIPT}"):
+    # Step 1: Ingest ALL models into Neo4j
+    print("\n[STEP 1/1] Ingesting all models into Neo4j...")
+    # Passing the directory to ingest_cim_to_neo4j.py works as it scans for *.xml
+    if not run_step(f"python {INGEST_SCRIPT} {MODELS_DIR}"):
         print("Ingestion failed. Aborting.")
         sys.exit(1)
 
-    # Step 2: Generate readings for ALL models from SQLite
-    print("\n[STEP 2/2] Generating synthetic data for all models...")
-    if not run_step(f"python {GENERATE_SCRIPT} --no-clean"):
-        print("Generation failed. Aborting.")
-        sys.exit(1)
-
     print(f"\n{'='*60}")
-    print(" BULK GENERATION COMPLETE")
+    print(" BULK INGESTION COMPLETE")
     print(f"{'='*60}")
+
 
 if __name__ == "__main__":
     main()
