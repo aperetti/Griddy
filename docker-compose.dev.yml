@@ -1,0 +1,40 @@
+services:
+  backend:
+    command: ["--reload"]
+
+  frontend:
+    build:
+      context: ./frontend
+      target: dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - PORT=80
+      - VITE_API_PROXY_TARGET=http://backend:8000
+      - VITE_DOCS_PROXY_TARGET=http://documentation:3000
+
+  admin-backend:
+    command: ["npm", "run", "dev"]
+    volumes:
+      - ./admin-console/admin-backend:/app
+      - /app/node_modules
+
+  admin-frontend:
+    build:
+      context: ./admin-console/admin-frontend
+      target: dev
+    volumes:
+      - ./admin-console/admin-frontend:/app
+      - /app/node_modules
+    environment:
+      - PORT=80
+      - VITE_API_PROXY_TARGET=http://admin-backend:8090
+
+  documentation:
+    build:
+      context: ./docs
+      target: dev
+    volumes:
+      - ./docs:/app
+      - /app/node_modules
