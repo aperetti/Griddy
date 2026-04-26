@@ -16,7 +16,7 @@ export function setupTelemetryWatcher(fastify: FastifyInstance) {
       const config = JSON.parse(content);
       
       const globalLevel = config.global_level?.toLowerCase();
-      const nodeConfig = config.services?.node_frontend; // Using node_frontend as proxy for admin-backend for now or adding node_backend
+      const nodeConfig = config.services?.node_backend;
       const defaultLevel = nodeConfig?.default_level?.toLowerCase() || globalLevel;
 
       if (defaultLevel) {

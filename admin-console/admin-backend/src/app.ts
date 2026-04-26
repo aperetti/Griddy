@@ -9,6 +9,15 @@ import { usersRoutes } from './features/users/routes.js';
 import { pluginsRoutes } from './features/plugins/routes.js';
 import { setupTelemetryWatcher } from './shared/telemetry.js';
 
+// Setup error handlers early
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+
 const fastify = Fastify({
   logger: true,
   bodyLimit: 104857600
@@ -46,7 +55,7 @@ const start = async () => {
     await fastify.listen({ port, host: '0.0.0.0' });
     console.log(`Admin Console Backend listening on port ${port}`);
   } catch (err) {
-    fastify.log.error(err);
+    console.error('Fatal error during startup:', err);
     process.exit(1);
   }
 };

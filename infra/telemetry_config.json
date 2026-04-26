@@ -4,12 +4,15 @@
     "python_backend": {
       "default_level": "INFO",
       "overrides": {
-        "grid_modeling.cim_parser": "DEBUG",
-        "api.v1.endpoints": "INFO"
+        "api.access": "INFO",
+        "src.analytics.routes": "INFO",
+        "src.grid.topology_routes": "INFO",
+        "src.discovery.routes": "INFO",
+        "grid_modeling.cim_parser": "DEBUG"
       }
     },
-    "node_frontend": {
-      "default_level": "WARN",
+    "node_backend": {
+      "default_level": "INFO",
       "overrides": {
         "auth_middleware": "DEBUG"
       }

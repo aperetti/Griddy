@@ -11,6 +11,7 @@ services:
       - /app/node_modules
     environment:
       - PORT=80
+      - HMR_PORT=8081
       - VITE_API_PROXY_TARGET=http://backend:8000
       - VITE_DOCS_PROXY_TARGET=http://documentation:3000
 
@@ -19,6 +20,10 @@ services:
     volumes:
       - ./admin-console/admin-backend:/app
       - /app/node_modules
+      - ./infra:/app/infra
+    environment:
+      - INFRA_DIR=/app/infra
+      - TELEMETRY_CONFIG_PATH=/app/infra/telemetry_config.json
 
   admin-frontend:
     build:
@@ -29,6 +34,7 @@ services:
       - /app/node_modules
     environment:
       - PORT=80
+      - HMR_PORT=8091
       - VITE_API_PROXY_TARGET=http://admin-backend:8090
 
   documentation:

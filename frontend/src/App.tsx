@@ -258,12 +258,16 @@ export default function App() {
 
   // Initial Load & Topology Refresh
   useEffect(() => {
+    console.log('[App] useEffect triggered', { version: topology.topologyVersion, active: topology.activeModelIds });
     const load = async () => {
       // Initialize with a single model if nothing is active
       if (topology.activeModelIds.length === 0) {
+        console.log('[App] No active models, fetching...');
         try {
           const models = await fetchModels();
+          console.log('[App] Discovered models:', models);
           if (models.length > 0) {
+            console.log('[App] Auto-activating first model:', models[0].feeder_id);
             topology.setActiveModelIds([models[0].feeder_id]);
             return;
           }

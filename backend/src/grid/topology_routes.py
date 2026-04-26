@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Query, HTTPException
 from typing import Optional
+import logging
 from src.shared.dependencies import registry, graph_engine, ensure_graph_built, get_active_model_ids
 from src.discovery.discover_downstream import DiscoverDownstreamUseCase
 from src.discovery.trace_upstream import TraceUpstreamUseCase
 
 router = APIRouter(prefix="/api/graph", tags=["grid"])
+logger = logging.getLogger(__name__)
 
 # Use cases
 downstream_uc = DiscoverDownstreamUseCase(graph_engine)
@@ -16,9 +18,11 @@ async def get_topology(
 ):
     """Returns the full grid topology with coordinates for UI rendering."""
     model_ids = get_active_model_ids(models)
+    logger.info("Topology requested for models: %s", model_ids)
     ensure_graph_built(model_ids)
 
     nodes, all_edges = registry.get_combined_topology(model_ids)
+    logger.debug("Topology raw data: %d nodes, %d edges", len(nodes), len(all_edges))
 
     # Assign circuit IDs via connected components
     substations = [n['node_id'] for n in nodes if n['node_type'] == 'Substation']
@@ -86,16 +90,23 @@ async def get_topology(
             "waypoints": e.get('waypoints'),
         })
 
+    logger.info("Topology mapped: %d nodes, %d edges", len(mapped_nodes), len(mapped_edges))
     return {"nodes": mapped_nodes, "edges": mapped_edges}
 
 @router.get("/downstream/{node_id}")
 async def get_downstream(node_id: str):
     """Finds all downstream nodes."""
+    logger.info("Trace downstream requested for node %s", node_id)
     ensure_graph_built()
-    return {"downstream_nodes": downstream_uc.execute(node_id)}
+    result = downstream_uc.execute(node_id)
+    logger.debug("Trace downstream found %d nodes", len(result))
+    return {"downstream_nodes": result}
 
 @router.get("/upstream/{node_id}")
 async def get_upstream(node_id: str):
     """Finds all upstream nodes."""
+    logger.info("Trace upstream requested for node %s", node_id)
     ensure_graph_built()
-    return {"upstream_nodes": upstream_uc.execute(node_id)}
+    result = upstream_uc.execute(node_id)
+    logger.debug("Trace upstream found %d nodes", len(result))
+    return {"upstream_nodes": result}

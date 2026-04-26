@@ -43,7 +43,7 @@ services:
       context: ./frontend
     container_name: grid-frontend
     ports:
-      - "${FRONTEND_PORT:-8080}:80"
+      - "${FRONTEND_PORT:-8081}:80"
     depends_on:
       - backend
     restart: unless-stopped

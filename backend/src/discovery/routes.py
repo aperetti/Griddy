@@ -1,5 +1,6 @@
 import os
 import re
+import logging
 from fastapi import APIRouter, Query, HTTPException, Depends
 from fastapi.concurrency import run_in_threadpool
 from src.shared.auth import get_current_username
@@ -9,10 +10,12 @@ import sqlite3
 from src.shared.dependencies import registry, ensure_graph_built, ADMIN_SQLITE_PATH
 
 router = APIRouter(prefix="/api/cim", tags=["discovery"])
+logger = logging.getLogger(__name__)
 
 
 def _find_manager_for_mrid(mrid: str):
     """Search all loaded models for an equipment mRID."""
+    logger.debug("Searching for mRID: %s", mrid)
     model_id = registry._mrid_to_model.get(mrid)
     if model_id:
         mgr = registry.get_manager(model_id)
@@ -84,8 +87,10 @@ async def get_equipment_by_class(class_name: str):
 @router.get("/equipment/{mrid}")
 async def get_equipment_detail(mrid: str):
     """Full CIM detail for any equipment by mRID."""
+    logger.info("Equipment detail requested for mRID: %s", mrid)
     detail = _find_manager_for_mrid(mrid)
     if detail is None:
+        logger.warning("Equipment not found: %s", mrid)
         raise HTTPException(status_code=404, detail=f"Equipment not found: {mrid}")
     return detail
 
@@ -93,6 +98,7 @@ async def get_equipment_detail(mrid: str):
 @router.get("/equipment/{mrid}/expanded")
 async def get_equipment_detail_expanded(mrid: str):
     """Equipment detail with terminal connectivity nodes expanded to full objects for tooltip resolution."""
+    logger.info("Expanded equipment detail requested for mRID: %s", mrid)
 
     def _get():
         model_id = registry._mrid_to_model.get(mrid)
@@ -281,13 +287,16 @@ async def execute_cim_query(request: CypherQueryRequest):
 
     Returns: { columns: [...], rows: [{col: value, ...}], count: N }
     """
+    logger.info("Executing Cypher query")
     if _WRITE_KEYWORDS.search(request.cypher):
+        logger.warning("Rejected write-attempt Cypher query")
         raise HTTPException(
             status_code=400,
             detail="Only read-only Cypher queries are permitted.",
         )
 
     def _run() -> Dict[str, Any]:
+        logger.debug("Cypher query: %s | Params: %s", request.cypher, request.params)
         neo4j_url = os.getenv("CIMG_URL")
         if not neo4j_url:
             raise HTTPException(

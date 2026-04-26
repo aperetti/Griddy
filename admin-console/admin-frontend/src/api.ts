@@ -22,6 +22,17 @@ export const configApi = {
   getAmiAdapters: (): Promise<{ name: string; label: string }[]> =>
     api.get('/display-rules/ami-adapters').then(res => res.data),
   
+  // ── Telemetry Config (Observability-as-Code) ──────────────────
+  getTelemetryConfig: () => api.get('/display-rules/telemetry-config').then(res => res.data),
+  saveTelemetryConfig: (config: any) => api.put('/display-rules/telemetry-config', config).then(res => res.data),
+
+  // ── Infrastructure File Editor (Observability-as-Code) ─────────
+  getInfraFiles: (): Promise<string[]> => api.get('/display-rules/infra-files').then(res => res.data),
+  getInfraFile: (filename: string): Promise<{ filename: string; content: string }> => 
+    api.get(`/display-rules/infra-files/${filename}`).then(res => res.data),
+  saveInfraFile: (filename: string, content: string) => 
+    api.put(`/display-rules/infra-files/${filename}`, { content }).then(res => res.data),
+
   // ── Display Profiles ───────────────────────────────────────────
   getDisplayProfiles: (): Promise<any[]> => 
     api.get('/display-rules/configs').then(res => res.data),

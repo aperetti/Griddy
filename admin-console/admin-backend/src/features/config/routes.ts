@@ -1,31 +1,101 @@
 import { FastifyInstance } from 'fastify';
 import { getDb } from '../../shared/database.js';
+import fs from 'fs';
+import path from 'path';
 
-interface RuleConfig {
-  visual_type: string;
-  icon?: string;
-  color_hex?: string;
-  size?: number;
-  label?: string;
-  svg_overrides?: any[];
-  [key: string]: any;
-}
-
-interface DisplayRule {
-  id?: number;
-  config_id: number;
-  name: string;
-  priority: number;
-  match_conditions: any;
-  enabled: boolean;
-  config: RuleConfig;
-}
+// ... (RuleConfig and DisplayRule interfaces)
 
 const MAIN_BACKEND_URL = process.env.MAIN_BACKEND_URL || 'http://localhost:8000';
+const INFRA_DIR = process.env.INFRA_DIR || path.resolve(process.cwd(), '../../infra');
 
 export async function configRoutes(fastify: FastifyInstance) {
   
-  // ── Config Overrides (Legacy/Shared) ───────────────────────────
+  // ── Infrastructure File Editor (Observability-as-Code) ─────────
+  
+  // List editable files in infra/
+  fastify.get('/infra-files', async () => {
+    try {
+      const files = fs.readdirSync(INFRA_DIR).filter(f => 
+        fs.statSync(path.join(INFRA_DIR, f)).isFile() && 
+        (f.endsWith('.json') || f.endsWith('.yaml') || f.endsWith('.alloy'))
+      );
+      return files;
+    } catch (err) {
+      fastify.log.error(err);
+      return [];
+    }
+  });
+
+  // Get file content
+  fastify.get('/infra-files/:filename', async (request, reply) => {
+    const { filename } = request.params as { filename: string };
+    const filePath = path.join(INFRA_DIR, filename);
+    
+    // Security: prevent directory traversal
+    if (!filePath.startsWith(INFRA_DIR)) {
+      return reply.status(403).send({ error: 'Access denied' });
+    }
+
+    try {
+      if (!fs.existsSync(filePath)) {
+        return reply.status(404).send({ error: 'File not found' });
+      }
+      const content = fs.readFileSync(filePath, 'utf8');
+      return { filename, content };
+    } catch (err) {
+      fastify.log.error(err);
+      return reply.status(500).send({ error: 'Failed to read file' });
+    }
+  });
+
+  // Save file content
+  fastify.put('/infra-files/:filename', async (request, reply) => {
+    const { filename } = request.params as { filename: string };
+    const { content } = request.body as { content: string };
+    const filePath = path.join(INFRA_DIR, filename);
+    
+    // Security: prevent directory traversal
+    if (!filePath.startsWith(INFRA_DIR)) {
+      return reply.status(403).send({ error: 'Access denied' });
+    }
+
+    try {
+      fs.writeFileSync(filePath, content, 'utf8');
+      return { success: true };
+    } catch (err) {
+      fastify.log.error(err);
+      return reply.status(500).send({ error: 'Failed to save file' });
+    }
+  });
+
+  // ── Telemetry Config (Observability-as-Code) ──────────────────
+  fastify.get('/telemetry-config', async (_request, reply) => {
+    const filePath = path.join(INFRA_DIR, 'telemetry_config.json');
+    try {
+      if (!fs.existsSync(filePath)) {
+        return reply.status(404).send({ error: 'Telemetry config not found' });
+      }
+      const content = fs.readFileSync(filePath, 'utf8');
+      return JSON.parse(content);
+    } catch (err) {
+      fastify.log.error(err);
+      return reply.status(500).send({ error: 'Failed to read telemetry config' });
+    }
+  });
+
+  fastify.put('/telemetry-config', async (request, reply) => {
+    const config = request.body;
+    const filePath = path.join(INFRA_DIR, 'telemetry_config.json');
+    try {
+      fs.writeFileSync(filePath, JSON.stringify(config, null, 2), 'utf8');
+      return { success: true };
+    } catch (err) {
+      fastify.log.error(err);
+      return reply.status(500).send({ error: 'Failed to save telemetry config' });
+    }
+  });
+
+  // ... (rest of the routes)
   fastify.get('/overrides', async () => {
     const db = await getDb();
     return db.all('SELECT * FROM config_overrides');

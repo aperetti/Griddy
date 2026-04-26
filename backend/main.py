@@ -15,10 +15,11 @@ except ImportError:
     print("dotenv not installed")
     pass
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+import time
 
 # Feature Slice Routers
 from src.shared.config_watcher import watcher
@@ -69,6 +70,21 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+access_logger = logging.getLogger("api.access")
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.time()
+    response = await call_next(request)
+    process_time = time.time() - start_time
+    # Structured log format optimized for Loki parsing
+    access_logger.info(
+        f"API Request: method={request.method} path={request.url.path} "
+        f"status={response.status_code} duration_ms={process_time * 1000:.2f} "
+        f"client={request.client.host if request.client else 'unknown'}"
+    )
+    return response
+
 # CORS configuration
 allowed_origins_env = os.environ.get("ALLOWED_ORIGINS")
 if allowed_origins_env:
@@ -78,7 +94,8 @@ else:
         "http://localhost:3000",
         "http://localhost:3001",
         "http://localhost:8000",
-        "http://localhost:8080"
+        "http://localhost:8080",
+        "http://localhost:8081"
     ]
 
 app.add_middleware(
