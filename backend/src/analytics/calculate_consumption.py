@@ -54,20 +54,76 @@ class CalculateAggregateConsumptionUseCase:
                     all_downstream_edges.update(edges)
             
             nodes_to_query = list(all_downstream_nodes)
-            node_phases = self.graph_engine.get_node_phases(nodes_to_query)
+            nodes_objs = self.graph_engine.get_nodes(nodes_to_query)
             
             # Calculate weights for phase aggregation
             node_weights = {}
-            for nid in nodes_to_query:
-                p_raw = node_phases.get(nid, ["A", "B", "C"]) or ["A", "B", "C"]
-                p_list = [p for p in p_raw if p in ("A", "B", "C")]
+            for node in nodes_objs:
+                nid = node.id
+                
+                # Rule 1: Look for EnergyConsumers attached to this node first.
+                consumers = [eq for eq in node.attached_equipment if eq.get("type") == "EnergyConsumer"]
+                
                 w = {"A": 0.0, "B": 0.0, "C": 0.0}
-                if p_list:
-                    share = 1.0 / len(p_list)
-                    for p in p_list:
-                        w[p] = share
-                else:
+                total_weight = 0.0
+                
+                # Check for primary phases on consumers
+                found_primary = False
+                if consumers:
+                    for eq in consumers:
+                        eq_phases = eq.get("phases") or []
+                        p_val = float(eq.get("active_power_w") or 1.0)
+                        
+                        primaries = [p for p in eq_phases if p in ("A", "B", "C")]
+                        if primaries:
+                            found_primary = True
+                            share = p_val / len(primaries)
+                            for p in primaries:
+                                w[p] += share
+                                total_weight += share
+                
+                # Rule 2: If no primary phases on equipment, check Node phases
+                if not found_primary:
+                    node_p = node.phases or []
+                    primaries = [p for p in node_p if p in ("A", "B", "C")]
+                    if primaries:
+                        found_primary = True
+                        share = 1.0 / len(primaries)
+                        for p in primaries:
+                            w[p] = share
+                            total_weight = 1.0
+
+                # Rule 3: If still no primary phases (e.g. S1/S2 or missing), trace UPSTREAM
+                if not found_primary:
+                    try:
+                        # find_upstream returns (nodes, edges) in BFS order
+                        _, upstream_edges = self.graph_engine.find_upstream(nid, max_depth=20)
+                        if upstream_edges:
+                            edges_data = self.graph_engine.get_edges(upstream_edges)
+                            # Find nearest ACLineSegment
+                            for edge in edges_data:
+                                if edge.get("edge_type") == "ACLineSegment":
+                                    line_phases = edge.get("phases") or []
+                                    primaries = [p for p in line_phases if p in ("A", "B", "C")]
+                                    if primaries:
+                                        found_primary = True
+                                        share = 1.0 / len(primaries)
+                                        for p in primaries:
+                                            w[p] = share
+                                            total_weight = 1.0
+                                        break
+                    except Exception as e:
+                        logger.warning("Upstream phase trace failed for %s: %s", nid, e)
+
+                # Rule 4: Final balanced fallback
+                if not found_primary:
                     w = {"A": 1.0/3.0, "B": 1.0/3.0, "C": 1.0/3.0}
+                else:
+                    # Normalize weight sum to 1.0
+                    if total_weight > 0:
+                        for p in ["A", "B", "C"]:
+                            w[p] = w[p] / total_weight
+                
                 node_weights[nid] = w
 
             results = self.meter_repo.get_aggregate_consumption(nodes_to_query, node_weights, start_time, end_time)

@@ -41,6 +41,7 @@ class TopologyEngine(GraphEngine):
 
     def __init__(self):
         self._nodes: Dict[str, GraphNode] = {}
+        self._edges: Dict[str, dict] = {}
         # forward_adj[node] = [(neighbor, edge_id), ...]  source → load
         self._forward_adj: Dict[str, List[Tuple[str, str]]] = defaultdict(list)
         # reverse_adj[node] = [(neighbor, edge_id), ...]  load → source
@@ -54,6 +55,7 @@ class TopologyEngine(GraphEngine):
 
     def build_graph(self, nodes: List[GraphNode] = None, edges: List[dict] = None) -> None:
         self._nodes = {}
+        self._edges = {}
         self._forward_adj = defaultdict(list)
         self._reverse_adj = defaultdict(list)
         self._stitch_adj = defaultdict(list)
@@ -74,6 +76,7 @@ class TopologyEngine(GraphEngine):
                 eid = edge.get("edge_id")
                 if not src or not dst or not eid:
                     continue
+                self._edges[eid] = edge
                 self._forward_adj[src].append((dst, eid))
                 self._reverse_adj[dst].append((src, eid))
 
@@ -153,6 +156,14 @@ class TopologyEngine(GraphEngine):
 
     def get_node_phases(self, node_ids: List[str]) -> Dict[str, List[str]]:
         return {nid: self._nodes[nid].phases for nid in node_ids if nid in self._nodes}
+
+    def get_nodes(self, node_ids: List[str]) -> List[GraphNode]:
+        """Returns a list of GraphNode objects for the given IDs."""
+        return [self._nodes[nid] for nid in node_ids if nid in self._nodes]
+
+    def get_edges(self, edge_ids: List[str]) -> List[dict]:
+        """Returns a list of edge dictionaries for the given IDs."""
+        return [self._edges[eid] for eid in edge_ids if eid in self._edges]
 
     def get_connected_components(self) -> List[Set[str]]:
         """Return a list of connected components as sets of node IDs.

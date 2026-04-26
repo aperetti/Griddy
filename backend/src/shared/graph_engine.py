@@ -30,3 +30,13 @@ class GraphEngine(ABC):
     def get_node_phases(self, node_ids: List[str]) -> Dict[str, List[str]]:
         """Returns a mapping of node IDs to their phase lists."""
         pass
+
+    @abstractmethod
+    def get_nodes(self, node_ids: List[str]) -> List[GraphNode]:
+        """Returns a list of GraphNode objects for the given IDs."""
+        pass
+
+    @abstractmethod
+    def get_edges(self, edge_ids: List[str]) -> List[dict]:
+        """Returns a list of edge dictionaries for the given IDs."""
+        pass

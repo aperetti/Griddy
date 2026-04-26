@@ -352,11 +352,18 @@ class TopologyBuilder:
     # ------------------------------------------------------------------
 
     def _get_phases_for_cn(self, cn_mrid: str) -> list[str] | None:
+        all_phases = set()
         for eq_mrid in self.idx.cn_equipment.get(cn_mrid, []):
             phases = self._get_phases_for_equipment(eq_mrid)
             if phases:
-                return phases
-        return None
+                all_phases.update(phases)
+        
+        if not all_phases:
+            return None
+            
+        # Standard sort order
+        _order = {"A": 0, "B": 1, "C": 2, "N": 3, "S1": 4, "S2": 5}
+        return sorted(list(all_phases), key=lambda p: _order.get(p, 9))
 
     def _get_phases_for_equipment(self, eq_mrid: str) -> list[str] | None:
         # 1. Per-phase CIM objects — most reliable

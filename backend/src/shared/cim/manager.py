@@ -156,12 +156,19 @@ class CimModelManager:
         self.graph = self.network.graph
         self._loaded = True
 
+        # Special handling for phase association objects which cimgraph often misses
+        # because they are not directly linked to the EquipmentContainer.
+        self._load_phase_associations(feeder_uri, discovered_labels)
+
+        # Discovery of true equipment phasing via direct Neo4j query (robust source of truth)
+        external_phases = self._discover_equipment_phases(feeder_uri)
+
         logger.info("CIM classes loaded:")
         for cls, objs in sorted(self.network.graph.items(), key=lambda x: x[0].__name__):
             if objs:
                 logger.info("  %-30s %6d", cls.__name__, len(objs))
 
-        self._idx = IndexBuilder(cim, self.network.graph, feeder_uri=feeder_uri)
+        self._idx = IndexBuilder(cim, self.network.graph, feeder_uri=feeder_uri, external_phases=external_phases)
         self._idx.build()
 
         # Build topology
@@ -361,36 +368,139 @@ class CimModelManager:
                         })
         return results
 
-    # ── Private Implementation ────────────────────────────────────────────────
-
-    def _discover_labels(self, feeder_uri: str) -> list[str]:
-        """Query Neo4j for all unique labels (classes) present in this feeder."""
-        from neo4j import GraphDatabase
-
-        url = os.getenv("CIMG_URL")
-        username = os.getenv("CIMG_USERNAME", "neo4j")
-        password = os.getenv("CIMG_PASSWORD", "")
-        database = os.getenv("CIMG_DATABASE", "neo4j")
+    def _load_phase_associations(self, feeder_uri: str, labels: list[str]):
+        """Specialized loader for ...Phase association objects."""
+        phase_labels = [l for l in labels if l.endswith("Phase")]
+        if not phase_labels:
+            return
 
         # Normalize URI
         if not feeder_uri.startswith("urn:uuid:"):
             feeder_uri = f"urn:uuid:{feeder_uri}"
 
-        # Labels found on equipment belonging to this feeder or its container
+        # Trace association objects connected to equipment in this feeder
         query = """
         MATCH (f:Feeder {uri: $uri})
         MATCH (n)-[:`Equipment.EquipmentContainer`|MemberOf*0..10]-(f)
-        UNWIND labels(n) as label
+        WITH n
+        MATCH (p)-[]->(n)
+        WHERE any(lbl IN labels(p) WHERE lbl IN $phase_labels)
+        RETURN labels(p) as labels, p.uri as uri
+        """
+
+        try:
+            res = self._neo4j.execute_cypher(query, {"uri": feeder_uri, "phase_labels": phase_labels})
+            logger.info("  Found %d total phase association records in Neo4j for feeder %s", len(res), feeder_uri)
+            
+            # Group URIs by their primary label
+            label_to_mrids = {}
+            for row in res:
+                # Prefer the more specific label (the one in phase_labels)
+                target = next((l for l in row["labels"] if l in phase_labels), None)
+                if target:
+                    label_to_mrids.setdefault(target, []).append(row["uri"])
+
+            if not label_to_mrids:
+                logger.info("  No phase association MRIDs found for feeder %s", feeder_uri)
+                return
+
+            for label, mrids in label_to_mrids.items():
+                logger.info("  Bulk-loading %d objects for %s...", len(mrids), label)
+                cls_type = getattr(self.cim, label, None)
+                if cls_type and mrids:
+                    try:
+                        # get_attributes with a list of IDs bypasses the feeder filter.
+                        # We explicitly update our local graph with the results.
+                        objs = self.network.get_attributes(cls_type, mrids)
+                        if objs:
+                            logger.info("    Successfully loaded %d %s objects", len(objs), label)
+                            self.network.graph[cls_type].update(objs)
+                            # Sample check
+                            sample_id = next(iter(objs))
+                            sample_obj = objs[sample_id]
+                            attrs = [a for a in dir(sample_obj) if not a.startswith("_")]
+                            logger.info("    Sample %s attributes: %s", label, attrs)
+                        else:
+                            logger.warning("    get_attributes returned no objects for %s", label)
+                    except Exception as e:
+                        logger.debug("Failed to load attributes for %s association: %s", label, e)
+
+        except Exception as e:
+            logger.error("Failed to discover phase objects for bulk load: %s", e)
+
+    def _discover_equipment_phases(self, feeder_uri: str) -> dict[str, list[str]]:
+        """Query Neo4j for equipment phasing via Phase association objects."""
+        # Normalize URI
+        if not feeder_uri.startswith("urn:uuid:"):
+            feeder_uri = f"urn:uuid:{feeder_uri}"
+
+        # This query finds ...Phase association objects linked to equipment in the feeder.
+        # It handles EnergyConsumerPhase, ACLineSegmentPhase, etc. by tracing the '.phase' relationship.
+        query = """
+        MATCH (f:Feeder {uri: $uri})
+        MATCH (n)-[:`Equipment.EquipmentContainer`|MemberOf*0..10]-(f)
+        WITH n
+        MATCH (p)-[]->(n)
+        MATCH (p)-[r_ph]->(ph:Resource)
+        WHERE type(r_ph) ENDS WITH '.phase'
+        RETURN n.uri as eq_uri, ph.uri as ph_uri
+        """
+        
+        phases = {}
+        try:
+            res = self._neo4j.execute_cypher(query, {"uri": feeder_uri})
+            logger.info("  Discovered %d phase-related records in Neo4j for feeder %s", len(res), feeder_uri)
+            for row in res:
+                eq_mrid = _mrid_str(row["eq_uri"])
+                if not eq_mrid: continue
+                
+                # Extract phase code from URI: ...#SinglePhaseKind.s2 -> s2 -> S2
+                ph_uri = str(row["ph_uri"])
+                raw_code = ph_uri.split('.')[-1]
+                
+                # Standardize to CIM common codes
+                code_map = {
+                    "s1": "S1", "s2": "S2",
+                    "A": "A", "B": "B", "C": "C",
+                    "N": "N", "ABC": ["A", "B", "C"]
+                }
+                
+                parsed = code_map.get(raw_code, raw_code.upper())
+                codes = parsed if isinstance(parsed, list) else [parsed]
+                
+                existing = phases.setdefault(eq_mrid, [])
+                for c in codes:
+                    if c not in existing:
+                        existing.append(c)
+            
+            logger.info("  Extracted true phasing for %d equipment items", len(phases))
+        except Exception as e:
+            logger.error("Failed to discover equipment phases: %s", e)
+            
+        return phases
+
+    # ── Private Implementation ────────────────────────────────────────────────
+
+    def _discover_labels(self, feeder_uri: str) -> list[str]:
+        """Query Neo4j for all unique labels (classes) present in this feeder."""
+        # Normalize URI
+        if not feeder_uri.startswith("urn:uuid:"):
+            feeder_uri = f"urn:uuid:{feeder_uri}"
+
+        # Labels found on equipment belonging to this feeder, PLUS associated phase objects
+        query = """
+        MATCH (f:Feeder {uri: $uri})
+        MATCH (n)-[:`Equipment.EquipmentContainer`|MemberOf*0..10]-(f)
+        WITH n
+        OPTIONAL MATCH (p)-[:`EnergyConsumerPhase.EnergyConsumer`|`ACLineSegmentPhase.ACLineSegment`|`SwitchPhase.Switch`|`ShuntCompensatorPhase.ShuntCompensator`|`PowerElectronicsConnectionPhase.PowerElectronicsConnection`]->(n)
+        UNWIND (labels(n) + coalesce(labels(p), [])) as label
         RETURN DISTINCT label
         """
         
-        labels = []
         try:
-            driver = GraphDatabase.driver(url, auth=(username, password))
-            with driver.session(database=database) as session:
-                result = session.run(query, uri=feeder_uri)
-                labels = [row["label"] for row in result]
-            driver.close()
+            result = self._neo4j.execute_cypher(query, {"uri": feeder_uri})
+            labels = [row["label"] for row in result]
+            return labels
         except Exception as e:
             logger.error("Failed to discover labels in Neo4j for feeder %s: %s", feeder_uri, e)
             # Fallback to a bare-minimum set to prevent total failure
@@ -398,5 +508,3 @@ class CimModelManager:
                 "ConnectivityNode", "ACLineSegment", "EnergyConsumer", 
                 "PowerTransformer", "Location", "PositionPoint", "BaseVoltage"
             ]
-
-        return labels
