@@ -1,0 +1,22 @@
+{
+  "global_level": "INFO",
+  "services": {
+    "python_backend": {
+      "default_level": "INFO",
+      "overrides": {
+        "grid_modeling.cim_parser": "DEBUG",
+        "api.v1.endpoints": "INFO"
+      }
+    },
+    "node_frontend": {
+      "default_level": "WARN",
+      "overrides": {
+        "auth_middleware": "DEBUG"
+      }
+    }
+  },
+  "tracing": {
+    "sampling_rate": 1.0,
+    "enabled": true
+  }
+}

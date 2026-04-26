@@ -9,6 +9,7 @@ services:
       - grid_config:/data/config
       - ./backend:/app
       - ./backend/cim:/app/cim
+      - ./infra/telemetry_config.json:/etc/telemetry/telemetry_config.json:ro
     environment:
       - BOOTSTRAP_DATA=${BOOTSTRAP_DATA:-true}
       - DB_PATH=/data/grid_data_cim.duckdb
@@ -25,6 +26,7 @@ services:
       - CIMG_CIM_PROFILE=${CIMG_CIM_PROFILE:-cimhub_2023}
       - CIMG_IEC61970_301=${CIMG_IEC61970_301:-8}
       - CIM_MODEL_NAMES=${CIM_MODEL_NAMES:-IEEE8500}
+      - TELEMETRY_CONFIG_PATH=/etc/telemetry/telemetry_config.json
     depends_on:
       neo4j:
         condition: service_healthy
@@ -48,7 +50,7 @@ services:
 
   maintenance:
     image: nginx:alpine
-    profiles: ["maintenance"]
+    profiles: [ "maintenance" ]
     container_name: grid-maintenance
     volumes:
       - ./maintenance:/usr/share/nginx/html:ro
@@ -102,11 +104,13 @@ services:
     container_name: grid-admin-backend
     volumes:
       - grid_config:/data/config
+      - ./infra/telemetry_config.json:/etc/telemetry/telemetry_config.json:ro
     environment:
       - ADMIN_CONSOLE_PORT=8090
       - ADMIN_DB_PATH=/data/config/admin_config.db
       - DB_PATH=/data/config/admin_config.db
       - MAIN_BACKEND_URL=http://backend:8000
+      - TELEMETRY_CONFIG_PATH=/etc/telemetry/telemetry_config.json
     ports:
       - "${ADMIN_BACKEND_PORT:-8090}:8090"
     restart: unless-stopped
@@ -137,7 +141,7 @@ services:
       - neo4j_logs:/logs
       - ./backend/cim:/var/lib/neo4j/import/cim
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider localhost:7474 || exit 1"]
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider localhost:7474 || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -170,6 +174,50 @@ services:
     depends_on:
       neo4j:
         condition: service_healthy
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grid-grafana
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:latest
+    container_name: grid-loki
+    volumes:
+      - ./infra/loki-config.yaml:/etc/loki/local-config.yaml
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "3100:3100"
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:latest
+    container_name: grid-tempo
+    volumes:
+      - ./infra/tempo-config.yaml:/etc/tempo/tempo.yaml
+    command: -config.file=/etc/tempo/tempo.yaml
+    ports:
+      - "3200:3200" # HTTP
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+    restart: unless-stopped
+
+  alloy:
+    image: grafana/alloy:latest
+    container_name: grid-alloy
+    volumes:
+      - ./infra/alloy-config.alloy:/etc/alloy/config.alloy
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: run --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
     restart: unless-stopped
 
 volumes:

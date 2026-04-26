@@ -1,14 +1,21 @@
+import { initializeTracing } from './shared/tracing.js';
+initializeTracing();
+
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { dataRoutes } from './features/data/routes.js';
 import { configRoutes } from './features/config/routes.js';
 import { usersRoutes } from './features/users/routes.js';
 import { pluginsRoutes } from './features/plugins/routes.js';
+import { setupTelemetryWatcher } from './shared/telemetry.js';
 
 const fastify = Fastify({
   logger: true,
   bodyLimit: 104857600
 });
+
+// Setup dynamic telemetry watcher
+setupTelemetryWatcher(fastify);
 
 // Register plugins
 await fastify.register(cors, {
@@ -20,6 +27,17 @@ await fastify.register(dataRoutes, { prefix: '/api/data' });
 await fastify.register(configRoutes, { prefix: '/api/display-rules' });
 await fastify.register(usersRoutes, { prefix: '/api/users' });
 await fastify.register(pluginsRoutes, { prefix: '/api/plugins' });
+
+// Dynamic Telemetry Management
+fastify.post('/admin/log-level', async (request, reply) => {
+  const { level } = request.body as { level: string };
+  if (level) {
+    fastify.log.level = level.toLowerCase();
+    return { status: 'updated', level: fastify.log.level };
+  }
+  return reply.status(400).send({ error: 'Level is required' });
+});
+
 fastify.get('/ping', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 
 const start = async () => {

@@ -18,9 +18,11 @@ except ImportError:
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 # Feature Slice Routers
 from src.shared.config_watcher import watcher
+from src.shared.telemetry import init_telemetry, setup_tracing
 # Plugin system
 from plugins import include_plugin_routers
 from plugins.registry_routes import router as plugin_registry_router
@@ -48,6 +50,14 @@ async def lifespan(app: FastAPI):
 
     # Start the background config watcher
     await watcher.start()
+
+    # Initialize telemetry (dynamic logging)
+    workspace_root = Path(__file__).resolve().parents[1]
+    init_telemetry(workspace_root)
+
+    # Initialize tracing
+    setup_tracing("grid-backend")
+    FastAPIInstrumentor.instrument_app(app)
 
     yield
     # shutdown
