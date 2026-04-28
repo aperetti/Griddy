@@ -1,6 +1,9 @@
 import duckdb
 import os
 import logging
+import threading
+import time
+from contextlib import contextmanager
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
@@ -30,14 +33,37 @@ class DuckDBMeterDataRepository(IMeterDataRepository):
     def __init__(self, db_path: str, parquet_dir: str):
         self.db_path = db_path
         self.parquet_dir = parquet_dir
+        self._all_parquet_files: list[Path] = []
+        self._last_scan_time = 0
+        self._weather_map: Optional[Dict[Tuple[int, int, int], float]] = None
+        self._thread_local = threading.local()
 
+    def _get_weather_map(self, conn) -> Dict[Tuple[int, int, int], float]:
+        if self._weather_map is None:
+            rows = conn.execute(
+                "SELECT month, day, hour, temperature FROM weather_recordings"
+            ).fetchall()
+            self._weather_map = {(r[0], r[1], r[2]): r[3] for r in rows}
+        return self._weather_map
+
+    @contextmanager
     def _get_connection(self):
-        return duckdb.connect(self.db_path, read_only=True)
+        """Yield a persistent per-thread read-only DuckDB connection."""
+        local = self._thread_local
+        if not getattr(local, "conn", None):
+            local.conn = duckdb.connect(self.db_path, read_only=True)
+        yield local.conn
 
     def _get_parquet_range_files(self, start_time: str, end_time: str) -> List[str]:
         """Prunes the list of Parquet files based on YYYY_MM in filenames."""
         if not os.path.exists(self.parquet_dir):
             return []
+
+        # 1. Cache the file list for 60 seconds to avoid constant bind-mount IO
+        now = time.time()
+        if now - self._last_scan_time > 60:
+            self._all_parquet_files = list(Path(self.parquet_dir).glob("readings_*.parquet"))
+            self._last_scan_time = now
 
         try:
             s = start_time.replace("Z", "+00:00")
@@ -46,7 +72,7 @@ class DuckDBMeterDataRepository(IMeterDataRepository):
             end_dt = datetime.fromisoformat(e)
         except ValueError as ex:
             logger.warning(f"Malformed date provided: {start_time} - {ex}")
-            return [str(p) for p in Path(self.parquet_dir).glob("*.parquet")]
+            return [str(f).replace("\\", "/") for f in self._all_parquet_files]
 
         covered_months = set()
         curr = start_dt.replace(day=1)
@@ -57,133 +83,138 @@ class DuckDBMeterDataRepository(IMeterDataRepository):
             else:
                 curr = curr.replace(month=curr.month + 1)
 
-        all_files = list(Path(self.parquet_dir).glob("readings_unified_*.parquet"))
         relevant_files = []
-        for f in all_files:
+        for f in self._all_parquet_files:
             for month_str in covered_months:
                 if month_str in f.name:
                     relevant_files.append(str(f).replace("\\", "/"))
                     break
 
         if not relevant_files:
-            relevant_files = [str(p).replace("\\", "/") for p in Path(self.parquet_dir).glob("*.parquet")]
+            relevant_files = [str(f).replace("\\", "/") for f in self._all_parquet_files]
 
         return relevant_files
 
+    def _get_read_parquet_sql(self, files: List[str]) -> str:
+        """Returns a SQL expression that reads Parquet files with a stable schema."""
+        if not files:
+            # Return empty set with correct columns for schema consistency
+            return """(
+                SELECT 
+                    CAST(NULL AS VARCHAR) as node_id,
+                    CAST(NULL AS TIMESTAMP) as timestamp,
+                    CAST(0.0 AS DOUBLE) as kwh_dlv,
+                    CAST(0.0 AS DOUBLE) as kwh_rcv,
+                    CAST(0.0 AS DOUBLE) as voltage_a,
+                    CAST(0.0 AS DOUBLE) as voltage_b,
+                    CAST(0.0 AS DOUBLE) as voltage_c,
+                    CAST(0.0 AS DOUBLE) as current_a,
+                    CAST(0.0 AS DOUBLE) as current_b,
+                    CAST(0.0 AS DOUBLE) as current_c
+                WHERE 1=0
+            )"""
+        
+        # Simplify: direct read_parquet is much faster and allows better pushdown/pruning
+        parquet_list = str([str(f).replace("\\", "/") for f in files])
+        return f"read_parquet({parquet_list})"
+
     def estimate_aggregate_consumption(self, node_ids: List[str], start_time: str, end_time: str) -> EstimateResult:
+        if not node_ids: return {"estimated_rows": 0}
         with self._get_connection() as conn:
-            placeholders = ",".join(["?"] * len(node_ids))
-            query_params = node_ids + [start_time, end_time]
             relevant_files = self._get_parquet_range_files(start_time, end_time)
-            if not relevant_files:
-                return {"estimated_rows": 0}
-            parquet_list = str(relevant_files)
+            source_sql = self._get_read_parquet_sql(relevant_files)
             
+            # Use ANY(?) for efficient row-group skipping
             query = f"""
+                WITH target_nodes AS (
+                    SELECT unnest(?::VARCHAR[]) as node_id
+                )
                 SELECT COUNT(*) as estimated_rows
-                FROM read_parquet({parquet_list}) r
-                WHERE r.node_id IN ({placeholders})
-                  AND r.timestamp >= CAST(? AS TIMESTAMP)
+                FROM {source_sql} r
+                JOIN target_nodes tn ON r.node_id = tn.node_id
+                WHERE r.timestamp >= CAST(? AS TIMESTAMP)
                   AND r.timestamp <= CAST(? AS TIMESTAMP)
             """
-            res = conn.execute(query, query_params).fetchone()
+            res = conn.execute(query, [node_ids, start_time, end_time]).fetchone()
         return {"estimated_rows": res[0] if res else 0}
 
     def get_aggregate_consumption(self, node_ids: List[str], node_weights: Dict[str, Dict[str, float]], start_time: str, end_time: str) -> List[ConsumptionTimeseriesPoint]:
-        weight_placeholders = []
-        weight_params = []
-        for nid in node_ids:
-            w = node_weights.get(nid, {"A": 1.0/3.0, "B": 1.0/3.0, "C": 1.0/3.0})
-            weight_placeholders.append("(?, ?, ?, ?)")
-            weight_params.extend([nid, w.get('A', 0.0), w.get('B', 0.0), w.get('C', 0.0)])
+        if not node_ids: return []
 
-        values_clause = ",".join(weight_placeholders)
-        query_params = weight_params + [start_time, end_time]
         relevant_files = self._get_parquet_range_files(start_time, end_time)
-        if not relevant_files:
-            return []
-        parquet_list = str(relevant_files)
-        
+        source_sql = self._get_read_parquet_sql(relevant_files)
+
         query = f"""
-            WITH phase_weights(node_id, wa, wb, wc) AS (
-                VALUES {values_clause}
-            ),
-            aggregated AS (
-                SELECT
-                    r.timestamp,
-                    SUM(COALESCE(r.kwh_dlv, 0)) as total_kwh_dlv,
-                    SUM(COALESCE(r.kwh_rcv, 0)) as total_kwh_rcv,
-                    SUM(COALESCE(r.kwh_dlv, 0) * pw.wa) as kwh_a,
-                    SUM(COALESCE(r.kwh_dlv, 0) * pw.wb) as kwh_b,
-                    SUM(COALESCE(r.kwh_dlv, 0) * pw.wc) as kwh_c
-                FROM read_parquet({parquet_list}) r
-                JOIN phase_weights pw ON r.node_id = pw.node_id
-                WHERE r.timestamp >= CAST(? AS TIMESTAMP)
-                  AND r.timestamp <= CAST(? AS TIMESTAMP)
-                GROUP BY r.timestamp
+            WITH target_nodes AS (
+                SELECT unnest(?::VARCHAR[]) as node_id
             )
-            SELECT 
-                a.timestamp, a.total_kwh_dlv, a.total_kwh_rcv,
-                a.kwh_a, a.kwh_b, a.kwh_c, w.temperature
-            FROM aggregated a
-            LEFT JOIN weather_recordings w 
-                ON w.month = EXTRACT(month FROM a.timestamp)
-                AND w.day = EXTRACT(day FROM a.timestamp)
-                AND w.hour = EXTRACT(hour FROM a.timestamp)
-            ORDER BY a.timestamp ASC
+            SELECT
+                r.timestamp,
+                SUM(COALESCE(r.kwh_dlv, 0)) as total_dlv,
+                SUM(COALESCE(r.kwh_rcv, 0)) as total_rcv
+            FROM {source_sql} r
+            JOIN target_nodes tn ON r.node_id = tn.node_id
+            WHERE r.timestamp >= CAST(? AS TIMESTAMP)
+              AND r.timestamp <= CAST(? AS TIMESTAMP)
+            GROUP BY r.timestamp
+            ORDER BY r.timestamp ASC
         """
+        params = [node_ids, start_time, end_time]
+
         with self._get_connection() as conn:
-            results = conn.execute(query, query_params).fetchall()
+            results = conn.execute(query, params).fetchall()
+            weather_map = self._get_weather_map(conn)
         
-        return [
-            {
-                "timestamp": row[0].isoformat() + "Z",
+        output = []
+        for row in results:
+            ts = row[0]
+            dt = ts if isinstance(ts, datetime) else datetime.fromisoformat(ts.isoformat())
+            temp = weather_map.get((dt.month, dt.day, dt.hour))
+            
+            output.append({
+                "timestamp": dt.isoformat() + "Z",
                 "kwh_delivered": float(row[1]),
                 "kwh_received": float(row[2]),
-                "kwh_a": float(row[3]),
-                "kwh_b": float(row[4]),
-                "kwh_c": float(row[5]),
-                "temperature": float(row[6]) if row[6] is not None else None
-            } for row in results
-        ]
+                "temperature": float(temp) if temp is not None else None
+            })
+        return output
 
     def estimate_voltage_distribution(self, node_ids: List[str], start_time: str, end_time: str) -> EstimateResult:
+        if not node_ids: return {"estimated_rows": 0}
         with self._get_connection() as conn:
-            placeholders = ",".join(["?"] * len(node_ids))
-            query_params = node_ids + [start_time, end_time]
             relevant_files = self._get_parquet_range_files(start_time, end_time)
-            if not relevant_files:
-                return {"estimated_rows": 0}
-            parquet_list = str(relevant_files)
+            source_sql = self._get_read_parquet_sql(relevant_files)
             
             query = f"""
+                WITH target_nodes AS (
+                    SELECT unnest(?::VARCHAR[]) as node_id
+                )
                 SELECT COUNT(*) as estimated_rows
-                FROM read_parquet({parquet_list})
-                WHERE node_id IN ({placeholders})
-                  AND timestamp >= CAST(? AS TIMESTAMP)
+                FROM {source_sql} r
+                JOIN target_nodes tn ON r.node_id = tn.node_id
+                WHERE timestamp >= CAST(? AS TIMESTAMP)
                   AND timestamp <= CAST(? AS TIMESTAMP)
             """
-            res = conn.execute(query, query_params).fetchone()
+            res = conn.execute(query, [node_ids, start_time, end_time]).fetchone()
         return {"estimated_rows": res[0] if res else 0}
 
     def get_voltage_distribution(self, node_ids: List[str], start_time: str, end_time: str) -> VoltageDistributionResult:
-        # Ensure connection works first (prioritize connection errors)
+        if not node_ids: return {"distribution": [], "scatter": [], "timeseries": []}
         with self._get_connection() as conn:
-            placeholders = ",".join(["?"] * len(node_ids))
-            query_params = node_ids + [start_time, end_time]
             relevant_files = self._get_parquet_range_files(start_time, end_time)
-            if not relevant_files:
-                return {"distribution": [], "scatter": [], "timeseries": []}
-            parquet_list = str(relevant_files)
+            source_sql = self._get_read_parquet_sql(relevant_files)
             
             # 1. Distribution (KDE-like bins)
             query_bins = f"""
-                WITH raw_readings AS (
-                    SELECT node_id, timestamp, voltage_a, voltage_b, voltage_c
-                    FROM read_parquet({parquet_list})
-                    WHERE node_id IN ({placeholders})
-                      AND timestamp >= CAST(? AS TIMESTAMP)
-                      AND timestamp <= CAST(? AS TIMESTAMP)
+                WITH target_nodes AS (
+                    SELECT unnest(?::VARCHAR[]) as node_id
+                ),
+                raw_readings AS (
+                    SELECT r.node_id, r.timestamp, r.voltage_a, r.voltage_b, r.voltage_c
+                    FROM {source_sql} r
+                    JOIN target_nodes tn ON r.node_id = tn.node_id
+                    WHERE r.timestamp >= CAST(? AS TIMESTAMP)
+                      AND r.timestamp <= CAST(? AS TIMESTAMP)
                 ),
                 a_bins AS (
                     SELECT ROUND(voltage_a * 2) / 2.0 as v_bin, COUNT(*) as cnt_a
@@ -207,19 +238,22 @@ class DuckDBMeterDataRepository(IMeterDataRepository):
                 LEFT JOIN c_bins ON all_bins.v_bin = c_bins.v_bin
                 ORDER BY 1 ASC
             """
-            bins = conn.execute(query_bins, query_params).fetchall()
+            bins = conn.execute(query_bins, [node_ids, start_time, end_time]).fetchall()
 
             # 2. Scatter (Heatmap)
             query_heatmap = f"""
                 SELECT * FROM (
-                    WITH raw_readings AS (
+                    WITH target_nodes AS (
+                        SELECT unnest(?::VARCHAR[]) as node_id
+                    ),
+                    raw_readings AS (
                         SELECT 
                             time_bucket(INTERVAL '5 minutes', timestamp) as bucket,
-                            node_id, kwh_dlv, COALESCE(voltage_a, voltage_b, voltage_c) as voltage
-                        FROM read_parquet({parquet_list})
-                        WHERE node_id IN ({placeholders})
-                          AND timestamp >= CAST(? AS TIMESTAMP)
-                          AND timestamp <= CAST(? AS TIMESTAMP)
+                            r.node_id, r.kwh_dlv, COALESCE(r.voltage_a, r.voltage_b, r.voltage_c) as voltage
+                        FROM {source_sql} r
+                        JOIN target_nodes tn ON r.node_id = tn.node_id
+                        WHERE r.timestamp >= CAST(? AS TIMESTAMP)
+                          AND r.timestamp <= CAST(? AS TIMESTAMP)
                     ),
                     total_loading AS (
                         SELECT bucket, SUM(kwh_dlv) as total_kwh
@@ -232,22 +266,25 @@ class DuckDBMeterDataRepository(IMeterDataRepository):
                     GROUP BY 1, 2
                 ) USING SAMPLE reservoir(10000)
             """
-            heatmap = conn.execute(query_heatmap, query_params).fetchall()
+            heatmap = conn.execute(query_heatmap, [node_ids, start_time, end_time]).fetchall()
 
             # 3. Timeseries (Stability with percentiles)
             query_stability = f"""
+                WITH target_nodes AS (
+                    SELECT unnest(?::VARCHAR[]) as node_id
+                )
                 SELECT 
                     time_bucket(INTERVAL '1 hour', timestamp) as bucket,
-                    quantile_cont(COALESCE(voltage_a, voltage_b, voltage_c), 0.1) as p10,
-                    quantile_cont(COALESCE(voltage_a, voltage_b, voltage_c), 0.5) as p50,
-                    quantile_cont(COALESCE(voltage_a, voltage_b, voltage_c), 0.9) as p90
-                FROM read_parquet({parquet_list})
-                WHERE node_id IN ({placeholders})
-                  AND timestamp >= CAST(? AS TIMESTAMP)
-                  AND timestamp <= CAST(? AS TIMESTAMP)
+                    quantile_cont(COALESCE(r.voltage_a, r.voltage_b, r.voltage_c), 0.1) as p10,
+                    quantile_cont(COALESCE(r.voltage_a, r.voltage_b, r.voltage_c), 0.5) as p50,
+                    quantile_cont(COALESCE(r.voltage_a, r.voltage_b, r.voltage_c), 0.9) as p90
+                FROM {source_sql} r
+                JOIN target_nodes tn ON r.node_id = tn.node_id
+                WHERE r.timestamp >= CAST(? AS TIMESTAMP)
+                  AND r.timestamp <= CAST(? AS TIMESTAMP)
                 GROUP BY 1 ORDER BY 1 ASC
             """
-            stability = conn.execute(query_stability, query_params).fetchall()
+            stability = conn.execute(query_stability, [node_ids, start_time, end_time]).fetchall()
 
         return {
             "distribution": [{"voltage": r[0], "phase_a": r[1], "phase_b": r[2], "phase_c": r[3]} for r in bins],
@@ -257,101 +294,117 @@ class DuckDBMeterDataRepository(IMeterDataRepository):
 
     def estimate_map_voltage(self, start_time: str, end_time: str, agg: str, node_filter: Optional[List[str]] = None) -> EstimateResult:
         relevant_files = self._get_parquet_range_files(start_time, end_time)
-        if not relevant_files: return {"estimated_rows": 0}
-        parquet_list = str([str(f) for f in relevant_files])
-        query_params = [start_time, end_time]
-        filter_clause = ""
-        if node_filter:
-            placeholders = ",".join(["?"] * len(node_filter))
-            filter_clause = f"AND node_id IN ({placeholders})"
-            query_params.extend(node_filter)
+        source_sql = self._get_read_parquet_sql(relevant_files)
         
-        query = f"""
-            SELECT COUNT(*) FROM read_parquet({parquet_list})
-            WHERE timestamp >= CAST(? AS TIMESTAMP) AND timestamp <= CAST(? AS TIMESTAMP)
-            {filter_clause}
-        """
         with self._get_connection() as conn:
-            res = conn.execute(query, query_params).fetchone()
+            if node_filter:
+                query = f"""
+                    WITH target_nodes AS (
+                        SELECT unnest(?::VARCHAR[]) as node_id
+                    )
+                    SELECT COUNT(*) FROM {source_sql} r
+                    JOIN target_nodes tn ON r.node_id = tn.node_id
+                    WHERE timestamp >= CAST(? AS TIMESTAMP) AND timestamp <= CAST(? AS TIMESTAMP)
+                """
+                res = conn.execute(query, [node_filter, start_time, end_time]).fetchone()
+            else:
+                query = f"""
+                    SELECT COUNT(*) FROM {source_sql}
+                    WHERE timestamp >= CAST(? AS TIMESTAMP) AND timestamp <= CAST(? AS TIMESTAMP)
+                """
+                res = conn.execute(query, [start_time, end_time]).fetchone()
         return {"estimated_rows": res[0] if res else 0}
 
     def get_map_voltage(self, start_time: str, end_time: str, agg: str, node_filter: Optional[List[str]] = None) -> List[MapAggregationPoint]:
-        # Ensure connection works first (prioritize connection errors)
         with self._get_connection() as conn:
             agg_func = {"mean": "AVG", "min": "MIN", "max": "MAX", "median": "MEDIAN"}.get(agg, "AVG")
             relevant_files = self._get_parquet_range_files(start_time, end_time)
-            if not relevant_files:
-                raise ValueError("No load data available in the requested range.")
-            parquet_list = str([str(f) for f in relevant_files])
-            query_params = [start_time, end_time]
-            filter_clause = ""
+            source_sql = self._get_read_parquet_sql(relevant_files)
+            
             if node_filter:
-                placeholders = ",".join(["?"] * len(node_filter))
-                filter_clause = f"AND node_id IN ({placeholders})"
-                query_params.extend(node_filter)
-
-            query = f"""
-                SELECT 
-                    node_id,
-                    {agg_func}(COALESCE(voltage_a, voltage_b, voltage_c)) as val
-                FROM read_parquet({parquet_list})
-                WHERE timestamp >= CAST(? AS TIMESTAMP) AND timestamp <= CAST(? AS TIMESTAMP)
-                {filter_clause}
-                GROUP BY node_id
-            """
-            results = conn.execute(query, query_params).fetchall()
+                query = f"""
+                    WITH target_nodes AS (
+                        SELECT unnest(?::VARCHAR[]) as node_id
+                    )
+                    SELECT 
+                        r.node_id,
+                        {agg_func}(COALESCE(voltage_a, voltage_b, voltage_c)) as val
+                    FROM {source_sql} r
+                    JOIN target_nodes tn ON r.node_id = tn.node_id
+                    WHERE timestamp >= CAST(? AS TIMESTAMP) AND timestamp <= CAST(? AS TIMESTAMP)
+                    GROUP BY r.node_id
+                """
+                results = conn.execute(query, [node_filter, start_time, end_time]).fetchall()
+            else:
+                query = f"""
+                    SELECT 
+                        node_id,
+                        {agg_func}(COALESCE(voltage_a, voltage_b, voltage_c)) as val
+                    FROM {source_sql}
+                    WHERE timestamp >= CAST(? AS TIMESTAMP) AND timestamp <= CAST(? AS TIMESTAMP)
+                    GROUP BY node_id
+                """
+                results = conn.execute(query, [start_time, end_time]).fetchall()
         return [{"node_id": r[0], "value": float(r[1])} for r in results]
 
     def estimate_map_edge_load(self, start_time: str, end_time: str, agg: str, node_filter: Optional[List[str]] = None) -> EstimateResult:
         return self.estimate_map_voltage(start_time, end_time, agg, node_filter)
 
     def get_map_edge_load(self, start_time: str, end_time: str, agg: str, node_filter: Optional[List[str]] = None) -> List[MapAggregationPoint]:
-        # Ensure connection works first (prioritize connection errors)
         with self._get_connection() as conn:
             agg_func = {"mean": "AVG", "min": "MIN", "max": "MAX", "median": "MEDIAN"}.get(agg, "AVG")
             relevant_files = self._get_parquet_range_files(start_time, end_time)
-            if not relevant_files:
-                raise ValueError("No load data available in the requested range.")
-            parquet_list = str([str(f) for f in relevant_files])
-            query_params = [start_time, end_time]
-            filter_clause = ""
-            if node_filter:
-                placeholders = ",".join(["?"] * len(node_filter))
-                filter_clause = f"AND node_id IN ({placeholders})"
-                query_params.extend(node_filter)
+            source_sql = self._get_read_parquet_sql(relevant_files)
 
-            query = f"""
-                SELECT 
-                    node_id,
-                    {agg_func}(COALESCE(kwh_dlv, 0)) as val
-                FROM read_parquet({parquet_list})
-                WHERE timestamp >= CAST(? AS TIMESTAMP) AND timestamp <= CAST(? AS TIMESTAMP)
-                {filter_clause}
-                GROUP BY node_id
-            """
-            results = conn.execute(query, query_params).fetchall()
+            if node_filter:
+                query = f"""
+                    WITH target_nodes AS (
+                        SELECT unnest(?::VARCHAR[]) as node_id
+                    )
+                    SELECT 
+                        r.node_id,
+                        {agg_func}(COALESCE(kwh_dlv, 0)) as val
+                    FROM {source_sql} r
+                    JOIN target_nodes tn ON r.node_id = tn.node_id
+                    WHERE timestamp >= CAST(? AS TIMESTAMP) AND timestamp <= CAST(? AS TIMESTAMP)
+                    GROUP BY r.node_id
+                """
+                results = conn.execute(query, [node_filter, start_time, end_time]).fetchall()
+            else:
+                query = f"""
+                    SELECT 
+                        node_id,
+                        {agg_func}(COALESCE(kwh_dlv, 0)) as val
+                    FROM {source_sql}
+                    WHERE timestamp >= CAST(? AS TIMESTAMP) AND timestamp <= CAST(? AS TIMESTAMP)
+                    GROUP BY node_id
+                """
+                results = conn.execute(query, [start_time, end_time]).fetchall()
         return [{"node_id": r[0], "value": float(r[1])} for r in results]
 
     def get_phase_balancing(self, node_ids: List[str], start_time: str, end_time: str) -> PhaseBalancingResult:
-        placeholders = ",".join(["?"] * len(node_ids))
-        query_params = node_ids + [start_time, end_time]
-        safe_dir = _safe_parquet_path(self.parquet_dir)
+        if not node_ids: return {}
+        relevant_files = self._get_parquet_range_files(start_time, end_time)
+        source_sql = self._get_read_parquet_sql(relevant_files)
         
         query = f"""
+            WITH target_nodes AS (
+                SELECT unnest(?::VARCHAR[]) as node_id
+            )
             SELECT 
-                timestamp,
-                SUM(COALESCE(current_a, 0)) as current_a,
-                SUM(COALESCE(current_b, 0)) as current_b,
-                SUM(COALESCE(current_c, 0)) as current_c,
-                SUM(COALESCE(kwh_dlv, 0)) as kwh
-            FROM read_parquet('{safe_dir}/*.parquet')
-            WHERE node_id IN ({placeholders})
-              AND timestamp >= CAST(? AS TIMESTAMP)
-              AND timestamp <= CAST(? AS TIMESTAMP)
-            GROUP BY timestamp
+                r.timestamp,
+                SUM(COALESCE(r.current_a, 0)) as current_a,
+                SUM(COALESCE(r.current_b, 0)) as current_b,
+                SUM(COALESCE(r.current_c, 0)) as current_c,
+                SUM(COALESCE(r.kwh_dlv, 0)) as kwh
+            FROM {source_sql} r
+            JOIN target_nodes tn ON r.node_id = tn.node_id
+            WHERE r.timestamp >= CAST(? AS TIMESTAMP)
+              AND r.timestamp <= CAST(? AS TIMESTAMP)
+            GROUP BY r.timestamp
         """
         with self._get_connection() as conn:
-            results = conn.execute(query, query_params).fetchall()
+            results = conn.execute(query, [node_ids, start_time, end_time]).fetchall()
         
         if not results: return {}
         
