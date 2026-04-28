@@ -1,11 +1,22 @@
 services:
   backend:
     command: ["--reload"]
+    env_file: .env
+    environment:
+      - PARQUET_DIR=/app/cim_readings
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - ./cim_readings:/app/cim_readings
+      - ./cim_alarms:/data/cim_alarms
+      - ./grid_data_cim.duckdb:/data/grid_data_cim.duckdb
+      - ./infra/telemetry_config.json:/etc/telemetry/telemetry_config.json
 
   frontend:
     build:
       context: ./frontend
       target: dev
+    env_file: .env
     volumes:
       - ./frontend:/app
       - /app/node_modules

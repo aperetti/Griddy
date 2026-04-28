@@ -297,20 +297,17 @@ async def execute_cim_query(request: CypherQueryRequest):
 
     def _run() -> Dict[str, Any]:
         logger.debug("Cypher query: %s | Params: %s", request.cypher, request.params)
-        neo4j_url = os.getenv("CIMG_URL")
-        if not neo4j_url:
+        
+        from src.shared.dependencies import get_neo4j_driver
+        driver = get_neo4j_driver()
+        if not driver:
             raise HTTPException(
-                status_code=503, detail="Neo4j URL (CIMG_URL) is not configured."
+                status_code=503, detail="Neo4j driver not initialized (check CIMG_URL)."
             )
 
-        from neo4j import GraphDatabase
-
-        neo4j_user = os.getenv("CIMG_USERNAME", "neo4j")
-        neo4j_password = os.getenv("CIMG_PASSWORD", "")
         neo4j_database = os.getenv("CIMG_DATABASE", "neo4j")
 
         try:
-            driver = GraphDatabase.driver(neo4j_url, auth=(neo4j_user, neo4j_password))
             with driver.session(database=neo4j_database) as session:
                 def work(tx):
                     res = tx.run(request.cypher, **request.params)
@@ -319,8 +316,8 @@ async def execute_cim_query(request: CypherQueryRequest):
                 if not keys and records:
                     keys = list(records[0].keys())
                 keys = keys or []
-            driver.close()
         except Exception as exc:
+            logger.error("Neo4j query error: %s", exc)
             raise HTTPException(status_code=500, detail=f"Neo4j query error: {exc}")
 
         # Extract mRIDs if the query returned them

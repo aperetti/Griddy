@@ -33,4 +33,5 @@ fi
 
 # Start the application
 echo "Starting FastAPI server..."
+# Use exec to forward signals correctly. Allow additional args like --reload.
 exec uvicorn main:app --host "$HOST" --port "$PORT" "$@"
