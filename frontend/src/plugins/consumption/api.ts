@@ -5,9 +5,6 @@ export interface ConsumptionRecord {
     kwh_delivered: number;
     kwh_received: number;
     net_consumption: number;
-    kwh_a: number;
-    kwh_b: number;
-    kwh_c: number;
     temperature: number;
 }
 
