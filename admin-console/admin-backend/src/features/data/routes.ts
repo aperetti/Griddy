@@ -47,14 +47,15 @@ export async function dataRoutes(fastify: FastifyInstance) {
       fs.mkdirSync(ingestDir, { recursive: true });
     }
 
-    const targetPath = path.join(ingestDir, data.filename);
+    const sanitizedFilename = path.basename(data.filename);
+    const targetPath = path.join(ingestDir, sanitizedFilename);
     
     try {
       await pipeline(data.file, fs.createWriteStream(targetPath));
       return { 
         success: true, 
-        message: `File ${data.filename} uploaded to ingest folder.`,
-        filename: data.filename
+        message: `File ${sanitizedFilename} uploaded to ingest folder.`,
+        filename: sanitizedFilename
       };
     } catch (err: any) {
       return reply.code(500).send({ 
