@@ -4,6 +4,13 @@ services:
     env_file: .env
     environment:
       - PARQUET_DIR=/app/cim_readings
+      - DUCKDB_THREADS=2
+      - DUCKDB_MEMORY_LIMIT=3GB
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4GB
     volumes:
       - ./backend:/app
       - /app/node_modules

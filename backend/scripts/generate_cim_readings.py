@@ -8,6 +8,7 @@ import argparse
 import duckdb
 import numpy as np
 import pyarrow as pa
+import pyarrow.compute
 import pyarrow.parquet as pq
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -161,7 +162,14 @@ def generate_month(equipment_metrics, weather_map, start_dt, end_dt, out_file):
 
     table = pa.Table.from_pydict(all_data)
     indices = pa.compute.sort_indices(table, sort_keys=[("node_id", "ascending"), ("timestamp", "ascending")])
-    pq.write_table(table.take(indices), out_file, compression='ZSTD', row_group_size=100_000)
+    pq.write_table(
+        table.take(indices),
+        out_file,
+        compression='ZSTD',
+        row_group_size=100_000,
+        write_statistics=True,
+        bloom_filter_options={'node_id': True},
+    )
 
 
 def main():
@@ -171,7 +179,7 @@ def main():
     else:
         os.makedirs(PARQUET_DIR, exist_ok=True)
 
-    with duckdb.connect(DB_PATH) as conn:
+    with duckdb.connect(DB_PATH, read_only=True) as conn:
         w_rows = conn.execute("SELECT month, day, hour, temperature FROM weather_recordings").fetchall()
         weather_map = {(r[0], r[1], r[2]): r[3] for r in w_rows}
 

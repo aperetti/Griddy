@@ -40,7 +40,7 @@ async def get_voltage_distribution(
     ensure_graph_built()
     node_ids = node_id.split(",")
     logger.info("Calculating voltage distribution for %d nodes (degrees=%s)", len(node_ids), degrees)
-    result = voltage_uc.execute(node_ids, start_time, end_time, degrees=degrees)
+    result = await run_in_threadpool(voltage_uc.execute, node_ids, start_time, end_time, degrees=degrees)
     if "error" in result:
         logger.error("Voltage distribution failed: %s", result["error"])
         raise HTTPException(status_code=400, detail=result["error"])
@@ -55,7 +55,7 @@ async def get_phase_balance(
     """Calculates phase imbalance downstream of a node."""
     ensure_graph_built()
     logger.info("Calculating phase balance for node %s", node_id)
-    result = phase_uc.execute(node_id, start_time, end_time)
+    result = await run_in_threadpool(phase_uc.execute, node_id, start_time, end_time)
     if "error" in result:
         logger.error("Phase balance calculation failed for %s: %s", node_id, result["error"])
         raise HTTPException(status_code=400, detail=result["error"])
@@ -83,7 +83,7 @@ async def get_consumption(
     ensure_graph_built()
     node_ids = node_id.split(",")
     logger.info("Aggregating consumption for %d nodes", len(node_ids))
-    result = consumption_uc.execute(node_ids, start_time, end_time)
+    result = await run_in_threadpool(consumption_uc.execute, node_ids, start_time, end_time)
     if "error" in result:
         logger.error("Consumption aggregation failed: %s", result["error"])
         raise HTTPException(status_code=400, detail=result["error"])

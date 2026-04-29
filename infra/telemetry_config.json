@@ -1,18 +1,19 @@
 {
-  "global_level": "INFO",
+  "global_level": "DEBUG",
   "services": {
     "python_backend": {
-      "default_level": "INFO",
+      "default_level": "DEBUG",
       "overrides": {
         "api.access": "INFO",
-        "src.analytics.routes": "INFO",
+        "src.analytics.routes": "DEBUG",
         "src.grid.topology_routes": "INFO",
         "src.discovery.routes": "INFO",
+        "src.shared.meter_adapters.duckdb_adapter": "DEBUG",
         "grid_modeling.cim_parser": "DEBUG"
       }
     },
     "node_backend": {
-      "default_level": "INFO",
+      "default_level": "DEBUG",
       "overrides": {
         "auth_middleware": "DEBUG"
       }

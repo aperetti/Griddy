@@ -27,6 +27,8 @@ services:
       - CIMG_IEC61970_301=${CIMG_IEC61970_301:-8}
       - CIM_MODEL_NAMES=${CIM_MODEL_NAMES:-IEEE8500}
       - TELEMETRY_CONFIG_PATH=/etc/telemetry/telemetry_config.json
+      - DUCKDB_THREADS=2
+      - DUCKDB_MEMORY_LIMIT=3GB
     depends_on:
       neo4j:
         condition: service_healthy
@@ -37,13 +39,14 @@ services:
       resources:
         limits:
           cpus: '2.0'
+          memory: 4GB
 
   frontend:
     build:
       context: ./frontend
     container_name: grid-frontend
     ports:
-      - "${FRONTEND_PORT:-8081}:80"
+      - "${FRONTEND_PORT:-8080}:80"
     depends_on:
       - backend
     restart: unless-stopped
@@ -55,7 +58,7 @@ services:
     volumes:
       - ./maintenance:/usr/share/nginx/html:ro
     ports:
-      - "${FRONTEND_PORT:-8080}:80"
+      - "${FRONTEND_PORT:-8081}:80"
     restart: unless-stopped
 
   documentation:
@@ -188,6 +191,11 @@ services:
     ports:
       - "3000:3000"
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
 
   loki:
     image: grafana/loki:latest
@@ -198,6 +206,11 @@ services:
     ports:
       - "3100:3100"
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
 
   tempo:
     image: grafana/tempo:latest
@@ -210,6 +223,11 @@ services:
       - "4317:4317" # OTLP gRPC
       - "4318:4318" # OTLP HTTP
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
 
   alloy:
     image: grafana/alloy:latest
@@ -219,6 +237,11 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     command: run --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
 
 volumes:
   grid_data:

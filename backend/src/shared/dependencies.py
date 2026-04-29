@@ -182,8 +182,7 @@ def ensure_graph_built(model_ids: list[str] | None = None) -> tuple[list[dict], 
                 mrid_up = mrid.upper()
                 _equipment_to_node[mrid_up] = nid
                 mrids.append(mrid_up)
-                if eq_type == "EnergyConsumer":
-                    consumers.append(mrid_up)
+                # DO NOT add mRID to energy consumers; Parquet only contains 'name'
             if name:
                 # KEEP EXACT CASE for the name (storage key)
                 names.append(name)
