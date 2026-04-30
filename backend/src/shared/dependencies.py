@@ -234,24 +234,29 @@ def resolve_request_ids(ids: list[str]) -> list[str]:
     return list(resolved_nodes)
 
 def resolve_to_storage_keys(node_ids: list[str]) -> list[str]:
-    """Resolves topological ConnectivityNode IDs to storage keys (mRIDs and equipment names)."""
+    """Resolves topological IDs (ConnectivityNodes or Equipment) to storage keys (EnergyConsumer names)."""
     ensure_graph_built()
     keys = set()
     for nid in node_ids:
-        # Normalize nid to uppercase
+        # Normalize nid to uppercase for lookup
         nid_up = nid.upper()
         
-        # Include the node ID itself (mRID)
-        keys.add(nid_up)
-        
-        # Include all attached equipment names (EXACT CASE)
-        names = _node_to_equipment_names.get(nid_up, [])
-        if names:
-            keys.update(names)
+        # 1. Check if the ID is a ConnectivityNode
+        consumers = _node_to_energy_consumers.get(nid_up)
+        if consumers:
+            keys.update(consumers)
+            continue
             
-        # Include equipment mRIDs (UPPERCASE)
-        eq_mrids = _node_to_equipment_mrids.get(nid_up, [])
-        if eq_mrids:
-            keys.update(eq_mrids)
+        # 2. Check if the ID is an Equipment ID (mRID)
+        parent_node = _equipment_to_node.get(nid_up)
+        if parent_node:
+            consumers = _node_to_energy_consumers.get(parent_node)
+            if consumers:
+                keys.update(consumers)
+            continue
+            
+        # 3. If it's a direct EnergyConsumer Name (exact case), keep it
+        # This handles cases where the ID is already the storage key
+        keys.add(nid)
 
     return list(keys)

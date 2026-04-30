@@ -136,8 +136,6 @@ export default function App() {
         .catch(err => console.error('[plugins] Failed to initialize plugin registry:', err));
     };
     syncRegistry();
-    const interval = setInterval(syncRegistry, 10_000);
-    return () => clearInterval(interval);
   }, []);
 
   const [fitTrigger, setFitTrigger] = useState(0);

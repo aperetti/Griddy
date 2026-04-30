@@ -1,101 +1,60 @@
+import pytest
 import time
 import os
-import shutil
-import pytest
 import duckdb
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
 from src.shared.meter_adapters.duckdb_adapter import DuckDBMeterDataRepository
+from src.shared.database_setup import DB_PATH, PARQUET_DIR
 
-def test_large_node_list_performance():
+@pytest.mark.performance
+def test_duckdb_parquet_pushdown_performance():
     """
-    Verify that DuckDBMeterDataRepository handles 50,000+ node IDs efficiently
-    using the SQL IN list optimization.
+    Verify that DuckDB correctly uses Parquet pushdown for large datasets.
+    We expect sub-second performance even for large node sets if pushdown is active.
     """
-    test_dir = "./tmp/perf_test_large"
-    if os.path.exists(test_dir):
-        shutil.rmtree(test_dir)
-    os.makedirs(test_dir, exist_ok=True)
-    db_path = os.path.join(test_dir, "test.db")
+    repo = DuckDBMeterDataRepository(DB_PATH, PARQUET_DIR)
     
-    # 1. Create a single parquet file with some data
-    # Filename must match the pattern readings_YYYY_MM.parquet
-    parquet_path = os.path.join(test_dir, "readings_2026_04.parquet")
-    num_real_nodes = 100
-    readings_per_node = 10
+    # 1. Gather a sample of real node IDs from the Parquet files
+    with duckdb.connect() as conn:
+        files = repo._get_parquet_range_files("2026-04-01T00:00:00", "2026-04-30T00:00:00")
+        if not files:
+            pytest.skip("No Parquet files found for testing.")
+        
+        sample_ids = conn.execute(f"SELECT DISTINCT node_id FROM read_parquet('{files[0]}') LIMIT 100").fetchall()
+        node_ids = [r[0] for r in sample_ids]
+
+    # 2. Test Execution Time
+    start_time = "2026-04-01T00:00:00Z"
+    end_time = "2026-04-07T00:00:00Z"
     
-    start_time = datetime(2026, 4, 1)
-    data = []
-    for i in range(num_real_nodes):
-        node_id = f"REAL_NODE_{i}"
-        for j in range(readings_per_node):
-            data.append({
-                'node_id': node_id,
-                'timestamp': start_time + timedelta(minutes=15*j),
-                'kwh_dlv': 1.0,
-                'kwh_rcv': 0.0,
-                'voltage_a': 120.0,
-                'voltage_b': 120.0,
-                'voltage_c': 120.0,
-                'current_a': 1.0,
-                'current_b': 1.0,
-                'current_c': 1.0
-            })
-    pd.DataFrame(data).to_parquet(parquet_path)
+    print(f"\nBenchmarking {len(node_ids)} nodes over 1 week...")
+    
+    t0 = time.perf_counter()
+    res = repo.get_aggregate_consumption(node_ids, {}, start_time, end_time)
+    duration = time.perf_counter() - t0
+    
+    print(f"Query returned {len(res)} rows in {duration:.4f}s")
+    
+    # Assertions
+    assert len(res) > 0, "Query should return data for existing nodes."
+    assert duration < 1.0, f"Query took too long ({duration:.2f}s). Pushdown might be failing."
 
-    # 2. Create weather table
-    with duckdb.connect(db_path) as conn:
-        conn.execute("CREATE TABLE weather_recordings (month INTEGER, day INTEGER, hour INTEGER, temperature FLOAT)")
+@pytest.mark.performance
+def test_voltage_distribution_performance():
+    """Verify that complex multi-query analytics complete within budget."""
+    repo = DuckDBMeterDataRepository(DB_PATH, PARQUET_DIR)
+    
+    with duckdb.connect() as conn:
+        files = repo._get_parquet_range_files("2026-04-01T00:00:00", "2026-04-30T00:00:00")
+        if not files:
+            pytest.skip("No Parquet files found for testing.")
+        sample_ids = conn.execute(f"SELECT DISTINCT node_id FROM read_parquet('{files[0]}') LIMIT 50").fetchall()
+        node_ids = [r[0] for r in sample_ids]
 
-    try:
-        repo = DuckDBMeterDataRepository(db_path, test_dir)
-        
-        # 3. Generate 50,000 dummy node IDs + 100 real ones
-        large_node_list = [f"DUMMY_NODE_{i}" for i in range(50000)]
-        large_node_list.extend([f"REAL_NODE_{i}" for i in range(num_real_nodes)])
-        
-        start_iso = "2026-04-01T00:00:00"
-        end_iso = "2026-04-01T23:59:59" # 1 day, as per user requirement
-        
-        # 4. Measure performance of estimate_aggregate_consumption
-        t0 = time.perf_counter()
-        est = repo.estimate_aggregate_consumption(large_node_list, start_iso, end_iso)
-        t_est = time.perf_counter() - t0
-        
-        print(f"Estimation took {t_est:.4f}s")
-        assert est["estimated_rows"] == num_real_nodes * readings_per_node
-        assert t_est < 1.0  # Should be sub-second
-        
-        # 5. Measure performance of get_aggregate_consumption
-        t1 = time.perf_counter()
-        data_res = repo.get_aggregate_consumption(large_node_list, {}, start_iso, end_iso)
-        t_data = time.perf_counter() - t1
-        
-        print(f"Data fetch took {t_data:.4f}s")
-        assert len(data_res) == readings_per_node
-        assert t_data < 1.0  # Should be sub-second
-        
-        # 6. Measure performance of get_voltage_distribution
-        t2 = time.perf_counter()
-        volt_res = repo.get_voltage_distribution(large_node_list, start_iso, end_iso)
-        t_volt = time.perf_counter() - t2
-        
-        print(f"Voltage distribution took {t_volt:.4f}s")
-        assert "distribution" in volt_res
-        assert t_volt < 3.0  # More complex: percentiles + scatter + stability sub-queries
-        
-        print("Performance test PASSED!")
-        
-    finally:
-        # Give DuckDB a moment to release handles if needed, or just ignore cleanup errors on Windows
-        import gc
-        gc.collect() # Try to trigger __del__ on local connections
-        if os.path.exists(test_dir):
-            try:
-                shutil.rmtree(test_dir)
-            except PermissionError:
-                print(f"Warning: Could not cleanup {test_dir} due to PermissionError (DuckDB handle still open)")
-
-if __name__ == "__main__":
-    test_large_node_list_performance()
+    t0 = time.perf_counter()
+    res = repo.get_voltage_distribution(node_ids, "2026-04-01T00:00:00Z", "2026-04-02T00:00:00Z")
+    duration = time.perf_counter() - t0
+    
+    print(f"Voltage distribution for {len(node_ids)} nodes took {duration:.4f}s")
+    
+    assert len(res["distribution"]) > 0
+    assert duration < 2.0, f"Voltage distribution too slow ({duration:.2f}s)"

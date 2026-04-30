@@ -9,7 +9,10 @@
         "src.grid.topology_routes": "INFO",
         "src.discovery.routes": "INFO",
         "src.shared.meter_adapters.duckdb_adapter": "DEBUG",
-        "grid_modeling.cim_parser": "DEBUG"
+        "grid_modeling.cim_parser": "ERROR",
+        "neo4j": "ERROR",
+        "neo4j.io": "ERROR",
+        "neo4j.pool": "ERROR"
       }
     },
     "node_backend": {

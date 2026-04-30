@@ -58,7 +58,7 @@ services:
     volumes:
       - ./maintenance:/usr/share/nginx/html:ro
     ports:
-      - "${FRONTEND_PORT:-8081}:80"
+      - "${MAINTENANCE_PORT:-8081}:80"
     restart: unless-stopped
 
   documentation:
