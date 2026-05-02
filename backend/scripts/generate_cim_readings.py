@@ -151,14 +151,15 @@ def main():
 
     metrics = _get_equipment_metrics()
     
-    # Generate last 2 months only to stay within memory limits for global sort
-    curr = (datetime.now() - timedelta(days=60)).replace(day=1)
-    end = datetime.now() + timedelta(days=1)
+    # Generate from Jan 2025 through next month for full historical coverage.
+    # Each month is generated independently so memory stays bounded.
+    curr = datetime(2025, 1, 1)
+    end = datetime.now() + timedelta(days=32)
     
     while curr < end:
         start_month = curr.replace(day=1)
         next_month = (start_month + timedelta(days=32)).replace(day=1)
-        generate_month(metrics, weather_map, start_month, next_month, f"{PARQUET_DIR}/readings_unified_{start_month.strftime('%Y_%m')}.parquet")
+        generate_month(metrics, weather_map, start_month, next_month, f"{PARQUET_DIR}/readings_{start_month.strftime('%Y_%m')}.parquet")
         curr = next_month
 
 if __name__ == "__main__":

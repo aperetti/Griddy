@@ -27,6 +27,7 @@ services:
       - CIMG_IEC61970_301=${CIMG_IEC61970_301:-8}
       - CIM_MODEL_NAMES=${CIM_MODEL_NAMES:-IEEE8500}
       - TELEMETRY_CONFIG_PATH=/etc/telemetry/telemetry_config.json
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4317
       - DUCKDB_THREADS=2
       - DUCKDB_MEMORY_LIMIT=3GB
     depends_on:
@@ -114,6 +115,7 @@ services:
       - DB_PATH=/data/config/admin_config.db
       - MAIN_BACKEND_URL=http://backend:8000
       - TELEMETRY_CONFIG_PATH=/etc/telemetry/telemetry_config.json
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4317
     ports:
       - "${ADMIN_BACKEND_PORT:-8090}:8090"
     restart: unless-stopped

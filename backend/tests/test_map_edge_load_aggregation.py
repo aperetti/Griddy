@@ -44,7 +44,7 @@ def temp_parquet_dir(tmp_path):
         {"node_id": "Meter", "timestamp": pd.to_datetime("2026-01-15T12:00:00"), "kwh_dlv": 10.0},
         {"node_id": "Transformer", "timestamp": pd.to_datetime("2026-01-15T12:00:00"), "kwh_dlv": 2.0},
     ]
-    pd.DataFrame(jan_data).to_parquet(parquet_dir / "readings_unified_2026_01.parquet")
+    pd.DataFrame(jan_data).to_parquet(parquet_dir / "readings_2026_01.parquet")
 
     # April 2026 (the actual test month)
     april_data = [
@@ -52,7 +52,7 @@ def temp_parquet_dir(tmp_path):
         {"node_id": "Transformer", "timestamp": pd.to_datetime("2026-04-01T12:00:00"), "kwh_dlv": 2.0},
         {"node_id": "Substation", "timestamp": pd.to_datetime("2026-04-01T12:00:00"), "kwh_dlv": 0.0}
     ]
-    pd.DataFrame(april_data).to_parquet(parquet_dir / "readings_unified_2026_04.parquet")
+    pd.DataFrame(april_data).to_parquet(parquet_dir / "readings_2026_04.parquet")
     
     return str(parquet_dir)
 
