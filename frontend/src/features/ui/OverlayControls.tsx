@@ -1,5 +1,5 @@
 import { Box, Group, Tooltip, ActionIcon, Menu } from '@mantine/core';
-import { Menu as MenuIcon, Settings, Activity, Zap, Search } from 'lucide-react';
+import { Menu as MenuIcon, Settings, Activity, Zap, Search, Book } from 'lucide-react';
 import { GlobalSearch } from '../grid/components/GlobalSearch';
 import { ModelSwitcher } from '../grid/components/ModelSwitcher';
 import type { PluginDefinition } from '../../plugins/types';
@@ -119,6 +119,14 @@ export function OverlayControls({
                 </Menu.Item>
                 <Menu.Item leftSection={<Search size={14} />} onClick={onClearSelection}>
                   Clear Map Selection
+                </Menu.Item>
+                <Menu.Item
+                  leftSection={<Book size={14} />}
+                  component="a"
+                  href="/docs/"
+                  target="_blank"
+                >
+                  Documentation
                 </Menu.Item>
               </Menu.Dropdown>
             </Menu>

@@ -6,8 +6,9 @@ no duckdb.connect, no sqlite3.connect).  All data access goes through this SDK,
 which delegates to the existing shared infrastructure.
 
 Usage in a plugin route:
-    from plugins.sdk import sdk
+    from plugins.sdk import get_sdk
 
+    sdk = get_sdk("my_plugin")
     rows = sdk.cim.run_cypher(CYPHER, {"node_ids": ids})
     nodes, edges = sdk.topology.get_downstream(node_id)
     result = sdk.analytics.get_consumption(node_ids, start, end)
@@ -289,6 +290,19 @@ class PluginAnalyticsService:
         from src.analytics.map_edge_load import MapEdgeLoadUseCase
         uc = MapEdgeLoadUseCase(self._engine, self._meter_repo)
         return uc.estimate(start_time, end_time, agg, start_node_id=start_node_id)
+
+    def get_phase_balancing(
+        self,
+        node_id: str,
+        start_time: str,
+        end_time: str,
+    ) -> dict[str, Any]:
+        """Calculate phase balancing (currents/load) for the given node and its downstream."""
+        self._check("analytics:consumption")
+        self._logger.info("Calculating phase balancing for node %s", node_id)
+        from src.analytics.phase_balancing import PhaseBalancingUseCase
+        uc = PhaseBalancingUseCase(self._engine, self._meter_repo)
+        return uc.execute(node_id, start_time, end_time)
 
 
 

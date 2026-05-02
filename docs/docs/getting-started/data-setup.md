@@ -42,22 +42,41 @@ You can watch the ingestion logs using Docker:
 docker compose logs -f ingestor
 ```
 
-## 4. Ingesting a CIM Model (Manual/Local)
+---
+
+## 4. Ingesting a CIM Model Manually
 
 If you prefer to load a model manually without the automated service, place it in the `backend/cim/models/` directory.
 
-To trigger the ingestion manually, run the following command from the `backend/` directory:
+### Using Docker (Recommended)
+You can run the ingestion script within the backend container:
 
 ```bash
-# Ingest the CIM graph into Neo4j
+docker compose exec backend python scripts/ingest_cim_to_neo4j.py
+```
+
+### Manual/Local
+From the `backend/` directory (with venv active):
+
+```bash
 python scripts/ingest_cim_to_neo4j.py
 ```
 
-This script extracts the topology, device metadata, and connectivity from the XML model and populates the property graph.
+---
 
-## 3. Generating Synthetic Readings
+## 5. Generating Synthetic Readings
 
-If you don't have real AMI readings, you can generate synthetic ones based on the grid model and a weather profile. By default, Griddy uses the **DuckDB Adapter** to query these readings from local Parquet files.
+If you don't have real AMI readings, you can generate synthetic ones based on the grid model and a weather profile.
+
+### Using Docker (Recommended)
+The `generator` service is the easiest way to run the full pipeline:
+
+```bash
+docker compose --profile tools run --rm generator
+```
+
+### Manual/Local
+From the `backend/` directory (with venv active):
 
 ```bash
 # Ingest weather data (EPW format)
@@ -67,9 +86,9 @@ python scripts/ingest_weather.py
 python scripts/generate_all.py
 ```
 
-Generating readings for the full model can take several minutes. The output is stored in **Parquet format** in the `backend/data/cim_readings/` directory.
+---
 
-## 4. Configuring the AMI Adapter
+## 6. Configuring the AMI Adapter
 
 Griddy supports multiple data sources for meter readings. You can switch the active adapter through the **Admin Console**:
 
