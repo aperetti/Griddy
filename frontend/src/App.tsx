@@ -400,6 +400,7 @@ export default function App() {
             onEdgeClick={(edge, multiSelect) => onEdgeClick(edge, multiSelect)}
             highlightedNodes={topology.highlightedNodes}
             highlightedEdges={topology.highlightedEdges}
+            selectedNodeIds={Array.from(topology.highlightedNodes)}
             nodeAverages={topology.nodeAverages}
             edgeAverages={topology.edgeAverages}
             nodeCurrents={topology.nodeCurrents}
