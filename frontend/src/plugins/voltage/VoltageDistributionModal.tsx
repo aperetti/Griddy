@@ -1,8 +1,8 @@
-import { memo } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import { Group, Box, Text, Select, Grid, Button, Stack, Paper, Center } from '@mantine/core';
 import { AlertTriangle, Clock, Activity } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
-import { ScadaLoadingAnimation, AnalysisWindow } from '@plugin-sdk';
+import { ScadaLoadingAnimation, AnalysisWindow, perf } from '@plugin-sdk';
 import { autoExport, getDataToCopy } from '../../shared/utils/exportUtils';
 
 interface Props {
@@ -44,6 +44,27 @@ export const VoltageDistributionModal = memo(function VoltageDistributionModal({
     zIndex,
     layoutMode,
 }: Props) {
+    const dataArrivedAtRef = useRef<number | null>(null);
+    const firstChartReportedRef = useRef<boolean>(false);
+    useEffect(() => {
+        const hasAny = (data && data.length > 0) || (scatterData && scatterData.length > 0) || (timeSeriesData && timeSeriesData.length > 0);
+        if (hasAny && dataArrivedAtRef.current === null) {
+            dataArrivedAtRef.current = performance.now();
+            firstChartReportedRef.current = false;
+        }
+        if (!hasAny) {
+            dataArrivedAtRef.current = null;
+        }
+    }, [data, scatterData, timeSeriesData]);
+
+    const reportChartReady = () => {
+        if (!firstChartReportedRef.current && dataArrivedAtRef.current !== null) {
+            firstChartReportedRef.current = true;
+            perf.mark('chart:first_ready', performance.now() - dataArrivedAtRef.current);
+            setTimeout(() => perf.dump('voltage'), 0);
+        }
+    };
+
     const handleExport = () => {
         if (!data || data.length === 0) return;
         autoExport(data, `voltage_${nodeName?.replace(/\s+/g, '_')}`);
@@ -188,6 +209,7 @@ export const VoltageDistributionModal = memo(function VoltageDistributionModal({
                                         key={`kde-${data.length}`}
                                         notMerge={true}
                                         lazyUpdate={true}
+                                        onChartReady={reportChartReady}
                                         style={{ height: '100%', width: '100%' }}
                                         option={{
                                             tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
@@ -256,6 +278,7 @@ export const VoltageDistributionModal = memo(function VoltageDistributionModal({
                                         key={`stability-${timeSeriesData.length}`}
                                         notMerge={true}
                                         lazyUpdate={true}
+                                        onChartReady={reportChartReady}
                                         style={{ height: '100%', width: '100%' }}
                                         option={{
                                             tooltip: { 
@@ -356,6 +379,7 @@ export const VoltageDistributionModal = memo(function VoltageDistributionModal({
                                         key={`scatter-${scatterData.length}`}
                                         notMerge={true}
                                         lazyUpdate={true}
+                                        onChartReady={reportChartReady}
                                         style={{ height: '100%', width: '100%' }}
                                         option={{
                                             tooltip: {

@@ -1,3 +1,5 @@
+import { perf } from '@plugin-sdk';
+
 const API_BASE = '/api/plugins/voltage';
 
 export interface VoltageDistributionPoint {
@@ -47,6 +49,13 @@ function buildQuery(start: string, end: string, degrees?: number | null, force =
     return params.toString();
 }
 
+async function fetchAndParse<T>(label: string, url: string): Promise<T> {
+    const res = await perf.measureAsync(`${label}:fetch`, () => fetch(url));
+    perf.recordServerTiming(res.headers.get('Server-Timing'));
+    if (!res.ok) throw new Error(`${label} failed: ${res.status}`);
+    return perf.measureAsync(`${label}:parse`, () => res.json() as Promise<T>);
+}
+
 export async function fetchVoltagePlugin(
     nodeIds: string[],
     start: string,
@@ -54,9 +63,8 @@ export async function fetchVoltagePlugin(
     degrees?: number | null,
     force = false,
 ): Promise<VoltageResponse> {
-    const res = await fetch(`${API_BASE}/${nodeIds.join(',')}?${buildQuery(start, end, degrees, force)}`);
-    if (!res.ok) throw new Error(`Voltage fetch failed: ${res.status}`);
-    return res.json();
+    const url = `${API_BASE}/${nodeIds.join(',')}?${buildQuery(start, end, degrees, force)}`;
+    return fetchAndParse<VoltageResponse>('voltage', url);
 }
 
 export async function fetchVoltageEstimatePlugin(
@@ -65,7 +73,6 @@ export async function fetchVoltageEstimatePlugin(
     end: string,
     degrees?: number | null,
 ): Promise<VoltageEstimateResponse> {
-    const res = await fetch(`${API_BASE}/${nodeIds.join(',')}/estimate?${buildQuery(start, end, degrees)}`);
-    if (!res.ok) throw new Error(`Voltage estimate failed: ${res.status}`);
-    return res.json();
+    const url = `${API_BASE}/${nodeIds.join(',')}/estimate?${buildQuery(start, end, degrees)}`;
+    return fetchAndParse<VoltageEstimateResponse>('voltage_estimate', url);
 }

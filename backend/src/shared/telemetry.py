@@ -13,7 +13,9 @@ from opentelemetry.semconv.resource import ResourceAttributes
 
 logger = logging.getLogger(__name__)
 
-def setup_tracing(service_name: str, endpoint: str = "http://tempo:4317"):
+def setup_tracing(service_name: str, endpoint: str = None):
+    if endpoint is None:
+        endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "http://tempo:4317")
     """Configures OpenTelemetry tracing."""
     resource = Resource(attributes={
         ResourceAttributes.SERVICE_NAME: service_name

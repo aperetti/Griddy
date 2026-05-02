@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from plugins.sdk import get_sdk
 from src.shared.dependencies import ensure_graph_built, resolve_request_ids
+from src.shared.perf import phase_timer
 
 router = APIRouter(prefix="/api/plugins/consumption", tags=["plugins"])
 sdk = get_sdk("consumption")
@@ -54,10 +55,11 @@ async def estimate_consumption(
     end_time: str = Query(...),
 ):
     """Return estimated row count for a consumption query without running it."""
-    ensure_graph_built()
-    ids = _parse_ids(node_ids)
-    resolved_ids = resolve_request_ids(ids)
-    _validate_datetimes(start_time, end_time)
+    with phase_timer("request_setup"):
+        ensure_graph_built()
+        ids = _parse_ids(node_ids)
+        resolved_ids = resolve_request_ids(ids)
+        _validate_datetimes(start_time, end_time)
     try:
         return await run_in_threadpool(sdk.analytics.estimate_consumption, resolved_ids, start_time, end_time)
     except Exception as exc:
@@ -78,10 +80,11 @@ async def get_consumption(
     confirmation flow).  The threshold is read from the analytics_threshold
     config key (default 2 000 000).
     """
-    ensure_graph_built()
-    ids = _parse_ids(node_ids)
-    resolved_ids = resolve_request_ids(ids)
-    _validate_datetimes(start_time, end_time)
+    with phase_timer("request_setup"):
+        ensure_graph_built()
+        ids = _parse_ids(node_ids)
+        resolved_ids = resolve_request_ids(ids)
+        _validate_datetimes(start_time, end_time)
 
     if not force:
         try:

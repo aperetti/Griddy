@@ -1,5 +1,6 @@
 fastapi==0.115.0
 uvicorn==0.30.6
+orjson==3.10.7
 cim-graph==0.4.3a10
 duckdb==1.1.0
 networkx==3.3

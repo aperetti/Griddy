@@ -81,74 +81,66 @@ def _get_equipment_metrics():
 
 
 def generate_month(equipment_metrics, weather_map, start_dt, end_dt, out_file):
-    """Memory-efficient monthly generation using daily chunks."""
+    """Generate a globally sorted monthly Parquet file."""
     num_nodes = len(equipment_metrics)
     eq_names = list(equipment_metrics.keys())
-    print(f"    -> Month {start_dt.strftime('%Y-%m')}: {num_nodes} nodes...")
     
-    writer = None
-    curr_day = start_dt
+    timestamps = []
+    t = start_dt
+    while t < end_dt:
+        timestamps.append(t)
+        t += timedelta(minutes=15)
     
-    while curr_day < end_dt:
-        day_end = curr_day + timedelta(days=1)
-        if day_end > end_dt: day_end = end_dt
-        
-        timestamps = []
-        t = curr_day
-        while t < day_end:
-            timestamps.append(t)
-            t += timedelta(minutes=15)
-        
-        if not timestamps: break
-        num_steps = len(timestamps)
-        time_floats = np.array([(ts.hour + ts.minute / 60.0) for ts in timestamps])
-        load_factors = 0.6 + 0.4 * np.cos(np.pi * (time_floats - 18) / 12.0)
-        temps = np.array([weather_map.get((ts.month, ts.day, ts.hour), 20.0) for ts in timestamps])
-        weather_multiplier = 1.0 + np.maximum(0, 18 - temps) * 0.03 + np.maximum(0, temps - 24) * 0.05
-        base_load_factors = load_factors * weather_multiplier
+    num_steps = len(timestamps)
+    print(f"    -> Month {start_dt.strftime('%Y-%m')}: {num_nodes * num_steps:,} records...")
 
-        all_data = {k: [] for k in ["node_id", "node_id_int", "model_id", "timestamp", "kwh_dlv", "kwh_rcv", "voltage_a", "voltage_b", "voltage_c", "current_a", "current_b", "current_c"]}
+    time_floats = np.array([(ts.hour + ts.minute / 60.0) for ts in timestamps])
+    load_factors = 0.6 + 0.4 * np.cos(np.pi * (time_floats - 18) / 12.0)
+    temps = np.array([weather_map.get((ts.month, ts.day, ts.hour), 20.0) for ts in timestamps])
+    weather_multiplier = 1.0 + np.maximum(0, 18 - temps) * 0.03 + np.maximum(0, temps - 24) * 0.05
+    base_load_factors = load_factors * weather_multiplier
 
-        for name in eq_names:
-            meta = equipment_metrics[name]
-            p = meta["p_scales"]
-            phases = meta["phases"]
-            is_a, is_b, is_c = ("A" in phases or "S1" in phases), ("B" in phases or "S2" in phases), ("C" in phases)
-            kwh_a = (p["A"] + p["S1"]) * base_load_factors * (0.8 + 0.4 * np.random.rand(num_steps)) / 4.0 if is_a else np.zeros(num_steps)
-            kwh_b = (p["B"] + p["S2"]) * base_load_factors * (0.8 + 0.4 * np.random.rand(num_steps)) / 4.0 if is_b else np.zeros(num_steps)
-            kwh_c = p["C"] * base_load_factors * (0.8 + 0.4 * np.random.rand(num_steps)) / 4.0 if is_c else np.zeros(num_steps)
-            v_base = 120.0 * (1.0 - meta["depth"] * 0.001)
-            
-            all_data["node_id"].extend([name] * num_steps)
-            all_data["node_id_int"].extend([to_int_id(name)] * num_steps)
-            all_data["model_id"].extend([meta["model_id"]] * num_steps)
-            all_data["timestamp"].extend(timestamps)
-            all_data["kwh_dlv"].extend((kwh_a + kwh_b + kwh_c).tolist())
-            all_data["kwh_rcv"].extend([0.0] * num_steps)
-            all_data["voltage_a"].extend((v_base * (0.995 + 0.01 * np.random.rand(num_steps))).tolist() if is_a else [None]*num_steps)
-            all_data["voltage_b"].extend((v_base * (0.995 + 0.01 * np.random.rand(num_steps))).tolist() if is_b else [None]*num_steps)
-            all_data["voltage_c"].extend((v_base * (0.995 + 0.01 * np.random.rand(num_steps))).tolist() if is_c else [None]*num_steps)
-            all_data["current_a"].extend((kwh_a * 4000.0 / 120.0).tolist())
-            all_data["current_b"].extend((kwh_b * 4000.0 / 120.0).tolist())
-            all_data["current_c"].extend((kwh_c * 4000.0 / 120.0).tolist())
+    all_data = {k: [] for k in ["node_id", "node_id_int", "model_id", "timestamp", "kwh_dlv", "kwh_rcv", "voltage_a", "voltage_b", "voltage_c", "current_a", "current_b", "current_c"]}
 
-        table = pa.Table.from_pydict(all_data)
-        indices = pa.compute.sort_indices(table, sort_keys=[("node_id_int", "ascending"), ("timestamp", "ascending")])
-        sorted_table = table.take(indices)
+    for name in eq_names:
+        meta = equipment_metrics[name]
+        p = meta["p_scales"]
+        phases = meta["phases"]
+        is_a, is_b, is_c = ("A" in phases or "S1" in phases), ("B" in phases or "S2" in phases), ("C" in phases)
+        kwh_a = (p["A"] + p["S1"]) * base_load_factors * (0.8 + 0.4 * np.random.rand(num_steps)) / 4.0 if is_a else np.zeros(num_steps)
+        kwh_b = (p["B"] + p["S2"]) * base_load_factors * (0.8 + 0.4 * np.random.rand(num_steps)) / 4.0 if is_b else np.zeros(num_steps)
+        kwh_c = p["C"] * base_load_factors * (0.8 + 0.4 * np.random.rand(num_steps)) / 4.0 if is_c else np.zeros(num_steps)
+        v_base = 120.0 * (1.0 - meta["depth"] * 0.001)
         
-        if writer is None:
-            writer = pq.ParquetWriter(
-                out_file, 
-                sorted_table.schema, 
-                compression='ZSTD', 
-                write_statistics=True, 
-                write_page_index=True
-            )
-        
-        writer.write_table(sorted_table, row_group_size=32_000)
-        curr_day = day_end
+        # Pre-convert and type appropriately to avoid issues later
+        all_data["node_id"].extend([name] * num_steps)
+        all_data["node_id_int"].extend([int(to_int_id(name))] * num_steps)
+        all_data["model_id"].extend([meta["model_id"]] * num_steps)
+        all_data["timestamp"].extend(timestamps)
+        all_data["kwh_dlv"].extend((kwh_a + kwh_b + kwh_c).tolist())
+        all_data["kwh_rcv"].extend([0.0] * num_steps)
+        all_data["voltage_a"].extend((v_base * (0.995 + 0.01 * np.random.rand(num_steps))).tolist() if is_a else [None]*num_steps)
+        all_data["voltage_b"].extend((v_base * (0.995 + 0.01 * np.random.rand(num_steps))).tolist() if is_b else [None]*num_steps)
+        all_data["voltage_c"].extend((v_base * (0.995 + 0.01 * np.random.rand(num_steps))).tolist() if is_c else [None]*num_steps)
+        all_data["current_a"].extend((kwh_a * 4000.0 / 120.0).tolist())
+        all_data["current_b"].extend((kwh_b * 4000.0 / 120.0).tolist())
+        all_data["current_c"].extend((kwh_c * 4000.0 / 120.0).tolist())
 
-    if writer: writer.close()
+    table = pa.Table.from_pydict(all_data)
+    
+    # CRITICAL: Global sort of the entire month by node_id_int.
+    # This creates perfect Zone Maps for DuckDB skipping.
+    indices = pa.compute.sort_indices(table, sort_keys=[("node_id_int", "ascending"), ("timestamp", "ascending")])
+    sorted_table = table.take(indices)
+    
+    pq.write_table(
+        sorted_table,
+        out_file,
+        compression='ZSTD',
+        row_group_size=100_000, # Larger row groups are better when data is perfectly sorted
+        write_statistics=True,
+        write_page_index=True
+    )
 
 
 def main():
@@ -158,7 +150,9 @@ def main():
         weather_map = {(r[0], r[1], r[2]): r[3] for r in w_rows}
 
     metrics = _get_equipment_metrics()
-    curr = datetime(2026, 3, 1) # Generate only the last 3 months for speed and memory
+    
+    # Generate last 2 months only to stay within memory limits for global sort
+    curr = (datetime.now() - timedelta(days=60)).replace(day=1)
     end = datetime.now() + timedelta(days=1)
     
     while curr < end:

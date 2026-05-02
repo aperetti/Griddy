@@ -17,6 +17,7 @@ from src.shared.meter_data_repository import (
     PhaseBalancingResult
 )
 from src.shared.database_setup import DB_PATH, ADMIN_SQLITE_PATH, PARQUET_DIR, to_int_id
+from src.shared.perf import record_phase
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,34 @@ class DuckDBMeterDataRepository(IMeterDataRepository):
         self._all_parquet_files: list[Path] = []
         self._last_scan_time = 0
         self._thread_local = threading.local()
+        # weather lookup: (month, day, hour) -> temperature. Loaded lazily on
+        # the first consumption call. Roughly 8,760 entries (1 year hourly).
+        self._weather_lookup: Optional[dict[tuple[int, int, int], float]] = None
+        self._weather_lock = threading.Lock()
+
+    def _get_weather_lookup(self) -> dict[tuple[int, int, int], float]:
+        """Load weather_recordings into a Python dict on first use.
+
+        Materializing the table once is faster end-to-end than joining it on
+        every consumption query: ~9k entries fit in <1 MiB and the per-row
+        lookup happens during the existing Python post-processing loop.
+        """
+        if self._weather_lookup is not None:
+            return self._weather_lookup
+        with self._weather_lock:
+            if self._weather_lookup is not None:
+                return self._weather_lookup
+            try:
+                with self._get_connection() as conn:
+                    rows = conn.execute(
+                        "SELECT month, day, hour, temperature FROM weather_recordings"
+                    ).fetchall()
+                self._weather_lookup = {(int(r[0]), int(r[1]), int(r[2])): float(r[3]) for r in rows}
+                logger.info("Loaded %d weather entries into in-memory lookup", len(self._weather_lookup))
+            except Exception as e:
+                logger.warning("Could not load weather_recordings (%s); temperature will default to 20.0C", e)
+                self._weather_lookup = {}
+        return self._weather_lookup
 
     @contextmanager
     def _get_connection(self):
@@ -110,45 +139,50 @@ class DuckDBMeterDataRepository(IMeterDataRepository):
         source = f"read_parquet({files})"
         st_lit, et_lit = start_time.replace("'", "''"), end_time.replace("'", "''")
         node_table = self._get_node_table(node_ids)
-        
+
+        # Load weather into a Python dict before issuing the query. This drops
+        # a LEFT JOIN over millions of rows in favor of an O(1) lookup per
+        # output row (the output is one-row-per-timestamp, ~thousands of rows).
+        weather_lookup = self._get_weather_lookup()
+
         with self._get_connection() as conn:
             conn.register("node_table", node_table)
             try:
                 query = f"""
-                    SELECT 
-                        r.timestamp, 
-                        SUM(COALESCE(r.kwh_dlv, 0)), 
-                        SUM(COALESCE(r.kwh_rcv, 0)),
-                        ANY_VALUE(w.temperature)
-                    FROM {source} r 
-                    INNER JOIN node_table n ON r.node_id_int = n.node_id_int 
-                    LEFT JOIN weather_recordings w ON (
-                        EXTRACT(MONTH FROM r.timestamp) = w.month AND
-                        EXTRACT(DAY FROM r.timestamp) = w.day AND
-                        EXTRACT(HOUR FROM r.timestamp) = w.hour
-                    )
-                    WHERE r.timestamp >= '{st_lit}'::TIMESTAMP AND r.timestamp <= '{et_lit}'::TIMESTAMP 
+                    SELECT
+                        r.timestamp,
+                        SUM(COALESCE(r.kwh_dlv, 0)),
+                        SUM(COALESCE(r.kwh_rcv, 0))
+                    FROM {source} r
+                    INNER JOIN node_table n ON r.node_id_int = n.node_id_int
+                    WHERE r.timestamp >= '{st_lit}'::TIMESTAMP AND r.timestamp <= '{et_lit}'::TIMESTAMP
                     GROUP BY 1 ORDER BY 1 ASC
                 """
                 if logger.isEnabledFor(logging.DEBUG):
                     explain = conn.execute(f"EXPLAIN ANALYZE {query}").fetchall()
                     logger.debug("EXPLAIN ANALYZE get_consumption:\n%s", explain[0][1])
-                
+
                 t0 = time.perf_counter()
                 results = conn.execute(query).fetchall()
                 t_query = (time.perf_counter() - t0) * 1000
             finally:
                 conn.unregister("node_table")
-        
+        record_phase("query", t_query)
+
         t1 = time.perf_counter()
-        output = [{
-            "timestamp": r[0].isoformat() + "Z",
-            "kwh_delivered": float(r[1]),
-            "kwh_received": float(r[2]),
-            "temperature": float(r[3]) if r[3] is not None else 20.0
-        } for r in results]
+        output = []
+        for r in results:
+            ts = r[0]
+            temp = weather_lookup.get((ts.month, ts.day, ts.hour), 20.0)
+            output.append({
+                "timestamp": ts.isoformat() + "Z",
+                "kwh_delivered": float(r[1]),
+                "kwh_received": float(r[2]),
+                "temperature": temp,
+            })
         t_py = (time.perf_counter() - t1) * 1000
-        
+        record_phase("py_postprocess", t_py)
+
         logger.debug("get_consumption total took %.2fms (query=%.2fms, py=%.2fms)", (time.perf_counter()-t_total_start)*1000, t_query, t_py)
         return output
 
@@ -185,7 +219,11 @@ class DuckDBMeterDataRepository(IMeterDataRepository):
             finally:
                 conn.unregister("node_table")
                 conn.execute(f"DROP TABLE IF EXISTS {tmp_data}")
-        
+        record_phase("voltage_scan", t_scan)
+        record_phase("voltage_bins", t_bins)
+        record_phase("voltage_heatmap", t_heatmap)
+        record_phase("voltage_stability", t_stability)
+
         logger.debug("get_voltage total took %.2fms (scan=%.2fms, bins=%.2fms, heatmap=%.2fms, stability=%.2fms)", (time.perf_counter()-t_total_start)*1000, t_scan, t_bins, t_heatmap, t_stability)
         return {
             "distribution": [{"voltage": r[0], "phase_a": r[1], "phase_b": r[2], "phase_c": r[3]} for r in bins],

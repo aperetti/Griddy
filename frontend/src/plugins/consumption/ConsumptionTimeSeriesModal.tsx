@@ -1,9 +1,9 @@
-import { memo, useState, useMemo, useEffect } from 'react';
+import { memo, useState, useMemo, useEffect, useRef } from 'react';
 import { Group, Box, Text, Stack, Select, Slider, SimpleGrid, Button, Paper } from '@mantine/core';
 import { AlertTriangle, Clock, Activity } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts';
-import { ScadaLoadingAnimation, AnalysisWindow } from '@plugin-sdk';
+import { ScadaLoadingAnimation, AnalysisWindow, perf } from '@plugin-sdk';
 import { autoExport, getDataToCopy } from '../../shared/utils/exportUtils';
 
 interface ReadingData {
@@ -72,6 +72,19 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
     const [winterTarget, setWinterTarget] = useState<number>(-5);
     const [summerTarget, setSummerTarget] = useState<number>(30);
 
+    // Capture when data first arrived so onChartReady can compute time-to-first-paint.
+    const dataArrivedAtRef = useRef<number | null>(null);
+    const firstChartReportedRef = useRef<boolean>(false);
+    useEffect(() => {
+        if (data && data.length > 0 && dataArrivedAtRef.current === null) {
+            dataArrivedAtRef.current = performance.now();
+            firstChartReportedRef.current = false;
+        }
+        if (!data || data.length === 0) {
+            dataArrivedAtRef.current = null;
+        }
+    }, [data]);
+
     const handleExport = () => {
         if (!data || data.length === 0) return;
         autoExport(data, `consumption_${nodeName?.replace(/\s+/g, '_')}`);
@@ -126,7 +139,7 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
         });
     }, [filteredByMonth, startHour, endHour]);
 
-    const seasonalData = useMemo(() => {
+    const seasonalData = useMemo(() => perf.measureSync('memo:seasonal_regression', () => {
         const summerPoints: { x: number; y: number }[] = [];
         const winterPoints: { x: number; y: number }[] = [];
         const neutralPoints: { x: number; y: number }[] = [];
@@ -173,9 +186,9 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
             winterRaw: winterPoints,
             neutralRaw: neutralPoints
         };
-    }, [filteredData]);
+    }), [filteredData]);
 
-    const smoothedTemperatures = useMemo(() => {
+    const smoothedTemperatures = useMemo(() => perf.measureSync('memo:smoothed_temp', () => {
         if (data.length === 0) return [];
         const windowSize = 96; // 24h at 15m resolution
         const result: (number | null)[] = [];
@@ -197,9 +210,9 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
             result.push(count > 0 ? sum / count : null);
         }
         return result;
-    }, [data]);
+    }), [data]);
 
-    const timeSeriesData = useMemo(() => {
+    const timeSeriesData = useMemo(() => perf.measureSync('memo:timeseries_downsample', () => {
         if (data.length === 0) return [];
 
         const first = new Date(data[0].timestamp).getTime();
@@ -262,9 +275,9 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
         }
 
         return aggregated;
-    }, [data]);
+    }), [data]);
 
-    const hourlyAggregation = useMemo(() => {
+    const hourlyAggregation = useMemo(() => perf.measureSync('memo:hourly_aggregation', () => {
         const buckets = Array.from({ length: 24 }, () => ({ total: 0, count: 0 }));
 
         filteredByMonth.forEach(d => {
@@ -282,7 +295,7 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
             hour: `${i.toString().padStart(2, '0')}:00`,
             avg: b.count > 0 ? b.total / b.count : 0
         }));
-    }, [filteredByMonth]);
+    }), [filteredByMonth]);
 
     const markLines = useMemo(() => {
         if (data.length === 0) return [];
@@ -582,6 +595,12 @@ export const ConsumptionTimeSeriesModal = memo(function ConsumptionTimeSeriesMod
                                 onChartReady={(chart) => {
                                     chart.group = 'consumption-sync';
                                     echarts.connect('consumption-sync');
+                                    if (!firstChartReportedRef.current && dataArrivedAtRef.current !== null) {
+                                        firstChartReportedRef.current = true;
+                                        perf.mark('chart:first_ready', performance.now() - dataArrivedAtRef.current);
+                                        // Defer dump to next tick so other charts in the same frame are captured.
+                                        setTimeout(() => perf.dump('consumption'), 0);
+                                    }
                                 }}
                             />
                         </Box>

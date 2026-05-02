@@ -4,3 +4,4 @@
  */
 export * from './types';
 export * from './components';
+export * as perf from './perf';
