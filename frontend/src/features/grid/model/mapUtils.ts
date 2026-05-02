@@ -61,7 +61,7 @@ export const getNodeColor = (node: Node, visualType: string, isHighlighted: bool
 };
 
 export const getEdgeColor = (edge: Edge, isHighlighted: boolean, isHovered: boolean, circuitId?: string): [number, number, number] => {
-    if (isHighlighted) return [60, 160, 240];
+    if (isHighlighted) return [255, 200, 50]; // Amber/Yellow highlight
     if (isHovered) return [255, 255, 255];
     if (edge.display_color) {
         const hex = edge.display_color.replace('#', '');

@@ -147,7 +147,7 @@ export default function App() {
     p => p.appliesToNodes(selectedNodes, topology.highlightedEdges.size)
   );
 
-  const selectAndNavigateToNode = useCallback(async (targetId: string | string[], hintModelId?: string) => {
+  const selectAndNavigateToNode = useCallback(async (targetId: string | string[], hintModelId?: string, clearPrevious: boolean = true) => {
     const ids = Array.isArray(targetId) ? targetId : [targetId];
 
     if (ids.length === 1) {
@@ -162,7 +162,7 @@ export default function App() {
 
       if (node) {
         topology.setHighlightedNodes(new Set([node.id]));
-        topology.setHighlightedEdges(new Set());
+        if (clearPrevious) topology.setHighlightedEdges(new Set());
         setTargetLocation({ longitude: node.position[0], latitude: node.position[1], zoom: 18 });
         return;
       }
@@ -170,7 +170,7 @@ export default function App() {
       // 2. Try finding as an Edge (e.g. PowerTransformer edge)
       const edge = topology.edges.find(e => e.id === id || e.name === id || `${e.source}-${e.target}` === id);
       if (edge) {
-        topology.setHighlightedNodes(new Set());
+        if (clearPrevious) topology.setHighlightedNodes(new Set());
         topology.setHighlightedEdges(new Set([edge.id || `${edge.source}-${edge.target}`]));
 
         // Center on edge midpoint
@@ -201,7 +201,7 @@ export default function App() {
       }
     } else if (ids.length > 1) {
       topology.setHighlightedNodes(new Set(ids));
-      topology.setHighlightedEdges(new Set());
+      if (clearPrevious) topology.setHighlightedEdges(new Set());
       setFitTrigger(prev => prev + 1);
       setTargetLocation(null);
     }
@@ -213,7 +213,7 @@ export default function App() {
     resolveEdgeNodesToNodeIds: (edgeIds: string[]) =>
       Array.from(new Set(
         edgeIds.map(eid =>
-          topology.edges.find(e => e.id === eid || `${e.source}-${e.target}` === eid)?.target
+          topology.edges.find(e => e.id === eid || `${e.source}-${edge.target}` === eid)?.target
         ).filter(Boolean) as string[]
       )),
     setAnalysisWindows: analytics.setAnalysisWindows,
@@ -234,7 +234,7 @@ export default function App() {
     setNodeAverages: (averages: Record<string, number> | null) => topology.setNodeAverages(averages),
     setEdgeAverages: (averages: Record<string, number> | null) => topology.setEdgeAverages(averages),
     setVoltageScale: setVoltageScale,
-    selectAndNavigateToNode: selectAndNavigateToNode,
+    selectAndNavigateToNode: (ids, hint) => selectAndNavigateToNode(ids, hint, false),
   };
 
   // Cleanup effect for heatmap averages when windows close

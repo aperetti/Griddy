@@ -151,7 +151,12 @@ export function useLayers(p: UseLayersParams) {
             data: uniqueVisualEdgePaths,
             getPath: (d: any) => d.path,
             getColor: (d: Edge) => {
-                // 1. Voltage-based coloring (Node averages) - Per Unit (PU)
+                // 1. Status/Highlight colors - TAKES PRECEDENCE
+                const isHighlighted = p.highlightedEdges.has(d.id || '') || p.highlightedEdges.has(`${d.source}-${d.target}`);
+                if (isHighlighted) return [255, 200, 50, 255]; // Amber/Yellow selection color
+                if (p.hoveredEdgeId === (d.id || `${d.source}-${d.target}`)) return [255, 255, 255, 255];
+
+                // 2. Voltage-based coloring (Node averages) - Per Unit (PU)
                 const nodeAvg = propagatedNodeAverages?.[d.target];
                 if (nodeAvg !== undefined && p.voltageScale) {
                     const { criticalHigh, highWarning, lowWarning, criticalLow, baseVoltage } = p.voltageScale;
@@ -164,7 +169,7 @@ export function useLayers(p: UseLayersParams) {
                     return [142, 68, 173, 200]; // Critical Low - Purple
                 }
                 
-                // 2. Loading-based coloring (Edge averages) - % of capacity
+                // 3. Loading-based coloring (Edge averages) - % of capacity
                 const edgeKey = d.id || `${d.source}-${d.target}`;
                 if (p.edgeAverages && p.edgeAverages[edgeKey] !== undefined) {
                     const load = p.edgeAverages[edgeKey];
@@ -174,11 +179,6 @@ export function useLayers(p: UseLayersParams) {
                     if (load > 30) return [144, 238, 144, 255]; // Light Green - Normal
                     return [34, 139, 34, 255]; // Forest Green - Low
                 }
-
-                // 3. Status/Highlight colors
-                const isHighlighted = p.highlightedEdges.has(d.id || '') || p.highlightedEdges.has(`${d.source}-${d.target}`);
-                if (isHighlighted) return [255, 200, 50, 255]; // Amber/Yellow selection color
-                if (p.hoveredEdgeId === (d.id || `${d.source}-${d.target}`)) return [255, 255, 255, 255];
 
                 // 4. Rule-assigned fixed color
                 if (d.display_color) {
