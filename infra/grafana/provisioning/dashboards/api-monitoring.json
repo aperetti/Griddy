@@ -409,7 +409,7 @@
             "uid": "loki"
           },
           "editorMode": "code",
-          "expr": "sum(count_over_time({container_name=\"grid-backend\"} |~ \"Calculating|Executing|Trace|Generating\" [1h])) by (pkg)",
+          "expr": "sum(count_over_time({container_name=\"grid-backend\"} |~ \"Calculating|Executing|Trace|Generating\" | pattern \"<level> | <pkg> | <msg>\" [1h])) by (pkg)",
           "queryType": "range",
           "refId": "A"
         }
