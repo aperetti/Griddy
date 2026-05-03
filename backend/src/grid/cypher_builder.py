@@ -59,6 +59,12 @@ _CIM_PREFIXES = [
     "BaseVoltage", "VoltageLevel", "Substation", "Bay"
 ]
 
+
+def _is_safe_identifier(val: str) -> bool:
+    if not val:
+        return True
+    return bool(re.match(r"^[a-zA-Z0-9_.]+$", str(val)))
+
 class CypherRuleBuilder:
     """Builds parameterized Cypher MATCH queries from MatchConditions dicts."""
 
@@ -77,6 +83,9 @@ class CypherRuleBuilder:
         self.params = {}
         self._idx = 0
         self.warnings = []
+
+        if not _is_safe_identifier(cim_class):
+            raise ValueError(f"Invalid identifier for cim_class: {cim_class}")
 
         rule_mode = rule_config.get("rule_mode", "guided")
 
@@ -225,6 +234,8 @@ class CypherRuleBuilder:
         class_to_alias: Dict[str, str] = None,
     ) -> str:
         path = cond.get("path", "")
+        if not _is_safe_identifier(path):
+            raise ValueError(f"Invalid identifier for path: {path}")
         op_str = cond.get("op", "")
         value_type = cond.get("value_type", "literal")
         if not path or not op_str: return ""
@@ -263,6 +274,8 @@ class CypherRuleBuilder:
         if value_type == "property":
             compare_step_id = cond.get("compare_step_id")
             compare_path = cond.get("compare_path")
+            if not _is_safe_identifier(compare_path):
+                raise ValueError(f"Invalid identifier for compare_path: {compare_path}")
             if not compare_path: return ""
             if not _is_safe_identifier(compare_path):
                 raise ValueError(f"Invalid compare property path: {compare_path}")
@@ -325,6 +338,8 @@ class CypherRuleBuilder:
             return f"EXISTS {{ {classifier.exists_pattern} }}" if classifier else ""
 
         path = cond.get("path", "")
+        if not _is_safe_identifier(path):
+            raise ValueError(f"Invalid identifier for path: {path}")
         op_str = cond.get("op", "")
         if not path or not op_str: return ""
         if not _is_safe_identifier(path):
@@ -358,15 +373,13 @@ def _build_traversal(root_class: str, target_class: Optional[str], graph_path: O
         for hop in graph_path[:-1]:
             rel = hop.get('rel', '')
             label = hop.get('label', '')
-            if rel and not _is_safe_identifier(rel):
-                raise ValueError(f"Invalid relationship: {rel}")
-            if label and not _is_safe_identifier(label):
-                raise ValueError(f"Invalid label: {label}")
+            if not _is_safe_identifier(rel) or not _is_safe_identifier(label):
+                raise ValueError("Invalid relationship or label identifier in traversal")
             label_str = f":{label}" if label else ""
             parts.append(f"-[:`{rel}`]-({label_str})")
         last_rel = graph_path[-1].get('rel', '')
-        if last_rel and not _is_safe_identifier(last_rel):
-            raise ValueError(f"Invalid relationship: {last_rel}")
+        if not _is_safe_identifier(last_rel):
+            raise ValueError("Invalid relationship identifier in traversal")
         parts.append(f"-[:`{last_rel}`]-(e:{target_class})")
         return "".join(parts)
     return f"-[*1..3]-(e:{target_class})"
