@@ -110,6 +110,7 @@ export const loadHeatMapPlugin: SdkPluginDefinition = {
             isPaused: instance.isPaused,
             zIndex: instance.zIndex ?? 1000,
             onConfirm,
+            onFocus: callbacks.onFocus,
             startTime: instance.startTime,
             endTime: instance.endTime,
         });

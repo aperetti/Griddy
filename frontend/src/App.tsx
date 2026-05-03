@@ -213,7 +213,7 @@ export default function App() {
     resolveEdgeNodesToNodeIds: (edgeIds: string[]) =>
       Array.from(new Set(
         edgeIds.map(eid =>
-          topology.edges.find(e => e.id === eid || `${e.source}-${edge.target}` === eid)?.target
+          topology.edges.find(e => e.id === eid || `${e.source}-${e.target}` === eid)?.target
         ).filter(Boolean) as string[]
       )),
     setAnalysisWindows: analytics.setAnalysisWindows,
@@ -518,6 +518,7 @@ export default function App() {
               analytics.bringWindowToFront(id);
             }}
             onClose={analytics.removeWindow}
+            pluginRegistry={pluginRegistry}
           />
         </Box>
 

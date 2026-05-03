@@ -122,6 +122,7 @@ export const voltageHeatMapPlugin: SdkPluginDefinition = {
             isPaused: instance.isPaused,
             zIndex: instance.zIndex ?? 1000,
             onConfirm,
+            onFocus: callbacks.onFocus,
         });
     },
 };
