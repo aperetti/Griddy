@@ -26,8 +26,58 @@ graph TD
     class Soda sodaNode
     class Graph,Anal,Alarm,Rules,Views,Alert neutralNode
     class SodaLayer sodaLayerContainer
-```
-## Data Flow Description
+    ```
+
+    ## Application Architecture Diagram
+
+    This diagram details the technical components and their interactions within the Griddy application stack.
+
+    ```mermaid
+    graph TB
+    subgraph Client [Frontend - React / TypeScript]
+        UI[Mantine UI / Deck.gl]
+        State[Topology & Analytics Hooks]
+        PluginSDK[Plugin SDK / Registry]
+        DisplayEngine[Display Rule Engine]
+    end
+
+    subgraph API [Backend - FastAPI / Python]
+        Discovery[Discovery & Search]
+        Analytics[Analytics Pipelines]
+        TopologyAPI[Graph Topology Service]
+        RulesAPI[Display Rules CRUD]
+        Agent[NL Agent / LLM Bridge]
+    end
+
+    subgraph Data [Data Persistence & Processing]
+        Neo4j[(Neo4j - CIM Graph)]
+        DuckDB[(DuckDB - AMI Readings)]
+        SQLite[(SQLite - App Config)]
+        Parquet[Parquet - Time-Series Cold Storage]
+    end
+
+    UI --> State
+    State --> PluginSDK
+    PluginSDK --> DisplayEngine
+
+    UI <--> API
+
+    Discovery --> Neo4j
+    TopologyAPI --> Neo4j
+    Analytics --> DuckDB
+    Analytics --> Parquet
+    RulesAPI --> SQLite
+    Agent --> Neo4j
+    Agent --> SQLite
+
+    class UI,State,PluginSDK,DisplayEngine appNode
+    class Discovery,Analytics,TopologyAPI,RulesAPI,Agent neutralNode
+    class Neo4j,DuckDB,SQLite,Parquet dbNode
+    class Client,API,Data sodaLayerContainer
+    ```
+
+    ## Data Flow Description
+
 
 1.  **SIM Model:** The source of truth for the power system topology and properties.
 2.  **Grid Database:** Stores the persistent state of the grid model (Neo4j for graph, SQLite for configuration).
