@@ -1,6 +1,7 @@
 import os
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from src.shared.dependencies import registry
+from src.shared.auth import get_current_username
 
 router = APIRouter(prefix="/api/feeders", tags=["feeders"])
 
@@ -24,7 +25,7 @@ async def resolve_node(node_id: str):
 
 
 @router.post("/{feeder_id}/load")
-async def load_feeder(feeder_id: str):
+async def load_feeder(feeder_id: str, username: str = Depends(get_current_username)):
     """Load a CIM feeder into memory by its ID."""
     import src.shared.dependencies as deps
     try:
@@ -43,7 +44,7 @@ async def load_feeder(feeder_id: str):
 
 
 @router.post("/{feeder_id}/unload")
-async def unload_feeder(feeder_id: str):
+async def unload_feeder(feeder_id: str, username: str = Depends(get_current_username)):
     """Unload a CIM feeder, freeing memory."""
     if feeder_id not in registry.get_active_model_ids():
         raise HTTPException(status_code=404, detail=f"Feeder '{feeder_id}' is not loaded")
