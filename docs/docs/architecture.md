@@ -11,22 +11,28 @@ graph TD
     Graph --> App[Main Application]
     App --> AnalyticsDB[(Analytics Results Database)]
     App --> Soda[Soda Display Layer]
-    
-    subgraph "Soda Display Layer Components"
+
+    subgraph SodaLayer [Soda Display Layer Components]
         Soda --> Anal[Analytics Pipeline]
         Soda --> Alarm[Alarming System]
         Soda --> Rules[Display & Alert Rules Engine]
         Rules --> Views[Dynamic Visualizations]
         Rules --> Alert[System Alerts]
     end
-    
-    style SIM fill:#f9f,stroke:#333,stroke-width:2px
-    style DB fill:#bbf,stroke:#333,stroke-width:2px
-    style AnalyticsDB fill:#bbf,stroke:#333,stroke-width:2px
-    style App fill:#bfb,stroke:#333,stroke-width:2px
-    style Soda fill:#fbb,stroke:#333,stroke-width:2px
-```
 
+    style SIM fill:var(--mermaid-sim-fill),stroke:var(--mermaid-node-stroke),color:var(--mermaid-node-color)
+    style DB fill:var(--mermaid-db-fill),stroke:var(--mermaid-node-stroke),color:var(--mermaid-node-color)
+    style AnalyticsDB fill:var(--mermaid-db-fill),stroke:var(--mermaid-node-stroke),color:var(--mermaid-node-color)
+    style App fill:var(--mermaid-app-fill),stroke:var(--mermaid-node-stroke),color:var(--mermaid-node-color)
+    style Soda fill:var(--mermaid-soda-fill),stroke:var(--mermaid-node-stroke),color:var(--mermaid-node-color)
+    style Graph fill:var(--mermaid-neutral-fill),stroke:var(--mermaid-node-stroke),color:var(--mermaid-node-color)
+    style Anal fill:var(--mermaid-neutral-fill),stroke:var(--mermaid-node-stroke),color:var(--mermaid-node-color)
+    style Alarm fill:var(--mermaid-neutral-fill),stroke:var(--mermaid-node-stroke),color:var(--mermaid-node-color)
+    style Rules fill:var(--mermaid-neutral-fill),stroke:var(--mermaid-node-stroke),color:var(--mermaid-node-color)
+    style Views fill:var(--mermaid-neutral-fill),stroke:var(--mermaid-node-stroke),color:var(--mermaid-node-color)
+    style Alert fill:var(--mermaid-neutral-fill),stroke:var(--mermaid-node-stroke),color:var(--mermaid-node-color)
+    style SodaLayer fill:rgba(0,0,0,0.05),stroke:var(--mermaid-node-stroke),stroke-dasharray: 5 5
+```
 ## Data Flow Description
 
 1.  **SIM Model:** The source of truth for the power system topology and properties.

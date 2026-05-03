@@ -22,6 +22,15 @@
   --ifm-hero-text-color: #0f172a;
   --ifm-background-color: var(--griddy-integrated-bg);
   --griddy-hero-grid-opacity: 0.05;
+
+  /* Mermaid Theme Variables */
+  --mermaid-sim-fill: #f9f;
+  --mermaid-db-fill: #bbf;
+  --mermaid-app-fill: #bfb;
+  --mermaid-soda-fill: #fbb;
+  --mermaid-neutral-fill: #eee;
+  --mermaid-node-stroke: #333;
+  --mermaid-node-color: #333;
 }
 
 /* For readability concerns, you should choose a lighter palette in dark mode. */
@@ -43,6 +52,15 @@
   --griddy-hero-grid-opacity: 0.02;
   --ifm-font-color-base: #f1f5f9;
   --ifm-heading-color: #f8fafc;
+
+  /* Mermaid Theme Variables - Dark Mode */
+  --mermaid-sim-fill: #502050;
+  --mermaid-db-fill: #202050;
+  --mermaid-app-fill: #205020;
+  --mermaid-soda-fill: #502020;
+  --mermaid-neutral-fill: #2d3748;
+  --mermaid-node-stroke: #718096;
+  --mermaid-node-color: #f1f5f9;
 }
 
 /* Specific component overrides for full integration */
