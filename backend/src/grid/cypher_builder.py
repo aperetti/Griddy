@@ -8,6 +8,11 @@ import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+def _is_safe_identifier(val: Any) -> bool:
+    if not val:
+        return False
+    return bool(re.match(r"^[a-zA-Z0-9_.]+$", str(val)))
+
 logger = logging.getLogger(__name__)
 
 # CIM base/mixin classes whose properties are stored directly on equipment nodes
@@ -67,6 +72,8 @@ class CypherRuleBuilder:
         rule_config: Dict[str, Any],
         cim_class: str,
     ) -> Tuple[str, Dict[str, Any], List[str]]:
+        if not _is_safe_identifier(cim_class):
+            raise ValueError(f"Invalid CIM class identifier: {cim_class}")
         self.params = {}
         self._idx = 0
         self.warnings = []
@@ -105,6 +112,8 @@ class CypherRuleBuilder:
         
         for i, step in enumerate(path_steps):
             cls = step.get("class", "")
+            if not _is_safe_identifier(cls):
+                raise ValueError(f"Invalid class identifier in path: {cls}")
             if step.get("fixed"):
                 alias = "cn" if cls == "ConnectivityNode" else "t"
             else:
@@ -194,6 +203,8 @@ class CypherRuleBuilder:
                 attr = attr_obj.get("attr")
                 col = attr_obj.get("alias")
                 if not attr or not col: continue
+                if not _is_safe_identifier(attr):
+                    raise ValueError(f"Invalid tooltip attribute: {attr}")
                 safe_col = "".join(c if c.isalnum() or c == "_" else "_" for c in col)
                 tooltip_projections.append(f"{alias}.`{attr}` AS tp_{safe_col}")
 
@@ -217,6 +228,8 @@ class CypherRuleBuilder:
         op_str = cond.get("op", "")
         value_type = cond.get("value_type", "literal")
         if not path or not op_str: return ""
+        if not _is_safe_identifier(path):
+            raise ValueError(f"Invalid property path: {path}")
 
         cypher_op = _OPS.get(op_str)
         if not cypher_op: return ""
@@ -251,6 +264,8 @@ class CypherRuleBuilder:
             compare_step_id = cond.get("compare_step_id")
             compare_path = cond.get("compare_path")
             if not compare_path: return ""
+            if not _is_safe_identifier(compare_path):
+                raise ValueError(f"Invalid compare property path: {compare_path}")
             compare_alias = aliases_map.get(compare_step_id)
             if not compare_alias and class_to_alias:
                 c_dot = compare_path.find(".")
@@ -312,6 +327,8 @@ class CypherRuleBuilder:
         path = cond.get("path", "")
         op_str = cond.get("op", "")
         if not path or not op_str: return ""
+        if not _is_safe_identifier(path):
+            raise ValueError(f"Invalid property path: {path}")
         cypher_op = _OPS.get(op_str)
         if not cypher_op: return ""
 
@@ -334,14 +351,22 @@ class CypherRuleBuilder:
         return f"EXISTS {{ ({node_alias}:{cim_class}){traversal} WHERE {e_prop} {cypher_op} {self._param(coerced)} }}"
 
 def _build_traversal(root_class: str, target_class: Optional[str], graph_path: Optional[list]) -> str:
+    if target_class and not _is_safe_identifier(target_class):
+        raise ValueError(f"Invalid target class in traversal: {target_class}")
     if graph_path and len(graph_path) > 0:
         parts = []
         for hop in graph_path[:-1]:
             rel = hop.get('rel', '')
             label = hop.get('label', '')
+            if rel and not _is_safe_identifier(rel):
+                raise ValueError(f"Invalid relationship: {rel}")
+            if label and not _is_safe_identifier(label):
+                raise ValueError(f"Invalid label: {label}")
             label_str = f":{label}" if label else ""
             parts.append(f"-[:`{rel}`]-({label_str})")
         last_rel = graph_path[-1].get('rel', '')
+        if last_rel and not _is_safe_identifier(last_rel):
+            raise ValueError(f"Invalid relationship: {last_rel}")
         parts.append(f"-[:`{last_rel}`]-(e:{target_class})")
         return "".join(parts)
     return f"-[*1..3]-(e:{target_class})"
