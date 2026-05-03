@@ -44,7 +44,7 @@ export function DataPanel() {
             </Group>
             <Title order={5}>CIM Ingestor</Title>
             <Text size="sm" c="dimmed">
-              Executes `ingest_cim_graph.py` to refresh the DuckDB grid topology from source Parquet files.
+              Executes `ingest_cim_to_neo4j.py` to refresh the Neo4j grid topology from uploaded XML files.
             </Text>
           </Stack>
         </Paper>
@@ -62,12 +62,12 @@ export function DataPanel() {
                 loading={loading === 'generate'}
                 onClick={() => handleAction('generate')}
               >
-                Generate Data
+                Bulk Ingest
               </Button>
             </Group>
-            <Title order={5}>Synthetic Generator</Title>
+            <Title order={5}>Full Ingestion Pipeline</Title>
             <Text size="sm" c="dimmed">
-              Executes `generate_synthetic_data.py` to create multi-year AMI time-series metrics.
+              Orchestrates full ingestion of all models into Neo4j. (Readings are now generated in-memory on demand).
             </Text>
           </Stack>
         </Paper>

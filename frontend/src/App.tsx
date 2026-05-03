@@ -136,8 +136,6 @@ export default function App() {
         .catch(err => console.error('[plugins] Failed to initialize plugin registry:', err));
     };
     syncRegistry();
-    const interval = setInterval(syncRegistry, 10_000);
-    return () => clearInterval(interval);
   }, []);
 
   const [fitTrigger, setFitTrigger] = useState(0);
@@ -149,7 +147,7 @@ export default function App() {
     p => p.appliesToNodes(selectedNodes, topology.highlightedEdges.size)
   );
 
-  const selectAndNavigateToNode = useCallback(async (targetId: string | string[], hintModelId?: string) => {
+  const selectAndNavigateToNode = useCallback(async (targetId: string | string[], hintModelId?: string, clearPrevious: boolean = true) => {
     const ids = Array.isArray(targetId) ? targetId : [targetId];
 
     if (ids.length === 1) {
@@ -164,7 +162,7 @@ export default function App() {
 
       if (node) {
         topology.setHighlightedNodes(new Set([node.id]));
-        topology.setHighlightedEdges(new Set());
+        if (clearPrevious) topology.setHighlightedEdges(new Set());
         setTargetLocation({ longitude: node.position[0], latitude: node.position[1], zoom: 18 });
         return;
       }
@@ -172,7 +170,7 @@ export default function App() {
       // 2. Try finding as an Edge (e.g. PowerTransformer edge)
       const edge = topology.edges.find(e => e.id === id || e.name === id || `${e.source}-${e.target}` === id);
       if (edge) {
-        topology.setHighlightedNodes(new Set());
+        if (clearPrevious) topology.setHighlightedNodes(new Set());
         topology.setHighlightedEdges(new Set([edge.id || `${edge.source}-${edge.target}`]));
 
         // Center on edge midpoint
@@ -203,7 +201,7 @@ export default function App() {
       }
     } else if (ids.length > 1) {
       topology.setHighlightedNodes(new Set(ids));
-      topology.setHighlightedEdges(new Set());
+      if (clearPrevious) topology.setHighlightedEdges(new Set());
       setFitTrigger(prev => prev + 1);
       setTargetLocation(null);
     }
@@ -236,7 +234,7 @@ export default function App() {
     setNodeAverages: (averages: Record<string, number> | null) => topology.setNodeAverages(averages),
     setEdgeAverages: (averages: Record<string, number> | null) => topology.setEdgeAverages(averages),
     setVoltageScale: setVoltageScale,
-    selectAndNavigateToNode: selectAndNavigateToNode,
+    selectAndNavigateToNode: (ids, hint) => selectAndNavigateToNode(ids, hint, false),
   };
 
   // Cleanup effect for heatmap averages when windows close
@@ -258,12 +256,16 @@ export default function App() {
 
   // Initial Load & Topology Refresh
   useEffect(() => {
+    console.log('[App] useEffect triggered', { version: topology.topologyVersion, active: topology.activeModelIds });
     const load = async () => {
       // Initialize with a single model if nothing is active
       if (topology.activeModelIds.length === 0) {
+        console.log('[App] No active models, fetching...');
         try {
           const models = await fetchModels();
+          console.log('[App] Discovered models:', models);
           if (models.length > 0) {
+            console.log('[App] Auto-activating first model:', models[0].feeder_id);
             topology.setActiveModelIds([models[0].feeder_id]);
             return;
           }
@@ -398,6 +400,7 @@ export default function App() {
             onEdgeClick={(edge, multiSelect) => onEdgeClick(edge, multiSelect)}
             highlightedNodes={topology.highlightedNodes}
             highlightedEdges={topology.highlightedEdges}
+            selectedNodeIds={Array.from(topology.highlightedNodes)}
             nodeAverages={topology.nodeAverages}
             edgeAverages={topology.edgeAverages}
             nodeCurrents={topology.nodeCurrents}
@@ -515,6 +518,7 @@ export default function App() {
               analytics.bringWindowToFront(id);
             }}
             onClose={analytics.removeWindow}
+            pluginRegistry={pluginRegistry}
           />
         </Box>
 

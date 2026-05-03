@@ -37,7 +37,7 @@ export const diagnosticExplorerPlugin: SdkPluginDefinition = {
             instance: instance as any, 
             onClose: callbacks.onClose, 
             onMinimize: callbacks.onMinimize,
-            onFocus: () => {},
+            onFocus: callbacks.onFocus,
             onSelectAndNavigateToNode: callbacks.selectAndNavigateToNode
         });
     },

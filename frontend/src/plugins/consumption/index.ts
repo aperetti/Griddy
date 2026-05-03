@@ -54,6 +54,8 @@ export const consumptionPlugin: SdkPluginDefinition = {
         const windowId = ctx.openAnalysisWindow('consumption', nodeName);
 
         const { start, end } = ctx.dateRange;
+        ctx.updateWindowProps(windowId, { nodeIds, start, end } as any);
+
         if (!start || !end) {
             console.error('[consumption] Cannot run analysis: simulation time range is missing.');
             return;
@@ -110,6 +112,7 @@ export const consumptionPlugin: SdkPluginDefinition = {
             zIndex: instance.zIndex ?? 1000,
             layoutMode: 'floating',
             onConfirm,
+            onFocus: callbacks.onFocus,
         });
     },
 };

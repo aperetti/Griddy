@@ -41,6 +41,7 @@ class TopologyEngine(GraphEngine):
 
     def __init__(self):
         self._nodes: Dict[str, GraphNode] = {}
+        self._edges: Dict[str, dict] = {}
         # forward_adj[node] = [(neighbor, edge_id), ...]  source → load
         self._forward_adj: Dict[str, List[Tuple[str, str]]] = defaultdict(list)
         # reverse_adj[node] = [(neighbor, edge_id), ...]  load → source
@@ -49,15 +50,25 @@ class TopologyEngine(GraphEngine):
         self._stitch_adj: Dict[str, List[str]] = defaultdict(list)
         # flow_depth[node_id] = hop-count from nearest source; stitch = 0-cost
         self._flow_depth: Dict[str, int] = {}
+        # Per-source cached flow depth maps
+        self._source_depth_cache: Dict[str, Dict[str, int]] = {}
+        # Per-node cached connected source ID
+        self._node_to_source_cache: Dict[str, str] = {}
+        # BFS result cache keyed on (start_node_id, direction, max_depth)
+        self._bfs_cache: Dict[Tuple, Tuple[List[str], List[str]]] = {}
 
     # ── GraphEngine interface ──────────────────────────────────────────────
 
     def build_graph(self, nodes: List[GraphNode] = None, edges: List[dict] = None) -> None:
         self._nodes = {}
+        self._edges = {}
         self._forward_adj = defaultdict(list)
         self._reverse_adj = defaultdict(list)
         self._stitch_adj = defaultdict(list)
         self._flow_depth = {}
+        self._source_depth_cache = {}
+        self._node_to_source_cache = {}
+        self._bfs_cache = {}
 
         if nodes:
             for n in nodes:
@@ -74,6 +85,7 @@ class TopologyEngine(GraphEngine):
                 eid = edge.get("edge_id")
                 if not src or not dst or not eid:
                     continue
+                self._edges[eid] = edge
                 self._forward_adj[src].append((dst, eid))
                 self._reverse_adj[dst].append((src, eid))
 
@@ -94,9 +106,12 @@ class TopologyEngine(GraphEngine):
         for node_ids in pos_index.values():
             if len(node_ids) > 1:
                 stitch_group_count += 1
-                for u, v in itertools.combinations(node_ids, 2):
-                    self._stitch_adj[u].append(v)
-                    self._stitch_adj[v].append(u)
+                # Star Topology: O(N) connections instead of O(N^2)
+                # This prevents BFS bottlenecks in large stitch groups (e.g. substations).
+                rep = node_ids[0]
+                for other in node_ids[1:]:
+                    self._stitch_adj[rep].append(other)
+                    self._stitch_adj[other].append(rep)
 
         self._compute_flow_depth()
 
@@ -110,12 +125,18 @@ class TopologyEngine(GraphEngine):
         )
 
     def find_downstream(self, start_node_id: str, max_depth: int = None) -> Tuple[List[str], List[str]]:
-        flow_depth = self._flow_depth_for_node(start_node_id)
-        return self._bfs(start_node_id, "downstream", max_depth, flow_depth=flow_depth)
+        key = (start_node_id, "downstream", max_depth)
+        if key not in self._bfs_cache:
+            flow_depth = self._flow_depth_for_node(start_node_id)
+            self._bfs_cache[key] = self._bfs(start_node_id, "downstream", max_depth, flow_depth=flow_depth)
+        return self._bfs_cache[key]
 
     def find_upstream(self, start_node_id: str, max_depth: int = None) -> Tuple[List[str], List[str]]:
-        flow_depth = self._flow_depth_for_node(start_node_id)
-        return self._bfs(start_node_id, "upstream", max_depth, flow_depth=flow_depth)
+        key = (start_node_id, "upstream", max_depth)
+        if key not in self._bfs_cache:
+            flow_depth = self._flow_depth_for_node(start_node_id)
+            self._bfs_cache[key] = self._bfs(start_node_id, "upstream", max_depth, flow_depth=flow_depth)
+        return self._bfs_cache[key]
 
     def get_all_neighbors(self, node_id: str) -> list[str]:
         """Return all neighbors of *node_id*: forward edges, reverse edges, and stitch peers.
@@ -153,6 +174,14 @@ class TopologyEngine(GraphEngine):
 
     def get_node_phases(self, node_ids: List[str]) -> Dict[str, List[str]]:
         return {nid: self._nodes[nid].phases for nid in node_ids if nid in self._nodes}
+
+    def get_nodes(self, node_ids: List[str]) -> List[GraphNode]:
+        """Returns a list of GraphNode objects for the given IDs."""
+        return [self._nodes[nid] for nid in node_ids if nid in self._nodes]
+
+    def get_edges(self, edge_ids: List[str]) -> List[dict]:
+        """Returns a list of edge dictionaries for the given IDs."""
+        return [self._edges[eid] for eid in edge_ids if eid in self._edges]
 
     def get_connected_components(self) -> List[Set[str]]:
         """Return a list of connected components as sets of node IDs.
@@ -201,55 +230,11 @@ class TopologyEngine(GraphEngine):
     TRANSMISSION_KV_THRESHOLD: float = 69.0
 
     def _find_topologically_connected_energy_source(self, start_node_id: str) -> Optional[str]:
-        """Undirected BFS from *start_node_id* to discover all reachable EnergySource nodes.
-
-        Returns the node ID of the EnergySource with the highest ``base_voltage_kv``
-        among those reachable, or ``None`` if no EnergySource is found.  When there
-        are multiple generation sources (e.g. the 9500-node model), this ensures that
-        downstream/upstream traversal is anchored to the source that actually feeds
-        the selected node rather than whichever source happens to be topologically
-        closest in the global flow-depth map.
-        """
-        if start_node_id not in self._nodes:
-            return None
-
-        visited: Set[str] = {start_node_id}
-        queue: deque[str] = deque([start_node_id])
-        energy_sources: List[Tuple[float, str]] = []  # (base_voltage_kv, node_id)
-
-        while queue:
-            current = queue.popleft()
-            node = self._nodes.get(current)
-            if node and any(eq.get("type") == "EnergySource" for eq in node.attached_equipment):
-                kv = node.base_voltage_kv if node.base_voltage_kv is not None else 0.0
-                energy_sources.append((kv, current))
-
-            for neighbor, _ in self._forward_adj[current] + self._reverse_adj[current]:
-                if neighbor not in visited:
-                    visited.add(neighbor)
-                    queue.append(neighbor)
-            for stitch_nb in self._stitch_adj[current]:
-                if stitch_nb not in visited:
-                    visited.add(stitch_nb)
-                    queue.append(stitch_nb)
-
-        if not energy_sources:
-            return None
-        energy_sources.sort(reverse=True)  # highest voltage first
-        chosen = energy_sources[0][1]
-        logger.info(
-            "[TopologyEngine] connected EnergySource for %s: %s (%.2f kV), "
-            "%d source(s) reachable",
-            start_node_id, chosen, energy_sources[0][0], len(energy_sources),
-        )
-        return chosen
+        """Returns the node ID of the EnergySource connected to *start_node_id* (O(1))."""
+        return self._node_to_source_cache.get(start_node_id)
 
     def _compute_flow_depth_from_source(self, source_id: str) -> Dict[str, int]:
-        """Dijkstra from a single *source_id*.
-
-        Mirrors the logic of ``_compute_flow_depth`` but for one source only.
-        Real edges cost 1; stitch connections cost 0.
-        """
+        """Dijkstra from a single *source_id*."""
         dist: Dict[str, int] = {source_id: 0}
         heap: List[Tuple[int, str]] = [(0, source_id)]
 
@@ -257,7 +242,7 @@ class TopologyEngine(GraphEngine):
             d, node = heapq.heappop(heap)
             if d > dist.get(node, float("inf")):
                 continue
-            for neighbor, _ in self._forward_adj[node] + self._reverse_adj[node]:
+            for neighbor, _ in itertools.chain(self._forward_adj[node], self._reverse_adj[node]):
                 nd = d + 1
                 if nd < dist.get(neighbor, float("inf")):
                     dist[neighbor] = nd
@@ -270,31 +255,20 @@ class TopologyEngine(GraphEngine):
         return dist
 
     def _flow_depth_for_node(self, start_node_id: str) -> Dict[str, int]:
-        """Return the flow-depth map anchored to the EnergySource connected to *start_node_id*.
-
-        When the graph has a single source (or no EnergySource nodes), this falls
-        back to the global ``_flow_depth`` computed at build time.  When multiple
-        EnergySources exist, we anchor the depth map to the one with the highest
-        voltage that is topologically reachable from *start_node_id*, ensuring
-        downstream/upstream traversal stays within the correct feeder.
-        """
+        """Return the flow-depth map anchored to the EnergySource connected to *start_node_id*."""
         source_id = self._find_topologically_connected_energy_source(start_node_id)
         if source_id is None:
-            return self._flow_depth  # fall back — no EnergySource found
-        return self._compute_flow_depth_from_source(source_id)
+            return self._flow_depth
+            
+        if source_id in self._source_depth_cache:
+            return self._source_depth_cache[source_id]
+            
+        depth_map = self._compute_flow_depth_from_source(source_id)
+        self._source_depth_cache[source_id] = depth_map
+        return depth_map
 
     def _compute_flow_depth(self) -> None:
-        """Dijkstra from all Substation/EnergySource nodes.
-
-        Real edges cost 1; stitch connections cost 0 (same physical point).
-        This ensures spatially-stitched peers always share the same depth.
-
-        Fallback: when no Substation/EnergySource nodes exist, nodes whose
-        ``base_voltage_kv`` is at or above ``TRANSMISSION_KV_THRESHOLD`` (69 kV)
-        are promoted to pseudo-sources.  This handles models that capture a
-        transmission-to-distribution boundary substation without an explicit
-        source node type — typically there is exactly one such high-voltage bus.
-        """
+        """Dijkstra from all Substation/EnergySource nodes."""
         sources = [
             nid for nid, n in self._nodes.items()
             if n.type == "Substation"
@@ -311,14 +285,12 @@ class TopologyEngine(GraphEngine):
                 max_kv = max(kv for _, kv in voltage_nodes)
                 other_kv = [kv for _, kv in voltage_nodes if kv < max_kv * 0.99]
                 if other_kv:
-                    # Distinct high-voltage tier exists — treat max-voltage nodes as pseudo-sources
                     sources = [nid for nid, kv in voltage_nodes if kv >= max_kv * 0.99]
                     logger.info(
                         "[TopologyEngine] No Substation/EnergySource — using %d "
                         "max-voltage node(s) (%.2f kV) as pseudo-source(s)",
                         len(sources), max_kv,
                     )
-                # else: all nodes same voltage — fall through to directed-edge mode
 
             if not sources:
                 logger.warning(
@@ -328,28 +300,30 @@ class TopologyEngine(GraphEngine):
                 return
 
         dist: Dict[str, int] = {s: 0 for s in sources}
+        source_map: Dict[str, str] = {s: s for s in sources}
         heap: List[Tuple[int, str]] = [(0, s) for s in sources]
         heapq.heapify(heap)
 
         while heap:
             d, node = heapq.heappop(heap)
             if d > dist.get(node, float("inf")):
-                continue  # stale heap entry
+                continue
 
-            # Real edges — undirected (robust against mis-oriented CIM edges), cost 1
-            for neighbor, _ in self._forward_adj[node] + self._reverse_adj[node]:
+            for neighbor, _ in itertools.chain(self._forward_adj[node], self._reverse_adj[node]):
                 nd = d + 1
                 if nd < dist.get(neighbor, float("inf")):
                     dist[neighbor] = nd
+                    source_map[neighbor] = source_map[node]
                     heapq.heappush(heap, (nd, neighbor))
 
-            # Stitch connections — zero cost (same physical point = same depth)
             for stitch_neighbor in self._stitch_adj[node]:
                 if d < dist.get(stitch_neighbor, float("inf")):
                     dist[stitch_neighbor] = d
+                    source_map[stitch_neighbor] = source_map[node]
                     heapq.heappush(heap, (d, stitch_neighbor))
 
         self._flow_depth = dist
+        self._node_to_source_cache = source_map
         logger.info(
             "[TopologyEngine] flow depth computed: %d/%d nodes reachable from %d sources",
             len(dist), len(self._nodes), len(sources),
@@ -428,7 +402,7 @@ class TopologyEngine(GraphEngine):
             # ── Real edge neighbors ────────────────────────────────────────
             if use_flow_depth or use_voltage_filter:
                 # Undirected: check both directions, filter by depth or voltage
-                candidates = self._forward_adj[current] + self._reverse_adj[current]
+                candidates = itertools.chain(self._forward_adj[current], self._reverse_adj[current])
             else:
                 # Directed fallback: only follow edges in the intended direction
                 candidates = (

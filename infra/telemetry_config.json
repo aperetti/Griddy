@@ -1,0 +1,29 @@
+{
+  "global_level": "DEBUG",
+  "services": {
+    "python_backend": {
+      "default_level": "DEBUG",
+      "overrides": {
+        "api.access": "INFO",
+        "src.analytics.routes": "DEBUG",
+        "src.grid.topology_routes": "INFO",
+        "src.discovery.routes": "INFO",
+        "src.shared.meter_adapters.duckdb_adapter": "DEBUG",
+        "grid_modeling.cim_parser": "ERROR",
+        "neo4j": "ERROR",
+        "neo4j.io": "ERROR",
+        "neo4j.pool": "ERROR"
+      }
+    },
+    "node_backend": {
+      "default_level": "DEBUG",
+      "overrides": {
+        "auth_middleware": "DEBUG"
+      }
+    }
+  },
+  "tracing": {
+    "sampling_rate": 1.0,
+    "enabled": true
+  }
+}

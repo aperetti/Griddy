@@ -327,6 +327,29 @@ class EquipmentEnricher:
 
         detail["hierarchy"] = self.build_asset_hierarchy(detail, obj)
 
+    def enrich_generation(self, detail: dict, obj: Any) -> None:
+        """PhotovoltaicUnit / BatteryUnit / SynchronousMachine / PowerElectronicsConnection."""
+        # Common power attributes across different generation/storage classes
+        for attr, key in [
+            ("p", "active_power_w"),
+            ("q", "reactive_power_var"),
+            ("maxP", "max_p_w"),
+            ("minP", "min_p_w"),
+            ("ratedS", "rated_s_va"),
+            ("ratedU", "rated_u_v"),
+            ("ratedE", "rated_e_wh"),
+            ("storedE", "stored_e_wh"),
+        ]:
+            val = _safe_float(getattr(obj, attr, None))
+            if val is not None:
+                detail[key] = val
+
+        # Handle Battery specifics
+        if hasattr(obj, "BatteryUnit"):
+            detail["is_battery"] = True
+
+        detail["hierarchy"] = self.build_asset_hierarchy(detail, obj)
+
     # ── Asset hierarchy ───────────────────────────────────────────────────────
 
     def build_asset_hierarchy(self, detail: dict, obj: Any) -> dict:

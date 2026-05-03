@@ -22,10 +22,13 @@ class PhaseBalancingUseCase:
         """
         downstream_nodes, downstream_edges = self.graph_engine.find_downstream(start_node_id)
         
-        # If no downstream (leaf node like a Meter), query the node itself
-        nodes_to_query = list(downstream_nodes) if downstream_nodes else [start_node_id]
+        # Include the start node itself plus everything downstream
+        topological_nodes = [start_node_id] + list(downstream_nodes)
+        
+        from src.shared.dependencies import resolve_to_storage_keys
+        storage_keys = resolve_to_storage_keys(topological_nodes)
              
-        res = self.meter_repo.get_phase_balancing(nodes_to_query, start_time, end_time)
+        res = self.meter_repo.get_phase_balancing(storage_keys, start_time, end_time)
         results = res.get("results", [])
 
         if not results:
@@ -41,8 +44,8 @@ class PhaseBalancingUseCase:
                 "peak_current_b": 0.0,
                 "peak_current_c": 0.0,
                 "start_node_id": start_node_id,
-                "node_count": len(nodes_to_query),
-                "downstream_node_ids": nodes_to_query,
+                "node_count": len(topological_nodes),
+                "downstream_node_ids": topological_nodes,
                 "downstream_edge_ids": downstream_edges
             }
             
@@ -84,7 +87,7 @@ class PhaseBalancingUseCase:
             "peak_current_b": peak_row["current_b"],
             "peak_current_c": peak_row["current_c"],
             "start_node_id": start_node_id,
-            "node_count": len(nodes_to_query),
-            "downstream_node_ids": nodes_to_query,
+            "node_count": len(topological_nodes),
+            "downstream_node_ids": topological_nodes,
             "downstream_edge_ids": downstream_edges
         }

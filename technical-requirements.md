@@ -104,6 +104,11 @@
 *   **Data Lifecycle Tools**:
     *   The `generator` service must support a `REFRESH_DB` environment variable.
     *   When `REFRESH_DB=true`, the service must clear all databases (DuckDB, SQLite topology, and Admin configuration) and Parquet files in the shared volume before starting the ingestion/generation process.
+*   **Observability & Logging**:
+    *   **Stack**: Grafana LGTM stack (Loki, Tempo, Alloy, Grafana) must be integrated into the development environment.
+    *   **Initiation**: The observability stack must be initiated automatically as part of the core infrastructure launch (`Start Infrastructure` task).
+    *   **Telemetry**: Services (Backend, Admin Backend) must use OpenTelemetry for tracing and structured logging, pushing data to the centralized stack.
+    *   **Configuration**: Config files for Loki, Tempo, and Alloy must reside in the `infra/` directory.
 
 ## 10. Graph Search Engine
 * **Edge Indexing**: The search service must index edge entities (conductors, lines) in addition to nodes.

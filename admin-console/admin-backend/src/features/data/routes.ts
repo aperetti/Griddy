@@ -47,7 +47,6 @@ export async function dataRoutes(fastify: FastifyInstance) {
       fs.mkdirSync(ingestDir, { recursive: true });
     }
 
-    // Sanitize the filename to prevent directory traversal attacks
     const safeFilename = path.basename(data.filename);
     const targetPath = path.join(ingestDir, safeFilename);
     

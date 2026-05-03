@@ -1,0 +1,62 @@
+services:
+  backend:
+    command: ["--reload"]
+    env_file: .env
+    environment:
+      - DUCKDB_THREADS=2
+      - DUCKDB_MEMORY_LIMIT=3GB
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4GB
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - ./cim_alarms:/data/cim_alarms
+      - ./grid_data_cim.duckdb:/data/grid_data_cim.duckdb
+      - ./infra/telemetry_config.json:/etc/telemetry/telemetry_config.json
+
+  frontend:
+    build:
+      context: ./frontend
+      target: dev
+    env_file: .env
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - PORT=80
+      - HMR_PORT=8081
+      - VITE_API_PROXY_TARGET=http://backend:8000
+      - VITE_DOCS_PROXY_TARGET=http://documentation:3000
+
+  admin-backend:
+    command: ["npm", "run", "dev"]
+    volumes:
+      - ./admin-console/admin-backend:/app
+      - /app/node_modules
+      - ./infra:/app/infra
+    environment:
+      - INFRA_DIR=/app/infra
+      - TELEMETRY_CONFIG_PATH=/app/infra/telemetry_config.json
+
+  admin-frontend:
+    build:
+      context: ./admin-console/admin-frontend
+      target: dev
+    volumes:
+      - ./admin-console/admin-frontend:/app
+      - /app/node_modules
+    environment:
+      - PORT=80
+      - HMR_PORT=8091
+      - VITE_API_PROXY_TARGET=http://admin-backend:8090
+
+  documentation:
+    build:
+      context: ./docs
+      target: dev
+    volumes:
+      - ./docs:/app
+      - /app/node_modules

@@ -23,9 +23,6 @@ export interface ConsumptionResponse {
     time_series: {
         timestamp: string;
         kwh_delivered: number;
-        kwh_a: number;
-        kwh_b: number;
-        kwh_c: number;
         temperature: number;
     }[];
 }
