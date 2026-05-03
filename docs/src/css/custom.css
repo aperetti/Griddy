@@ -61,11 +61,34 @@
   --mermaid-neutral-fill: #2d3748;
   --mermaid-node-stroke: #718096;
   --mermaid-node-color: #f1f5f9;
-}
+  }
 
-/* Specific component overrides for full integration */
-.navbar,
-.footer,
+  /* Mermaid Class Styles */
+  .simNode rect, .simNode circle, .simNode polygon, .simNode path { fill: var(--mermaid-sim-fill) !important; stroke: var(--mermaid-node-stroke) !important; }
+  .dbNode rect, .dbNode circle, .dbNode polygon, .dbNode path { fill: var(--mermaid-db-fill) !important; stroke: var(--mermaid-node-stroke) !important; }
+  .appNode rect, .appNode circle, .appNode polygon, .appNode path { fill: var(--mermaid-app-fill) !important; stroke: var(--mermaid-node-stroke) !important; }
+  .sodaNode rect, .sodaNode circle, .sodaNode polygon, .sodaNode path { fill: var(--mermaid-soda-fill) !important; stroke: var(--mermaid-node-stroke) !important; }
+  .neutralNode rect, .neutralNode circle, .neutralNode polygon, .neutralNode path { fill: var(--mermaid-neutral-fill) !important; stroke: var(--mermaid-node-stroke) !important; }
+
+  /* Target labels inside nodes */
+  .simNode .nodeLabel, .dbNode .nodeLabel, .appNode .nodeLabel, .sodaNode .nodeLabel, .neutralNode .nodeLabel {
+  color: var(--mermaid-node-color) !important;
+  }
+
+  /* Subgraph styling */
+  .sodaLayerContainer rect {
+  fill: rgba(0,0,0,0.05) !important;
+  stroke: var(--mermaid-node-stroke) !important;
+  stroke-dasharray: 5 5 !important;
+  }
+
+  [data-theme='dark'] .sodaLayerContainer rect {
+  fill: rgba(255,255,255,0.05) !important;
+  }
+
+  /* Specific component overrides for full integration */
+  .navbar,
+  ...
 .hero,
 .hero--primary,
 .pagination-nav__link,

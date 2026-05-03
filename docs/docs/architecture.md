@@ -20,18 +20,12 @@ graph TD
         Rules --> Alert[System Alerts]
     end
 
-    style SIM fill:var(--mermaid-sim-fill),stroke:var(--mermaid-node-stroke),color:var(--mermaid-node-color)
-    style DB fill:var(--mermaid-db-fill),stroke:var(--mermaid-node-stroke),color:var(--mermaid-node-color)
-    style AnalyticsDB fill:var(--mermaid-db-fill),stroke:var(--mermaid-node-stroke),color:var(--mermaid-node-color)
-    style App fill:var(--mermaid-app-fill),stroke:var(--mermaid-node-stroke),color:var(--mermaid-node-color)
-    style Soda fill:var(--mermaid-soda-fill),stroke:var(--mermaid-node-stroke),color:var(--mermaid-node-color)
-    style Graph fill:var(--mermaid-neutral-fill),stroke:var(--mermaid-node-stroke),color:var(--mermaid-node-color)
-    style Anal fill:var(--mermaid-neutral-fill),stroke:var(--mermaid-node-stroke),color:var(--mermaid-node-color)
-    style Alarm fill:var(--mermaid-neutral-fill),stroke:var(--mermaid-node-stroke),color:var(--mermaid-node-color)
-    style Rules fill:var(--mermaid-neutral-fill),stroke:var(--mermaid-node-stroke),color:var(--mermaid-node-color)
-    style Views fill:var(--mermaid-neutral-fill),stroke:var(--mermaid-node-stroke),color:var(--mermaid-node-color)
-    style Alert fill:var(--mermaid-neutral-fill),stroke:var(--mermaid-node-stroke),color:var(--mermaid-node-color)
-    style SodaLayer fill:rgba(0,0,0,0.05),stroke:var(--mermaid-node-stroke),stroke-dasharray: 5 5
+    class SIM simNode
+    class DB,AnalyticsDB dbNode
+    class App appNode
+    class Soda sodaNode
+    class Graph,Anal,Alarm,Rules,Views,Alert neutralNode
+    class SodaLayer sodaLayerContainer
 ```
 ## Data Flow Description
 
