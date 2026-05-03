@@ -340,8 +340,8 @@ def _get_admin_conn():
     return conn
 
 
-@router.get("/config")
-async def get_config_overrides():
+@router.get("/config", tags=["admin"])
+async def get_config_overrides(username: str = Depends(get_current_username)):
     """Read all configuration overrides from the admin database."""
 
     def _get():
