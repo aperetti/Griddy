@@ -73,6 +73,19 @@
   /* Target labels inside nodes */
   .simNode .nodeLabel, .dbNode .nodeLabel, .appNode .nodeLabel, .sodaNode .nodeLabel, .neutralNode .nodeLabel {
   color: var(--mermaid-node-color) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  }
+
+  /* Increase overall diagram scale */
+  .mermaid svg {
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: 400px;
+  }
+
+  .mermaid .node rect, .mermaid .node circle, .mermaid .node polygon, .mermaid .node path {
+    stroke-width: 2px !important;
   }
 
   /* Subgraph styling */

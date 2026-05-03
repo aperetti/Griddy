@@ -33,49 +33,52 @@ graph TD
     This diagram details the technical components and their interactions within the Griddy application stack.
 
     ```mermaid
-    graph TB
-    subgraph Client [Frontend - React / TypeScript]
-        UI[Mantine UI / Deck.gl]
-        State[Topology & Analytics Hooks]
-        PluginSDK[Plugin SDK / Registry]
-        DisplayEngine[Display Rule Engine]
-    end
+    graph TD
+        subgraph Client [Frontend - React / TypeScript]
+            UI[Mantine UI / Deck.gl]
+            State[Topology & Analytics Hooks]
+            PluginSDK[Plugin SDK / Registry]
+            DisplayEngine[Display Rule Engine]
 
-    subgraph API [Backend - FastAPI / Python]
-        Discovery[Discovery & Search]
-        Analytics[Analytics Pipelines]
-        TopologyAPI[Graph Topology Service]
-        RulesAPI[Display Rules CRUD]
-        Agent[NL Agent / LLM Bridge]
-    end
+            UI --> State
+            State --> PluginSDK
+            PluginSDK --> DisplayEngine
+        end
 
-    subgraph Data [Data Persistence & Processing]
-        Neo4j[(Neo4j - CIM Graph)]
-        DuckDB[(DuckDB - AMI Readings)]
-        SQLite[(SQLite - App Config)]
-        Parquet[Parquet - Time-Series Cold Storage]
-    end
+        subgraph API [Backend - FastAPI / Python]
+            Discovery[Discovery & Search]
+            TopologyAPI[Graph Topology Service]
+            Analytics[Analytics Pipelines]
+            RulesAPI[Display Rules CRUD]
+            Agent[NL Agent / LLM Bridge]
+        end
 
-    UI --> State
-    State --> PluginSDK
-    PluginSDK --> DisplayEngine
+        subgraph Data [Data Persistence & Processing]
+            Neo4j[(Neo4j - CIM Graph)]
+            DuckDB[(DuckDB - AMI Readings)]
+            SQLite[(SQLite - App Config)]
+            Parquet[Parquet - Time-Series Cold Storage]
+        end
 
-    UI <--> API
+        UI <--> Discovery
+        UI <--> TopologyAPI
+        UI <--> Analytics
+        UI <--> RulesAPI
+        UI <--> Agent
 
-    Discovery --> Neo4j
-    TopologyAPI --> Neo4j
-    Analytics --> DuckDB
-    Analytics --> Parquet
-    RulesAPI --> SQLite
-    Agent --> Neo4j
-    Agent --> SQLite
+        Discovery --> Neo4j
+        TopologyAPI --> Neo4j
+        Analytics --> DuckDB
+        Analytics --> Parquet
+        RulesAPI --> SQLite
+        Agent --> Neo4j
+        Agent --> SQLite
 
-    class UI,State,PluginSDK,DisplayEngine appNode
-    class Discovery,Analytics,TopologyAPI,RulesAPI,Agent neutralNode
-    class Neo4j,DuckDB,SQLite,Parquet dbNode
-    class Client,API,Data sodaLayerContainer
+        class UI,State,PluginSDK,DisplayEngine appNode
+        class Discovery,Analytics,TopologyAPI,RulesAPI,Agent neutralNode
+        class Neo4j,DuckDB,SQLite,Parquet dbNode
+        class Client,API,Data sodaLayerContainer
     ```
-
     ## Data Flow Description
 
 
