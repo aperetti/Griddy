@@ -1,9 +1,11 @@
 import { useRef, useEffect, useState } from 'react';
 import { useSelection, type GraphCanvasRef } from 'reagraph';
+import { Portal } from '@mantine/core';
 import { useGraphExplorer, type GraphPathStep } from '../../hooks/useGraphExplorer';
 import { DesktopExplorer } from './layouts/DesktopExplorer';
 import { MobileExplorer } from './layouts/MobileExplorer';
 import { GraphPopOut } from './components/GraphPopOut';
+import { NodeTooltip } from './components/NodeTooltip';
 
 interface GraphExplorerProps {
     rootId: string;
@@ -21,10 +23,11 @@ export function GraphExplorer({ rootId, onSelectAttribute, schema, isMobile, onN
     const modalGraphRef = useRef<GraphCanvasRef | null>(null);
     const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [popOut, setPopOut] = useState(false);
+    const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
 
     const {
-        nodes, edges, detailCache, selectedId, loadingIds, pendingExpansion,
-        loadRoot, expandNode, selectNode, reset, getPathTo,
+        nodes, edges, detailCache, selectedId, hoveredId, loadingIds, pendingExpansion,
+        loadRoot, expandNode, selectNode, pinTerminals, hoverNode, unhoverNode, reset, getPathTo,
     } = useGraphExplorer();
 
     // Wrap onSelectAttribute to inject the graph path when the selected node
@@ -37,6 +40,40 @@ export function GraphExplorer({ rootId, onSelectAttribute, schema, isMobile, onN
     useEffect(() => {
         if (rootId) loadRoot(rootId);
     }, [rootId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // After each expansion that added Terminal nodes, wait for the force simulation
+    // to settle then pin each terminal's fx/fy close to its parent CN.
+    useEffect(() => {
+        const hasUnpinned = nodes.some(
+            n => n.data?.isTerminal && n.data?.parentId && n.fx === undefined,
+        );
+        if (!hasUnpinned || !graphRef.current) return;
+        const timer = setTimeout(() => {
+            const graph = graphRef.current?.getGraph();
+            if (!graph) return;
+            pinTerminals(id => {
+                try {
+                    if (!graph.hasNode(id)) return null;
+                    const a = graph.getNodeAttributes(id);
+                    return typeof a.x === 'number' ? { x: a.x, y: a.y } : null;
+                } catch { return null; }
+            });
+        }, 700);
+        return () => clearTimeout(timer);
+    }, [nodes.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // On mobile: show the tooltip whenever a node is selected (no hover available).
+    // Position it centered near the top of the viewport so it sits above the graph canvas.
+    useEffect(() => {
+        if (!isMobile) return;
+        if (selectedId) {
+            hoverNode(selectedId);
+            setHoverPos({ x: window.innerWidth / 2 - 130, y: 70 });
+        } else {
+            unhoverNode();
+            setHoverPos(null);
+        }
+    }, [selectedId, isMobile]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Fire onNodePathChange whenever the selected node changes so consumers
     // (e.g. PathStepBuilder) can auto-populate the graph path.
@@ -61,7 +98,14 @@ export function GraphExplorer({ rootId, onSelectAttribute, schema, isMobile, onN
         edges,
         focusOnSelect: 'singleOnly',
         type: 'single',
-        onSelection: (ids) => { if (ids[0]) selectNode(ids[0]); },
+        onSelection: (ids) => {
+            if (!ids[0]) return;
+            selectNode(ids[0]);
+            const node = nodes.find(n => n.id === ids[0]);
+            if (node?.data?.cimType === 'ConnectivityNode') {
+                expandNode(ids[0]);
+            }
+        },
     });
 
     const {
@@ -78,9 +122,15 @@ export function GraphExplorer({ rootId, onSelectAttribute, schema, isMobile, onN
         onSelection: (ids) => { if (ids[0]) selectNode(ids[0]); },
     });
 
-    const handleNodePointerOver = (node: any) => {
-        if (!isMobile) return;
-        longPressTimerRef.current = setTimeout(() => expandNode(node.id), 500);
+    const handleNodePointerOver = (node: any, event?: any) => {
+        if (isMobile) {
+            longPressTimerRef.current = setTimeout(() => expandNode(node.id), 500);
+            return;
+        }
+        hoverNode(node.id);
+        const x = event?.clientX ?? event?.nativeEvent?.clientX ?? 0;
+        const y = event?.clientY ?? event?.nativeEvent?.clientY ?? 0;
+        setHoverPos({ x, y });
     };
 
     const handleNodePointerOut = () => {
@@ -88,27 +138,58 @@ export function GraphExplorer({ rootId, onSelectAttribute, schema, isMobile, onN
             clearTimeout(longPressTimerRef.current);
             longPressTimerRef.current = null;
         }
+        if (!isMobile) {
+            unhoverNode();
+            setHoverPos(null);
+        }
     };
 
     const selectedDetails = selectedId ? detailCache[selectedId] : null;
 
+    // On mobile, tapping the canvas deselects — clear the tooltip too.
+    const handleCanvasClick = (event: any) => {
+        if (onCanvasClick) onCanvasClick(event);
+        if (isMobile) {
+            unhoverNode();
+            setHoverPos(null);
+        }
+    };
+
     const commonProps = {
         nodes, edges, graphRef, selections, actives,
-        onNodeClick, onCanvasClick, expandNode, reset,
+        onNodeClick, onCanvasClick: handleCanvasClick, expandNode, reset,
         setPopOut, pendingExpansion, loadingIds,
         selectedDetails, selectedId, onSelectWithPath, schema
     };
 
+    const hoveredNode = hoveredId ? nodes.find(n => n.id === hoveredId) : null;
+
     return (
         <>
             {isMobile ? (
-                <MobileExplorer 
+                <MobileExplorer
                     {...commonProps}
                     handleNodePointerOver={handleNodePointerOver}
                     handleNodePointerOut={handleNodePointerOut}
                 />
             ) : (
-                <DesktopExplorer {...commonProps} />
+                <DesktopExplorer
+                    {...commonProps}
+                    handleNodePointerOver={handleNodePointerOver}
+                    handleNodePointerOut={handleNodePointerOut}
+                />
+            )}
+
+            {hoveredId && hoverPos && (
+                <Portal>
+                    <NodeTooltip
+                        nodeLabel={hoveredNode?.label ?? ''}
+                        nodeSubLabel={hoveredNode?.subLabel}
+                        details={detailCache[hoveredId] ?? null}
+                        x={hoverPos.x}
+                        y={hoverPos.y}
+                    />
+                </Portal>
             )}
 
             <GraphPopOut

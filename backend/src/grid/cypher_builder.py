@@ -8,6 +8,11 @@ import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+def _is_safe_identifier(val: Any) -> bool:
+    if not val:
+        return False
+    return bool(re.match(r"^[a-zA-Z0-9_.]+$", str(val)))
+
 logger = logging.getLogger(__name__)
 
 # CIM base/mixin classes whose properties are stored directly on equipment nodes
@@ -48,7 +53,10 @@ _MRID_KEY = "IdentifiedObject.mRID"
 _CIM_PREFIXES = [
     "Switch", "ConductingEquipment", "Equipment", "PowerSystemResource", 
     "IdentifiedObject", "EnergyConnection", "ConnectivityNodeContainer", 
-    "EquipmentContainer", "PowerTransformerEnd", "TransformerEnd"
+    "EquipmentContainer", "PowerTransformerEnd", "TransformerEnd",
+    "TransformerEndInfo", "PowerTransformerInfo", "AsynchronousMachine",
+    "RotatingMachine", "GeneratingUnit", "ACLineSegment", "Conductor",
+    "BaseVoltage", "VoltageLevel", "Substation", "Bay"
 ]
 
 
@@ -70,6 +78,8 @@ class CypherRuleBuilder:
         rule_config: Dict[str, Any],
         cim_class: str,
     ) -> Tuple[str, Dict[str, Any], List[str]]:
+        if not _is_safe_identifier(cim_class):
+            raise ValueError(f"Invalid CIM class identifier: {cim_class}")
         self.params = {}
         self._idx = 0
         self.warnings = []
@@ -112,11 +122,9 @@ class CypherRuleBuilder:
         for i, step in enumerate(path_steps):
             cls = step.get("class", "")
             if not _is_safe_identifier(cls):
-                raise ValueError(f"Invalid identifier for class: {cls}")
+                raise ValueError(f"Invalid class identifier in path: {cls}")
             if step.get("fixed"):
                 alias = "cn" if cls == "ConnectivityNode" else "t"
-            elif entity_type == "edge" and i == 0:
-                alias = "n"
             else:
                 alias = "n" if user_idx == 0 else f"n{user_idx}"
                 user_idx += 1
@@ -174,6 +182,13 @@ class CypherRuleBuilder:
         for cond in rule_config.get("conditions", []):
             if "logical_op" in cond: continue
             step_id = cond.get("step_id")
+            
+            # If step_id is provided but not in our active aliases, ignore this condition.
+            # It is an orphan from a deleted path step.
+            if step_id and step_id not in aliases:
+                self.warnings.append(f"Ignoring orphaned condition referencing missing step {step_id}")
+                continue
+
             cond_alias = aliases.get(step_id) if step_id else None
             if not cond_alias:
                 path = cond.get("path", "")
@@ -198,7 +213,7 @@ class CypherRuleBuilder:
                 col = attr_obj.get("alias")
                 if not attr or not col: continue
                 if not _is_safe_identifier(attr):
-                    raise ValueError(f"Invalid identifier for tooltip attribute: {attr}")
+                    raise ValueError(f"Invalid tooltip attribute: {attr}")
                 safe_col = "".join(c if c.isalnum() or c == "_" else "_" for c in col)
                 tooltip_projections.append(f"{alias}.`{attr}` AS tp_{safe_col}")
 
@@ -224,6 +239,8 @@ class CypherRuleBuilder:
         op_str = cond.get("op", "")
         value_type = cond.get("value_type", "literal")
         if not path or not op_str: return ""
+        if not _is_safe_identifier(path):
+            raise ValueError(f"Invalid property path: {path}")
 
         cypher_op = _OPS.get(op_str)
         if not cypher_op: return ""
@@ -231,12 +248,23 @@ class CypherRuleBuilder:
         dot = path.find(".")
         attr = path[dot+1:] if dot > -1 else path
         
-        alternatives = [path]
-        if dot > -1:
-            alternatives.append(attr)
+        # Determine alternatives based on prefix trust
+        if dot == -1:
+            # Unprefixed property: attempt fuzzy match across all common CIM prefixes
+            alternatives = [path]
             for p in _CIM_PREFIXES:
-                alt = f"{p}.{attr}"
-                if alt not in alternatives: alternatives.append(alt)
+                alternatives.append(f"{p}.{path}")
+        else:
+            prefix = path[:dot]
+            if prefix in _INHERITED_CLASSES:
+                # Weak/Abstract prefix: fuzz it across all common CIM prefixes
+                alternatives = [path, attr]
+                for p in _CIM_PREFIXES:
+                    alt = f"{p}.{attr}"
+                    if alt not in alternatives: alternatives.append(alt)
+            else:
+                # Strong/Specific prefix (e.g. BaseVoltage): trust it!
+                alternatives = [path]
         
         prop_exprs = [f"{alias}.`{alt}`" for alt in alternatives]
         
@@ -249,6 +277,8 @@ class CypherRuleBuilder:
             if not _is_safe_identifier(compare_path):
                 raise ValueError(f"Invalid identifier for compare_path: {compare_path}")
             if not compare_path: return ""
+            if not _is_safe_identifier(compare_path):
+                raise ValueError(f"Invalid compare property path: {compare_path}")
             compare_alias = aliases_map.get(compare_step_id)
             if not compare_alias and class_to_alias:
                 c_dot = compare_path.find(".")
@@ -312,6 +342,8 @@ class CypherRuleBuilder:
             raise ValueError(f"Invalid identifier for path: {path}")
         op_str = cond.get("op", "")
         if not path or not op_str: return ""
+        if not _is_safe_identifier(path):
+            raise ValueError(f"Invalid property path: {path}")
         cypher_op = _OPS.get(op_str)
         if not cypher_op: return ""
 
@@ -334,8 +366,8 @@ class CypherRuleBuilder:
         return f"EXISTS {{ ({node_alias}:{cim_class}){traversal} WHERE {e_prop} {cypher_op} {self._param(coerced)} }}"
 
 def _build_traversal(root_class: str, target_class: Optional[str], graph_path: Optional[list]) -> str:
-    if not _is_safe_identifier(root_class) or not _is_safe_identifier(target_class):
-        raise ValueError("Invalid class identifier in traversal")
+    if target_class and not _is_safe_identifier(target_class):
+        raise ValueError(f"Invalid target class in traversal: {target_class}")
     if graph_path and len(graph_path) > 0:
         parts = []
         for hop in graph_path[:-1]:

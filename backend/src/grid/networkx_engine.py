@@ -253,6 +253,35 @@ class NetworkXEngine(GraphEngine):
         logger.info("[BFS] result: %d nodes, %d edges returned", len(nodes), len(edges))
         return list(nodes), list(edges)
 
+    def get_all_edges(self) -> List[dict]:
+        """Returns all edges in the graph as dictionaries."""
+        all_edges = []
+        for u, v, data in self.graph.edges(data=True):
+            if data.get("virtual"):
+                continue
+            all_edges.append({
+                "from_node_id": u,
+                "to_node_id": v,
+                "edge_id": data.get("edge_id")
+            })
+        return all_edges
+
     def get_node_phases(self, node_ids: List[str]) -> dict[str, List[str]]:
         """Returns a mapping of node IDs to their phase lists."""
         return {nid: self.nodes[nid].phases for nid in node_ids if nid in self.nodes}
+
+    def get_nodes(self, node_ids: List[str]) -> List[GraphNode]:
+        """Returns a list of GraphNode objects for the given IDs."""
+        return [self.nodes[nid] for nid in node_ids if nid in self.nodes]
+
+    def get_edges(self, edge_ids: List[str]) -> List[dict]:
+        """Returns a list of edge dictionaries for the given IDs."""
+        edges = []
+        for u, v, data in self.graph.edges(data=True):
+            eid = data.get("edge_id")
+            if eid and eid in edge_ids:
+                # Reconstruct dict from edge data
+                edge_dict = {"from_node_id": u, "to_node_id": v}
+                edge_dict.update(data)
+                edges.append(edge_dict)
+        return edges

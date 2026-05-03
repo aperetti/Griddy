@@ -72,7 +72,9 @@ export function MobileExplorer({
       <Group gap={6} justify="space-between">
         <Group gap={6}>
           <Badge color="yellow" size="xs" variant="dot">Root</Badge>
-          <Badge color="blue" size="xs" variant="dot">Equipment</Badge>
+          <Badge color="green" size="xs" variant="dot">Topology</Badge>
+          <Badge color="blue" size="xs" variant="dot">Wires</Badge>
+          <Badge color="violet" size="xs" variant="dot">Asset</Badge>
         </Group>
         <Text size="10px" c="dimmed">Long-press to expand</Text>
       </Group>

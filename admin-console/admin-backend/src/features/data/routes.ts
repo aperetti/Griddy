@@ -14,8 +14,9 @@ export async function dataRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/generate', async (request, reply) => {
+    const pythonPath = path.join(process.cwd(), '..', '..', '.venv', 'Scripts', 'python.exe');
     const scriptPath = path.join(process.cwd(), '..', '..', 'backend', 'scripts', 'generate_all.py');
-    const result = await runCommand(`python ${scriptPath}`);
+    const result = await runCommand(`${pythonPath} ${scriptPath}`);
     return { 
       success: result.stderr === '', 
       output: result.stdout, 
@@ -26,8 +27,8 @@ export async function dataRoutes(fastify: FastifyInstance) {
   fastify.post('/ingest', async (request, reply) => {
     const pythonPath = path.join(process.cwd(), '..', '..', '.venv', 'Scripts', 'python.exe');
     const scriptPath = path.join(process.cwd(), '..', '..', 'backend', 'scripts', 'ingest_cim_to_neo4j.py');
-    const modelsDir = path.join(process.cwd(), '..', '..', 'backend', 'cim', 'models');
-    const result = await runCommand(`${pythonPath} ${scriptPath} ${modelsDir}`);
+    const ingestDir = path.join(process.cwd(), '..', '..', 'ingest');
+    const result = await runCommand(`${pythonPath} ${scriptPath} ${ingestDir}`);
     return { 
       success: result.stderr === '', 
       output: result.stdout, 
@@ -46,14 +47,15 @@ export async function dataRoutes(fastify: FastifyInstance) {
       fs.mkdirSync(ingestDir, { recursive: true });
     }
 
-    const targetPath = path.join(ingestDir, data.filename);
+    const safeFilename = path.basename(data.filename);
+    const targetPath = path.join(ingestDir, safeFilename);
     
     try {
       await pipeline(data.file, fs.createWriteStream(targetPath));
       return { 
         success: true, 
-        message: `File ${data.filename} uploaded to ingest folder.`,
-        filename: data.filename
+        message: `File ${safeFilename} uploaded to ingest folder.`,
+        filename: safeFilename
       };
     } catch (err: any) {
       return reply.code(500).send({ 

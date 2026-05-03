@@ -105,7 +105,8 @@ Users can create conditional formatting rules based on any attribute of a grid e
 ## 4. System Administration & DevOps
 ### 4.1 System Management Console
 * **Reactive Configuration**: Ability to persistently override system configuration settings (e.g., API URLs, data paths) via an integrated SQLite-backed key-value store in a shared volume.
-* **Service Hot-Reloading**: The Analytical Backend must monitor the shared configuration and reload settings dynamically without downtime.
+*   **Service Hot-Reloading**: The Analytical Backend must monitor the shared configuration and reload settings dynamically without downtime.
+* **Centralized Observability**: Administrators must be able to monitor system logs, traces, and performance metrics via a unified dashboard (Grafana) to troubleshoot grid analysis tasks and data ingestion pipelines.
 * **Data Lifecycle Management**: 
   * **Complete Data Refresh**: The system must provide a mechanism to completely wipe all database files (DuckDB, SQLite topology, and Parquet data) and trigger a clean data generation process within the Docker environment.
   * **Trigger Synthetic Generation**: Trigger synthetic data generation tasks.

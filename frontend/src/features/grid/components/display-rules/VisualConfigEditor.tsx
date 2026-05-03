@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import {
     Stack, Group, Text, TextInput, NumberInput,
     Select, Grid, Paper, Tooltip, ActionIcon,
@@ -8,6 +8,8 @@ import { useMediaQuery } from '@mantine/hooks';
 import { 
     Upload, Maximize2
 } from 'lucide-react';
+
+import { RuleIconPreview } from './RuleIconPreview';
 
 interface VisualConfigEditorProps {
     config: {
@@ -29,35 +31,6 @@ const SVGPreview = ({ content, color, baseSvg, baseColor, mode }: { content: str
     const bg = '#141517';
     const checkerColor = 'rgba(255,255,255,0.03)';
     
-    const VIEWBOX_SIZE = 100;
-
-    // Build the exact same workspace logic as the interactive editor
-    const workspaceContent = useMemo(() => {
-        const parser = new DOMParser();
-        
-        // BASE LAYER
-        let baseContent = '';
-        if (baseSvg && mode === 'add') {
-            const baseStr = baseSvg.includes('<svg') ? baseSvg : `<svg xmlns="http://www.w3.org/2000/svg">${baseSvg}</svg>`;
-            const doc = parser.parseFromString(baseStr, 'image/svg+xml');
-            const svg = doc.querySelector('svg');
-            if (svg) {
-                const vb = svg.getAttribute('viewBox')?.split(/[,\s]+/).map(parseFloat);
-                let scaleStr = '';
-                if (vb && vb.length === 4) {
-                    const s = Math.min(VIEWBOX_SIZE / vb[2], VIEWBOX_SIZE / vb[3]);
-                    scaleStr = `transform="scale(${s.toFixed(3)})"`;
-                }
-                baseContent = `<g opacity="0.3" fill="${baseColor || 'currentColor'}" stroke="${baseColor || 'none'}" pointer-events="none" ${scaleStr}>${svg.innerHTML}</g>`;
-            }
-        }
-
-        // OVERLAY LAYER
-        const overlayContent = `<g color="${color || '#339AF0'}">${content || ''}</g>`;
-
-        return `${baseContent}${overlayContent}`;
-    }, [content, color, baseSvg, baseColor, mode]);
-
     const hasContent = !!content || (!!baseSvg && mode === 'add');
 
     if (!hasContent) {
@@ -99,22 +72,14 @@ const SVGPreview = ({ content, color, baseSvg, baseColor, mode }: { content: str
                 backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px'
             }}
         >
-            <div 
-                style={{ 
-                    width: 80, 
-                    height: 80, 
-                    position: 'relative',
-                    filter: 'drop-shadow(0 0 2px rgba(0,0,0,0.5))'
-                }}
-            >
-                <svg 
-                    viewBox={`0 0 ${VIEWBOX_SIZE} ${VIEWBOX_SIZE}`}
-                    width="100%"
-                    height="100%"
-                    style={{ display: 'block' }}
-                    dangerouslySetInnerHTML={{ __html: workspaceContent }}
-                />
-            </div>
+            <RuleIconPreview 
+                icon={content}
+                color={color}
+                baseSvg={baseSvg}
+                baseColor={baseColor}
+                mode={mode}
+                size={80}
+            />
         </Paper>
     );
 };

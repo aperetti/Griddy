@@ -21,7 +21,7 @@ class GetActiveAlarmsUseCase:
         
         if include_downstream:
             # Find all downstream nodes
-            downstream_ids = self.graph_engine.find_downstream(node_id)
+            downstream_ids, _ = self.graph_engine.find_downstream(node_id)
             target_node_ids.extend(downstream_ids)
             
         # Deduplicate

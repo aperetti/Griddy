@@ -160,8 +160,6 @@ function _buildFromPathSteps(
 ): BuiltQuery | null {
     if (steps.length < 1) return null;
 
-    const entityType = conditions.entity_type || 'node';
-
     // Assign aliases: ConnectivityNode → cn, Terminal → t, rest → n, n1, n2…
     const aliases = new Map<string, string>(); // step.id -> alias
     const classToAlias = new Map<string, string>(); // Legacy support
@@ -172,9 +170,6 @@ function _buildFromPathSteps(
         let alias: string;
         if (step.fixed) {
             alias = step.class === 'ConnectivityNode' ? 'cn' : 't';
-        } else if (entityType === 'edge' && i === 0) {
-            // For edge rules, the first step is the anchor
-            alias = 'n';
         } else {
             alias = userIdx === 0 ? 'n' : `n${userIdx}`;
             userIdx++;
@@ -258,15 +253,24 @@ function _buildFromPathSteps(
         if (!cond.path || !cond.op) continue;
         
         // Find the node alias to attach this condition to
-        let alias = mainAlias;
-        if (cond.step_id && aliases.has(cond.step_id)) {
-            alias = aliases.get(cond.step_id)!;
+        let alias: string | undefined = undefined;
+        if (cond.step_id) {
+            if (aliases.has(cond.step_id)) {
+                alias = aliases.get(cond.step_id)!;
+            } else {
+                // If step_id is provided but not in our active aliases, ignore this condition.
+                // It is an orphan from a deleted path step.
+                console.warn(`Ignoring orphaned condition referencing missing step ${cond.step_id}`);
+                continue;
+            }
         } else {
             // Legacy path routing fallback
             const dotIdx = cond.path.indexOf('.');
             const classPrefix = dotIdx > -1 ? cond.path.slice(0, dotIdx) : null;
             if (classPrefix && classToAlias.has(classPrefix)) {
                 alias = classToAlias.get(classPrefix)!;
+            } else {
+                alias = mainAlias;
             }
         }
 
@@ -308,7 +312,10 @@ const _NUMERIC_OPS = new Set(['>', '<', '>=', '<=', 'gt', 'lt', 'gte', 'lte']);
 const _CIM_PREFIXES = [
     'Switch', 'ConductingEquipment', 'Equipment', 'PowerSystemResource', 
     'IdentifiedObject', 'EnergyConnection', 'ConnectivityNodeContainer', 
-    'EquipmentContainer', 'PowerTransformerEnd', 'TransformerEnd'
+    'EquipmentContainer', 'PowerTransformerEnd', 'TransformerEnd',
+    'TransformerEndInfo', 'PowerTransformerInfo', 'AsynchronousMachine',
+    'RotatingMachine', 'GeneratingUnit', 'ACLineSegment', 'Conductor',
+    'BaseVoltage', 'VoltageLevel', 'Substation', 'Bay'
 ];
 
 function _buildConditionStr(
@@ -337,13 +344,26 @@ function _buildConditionStr(
     // Ensure we have a valid attribute name to avoid n.`` syntax errors
     if (!attr || attr === '') return '';
     
-    // Build alternatives
-    const alternatives = [path];
-    if (dotIdx > -1) {
-        alternatives.push(attr);
+    // Determine alternatives based on prefix trust
+    let alternatives: string[];
+    if (dotIdx === -1) {
+        // Unprefixed property: attempt fuzzy match across all common CIM prefixes
+        alternatives = [path];
         for (const p of _CIM_PREFIXES) {
-            const alt = `${p}.${attr}`;
-            if (!alternatives.includes(alt)) alternatives.push(alt);
+            alternatives.push(`${p}.${path}`);
+        }
+    } else {
+        const prefix = path.slice(0, dotIdx);
+        if (INHERITED_CLASSES.has(prefix)) {
+            // Weak/Abstract prefix: fuzz it across all common CIM prefixes
+            alternatives = [path, attr];
+            for (const p of _CIM_PREFIXES) {
+                const alt = `${p}.${attr}`;
+                if (!alternatives.includes(alt)) alternatives.push(alt);
+            }
+        } else {
+            // Strong/Specific prefix (e.g. BaseVoltage): trust it!
+            alternatives = [path];
         }
     }
     

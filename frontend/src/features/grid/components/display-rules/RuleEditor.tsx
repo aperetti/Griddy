@@ -237,7 +237,7 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
                 onChange={(v: any) => setActiveTab(v)}
                 data={[
                     { label: <Group gap="xs"><Type size={14} />Basic Styling</Group>, value: 'basic' },
-                    { label: <Group gap="xs"><ListOrdered size={14} />Conditional Symbols</Group>, value: 'conditional' }
+                    { label: <Group gap="xs"><ListOrdered size={14} />Conditional Styling</Group>, value: 'conditional' }
                 ]}
                 fullWidth
             />
@@ -271,6 +271,8 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
                             onChange={(tc) => updateConfig({ tooltip_config: tc })}
                             targetClass={targetClass}
                             pathSteps={parsedConditions?.path_steps}
+                            testMrids={testResults?.mrids}
+                            isEdge={isEdgeRule}
                         />
                     </Fieldset>
 
@@ -338,6 +340,9 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
                     symbols={rule.config?.svg_overrides || []}
                     baseSvg={rule.config?.icon}
                     baseColor={rule.config?.color_hex}
+                    baseTooltipConfig={rule.config?.tooltip_config}
+                    basePathSteps={parsedConditions?.path_steps}
+                    isEdgeRule={isEdgeRule}
                     onChange={(symbols) => updateConfig({ svg_overrides: symbols })}
                     onOpenLiveEditor={onOpenLiveEditor}
                     onTest={onTest ? async (conds, targetClass) => {

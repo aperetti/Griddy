@@ -16,7 +16,7 @@ export function GlobalSearch({ onSearchSelect, isMobile, loading: modelLoading }
   const [options, setOptions] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [opened, setOpened] = useState(false);
-  const [globalSearch, setGlobalSearch] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState(true);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useHotkeys([

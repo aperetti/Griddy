@@ -35,14 +35,24 @@ def run_admin_migrations(conn: sqlite3.Connection):
                 )
             """)
             
-            # 2. Copy data, mapping visual_type to config if config is NULL
-            conn.execute("""
-                INSERT INTO display_config_rules_new (id, config_id, name, priority, match_conditions, config, enabled, created_at, updated_at)
-                SELECT id, config_id, name, priority, match_conditions, 
-                       COALESCE(config, '{"visual_type": "' || visual_type || '"}'), 
-                       enabled, created_at, updated_at
-                FROM display_config_rules
-            """)
+            # 2. Copy data, mapping visual_type to config
+            # We use a CASE statement to handle whether config already exists in the old table
+            if "config" in columns:
+                conn.execute("""
+                    INSERT INTO display_config_rules_new (id, config_id, name, priority, match_conditions, config, enabled, created_at, updated_at)
+                    SELECT id, config_id, name, priority, match_conditions, 
+                           COALESCE(config, '{"visual_type": "' || visual_type || '"}'), 
+                           enabled, created_at, updated_at
+                    FROM display_config_rules
+                """)
+            else:
+                conn.execute("""
+                    INSERT INTO display_config_rules_new (id, config_id, name, priority, match_conditions, config, enabled, created_at, updated_at)
+                    SELECT id, config_id, name, priority, match_conditions, 
+                           '{"visual_type": "' || visual_type || '"}', 
+                           enabled, created_at, updated_at
+                    FROM display_config_rules
+                """)
             
             # 3. Swap tables
             conn.execute("DROP TABLE display_config_rules")

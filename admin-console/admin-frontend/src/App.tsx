@@ -1,12 +1,12 @@
 import '@mantine/core/styles.css';
 import { MantineProvider, AppShell, Group, Title, Stack, Container, Tabs, Text } from '@mantine/core';
-import { Settings, Database, Map as MapIcon, Puzzle } from 'lucide-react';
+import { Settings, Database, Puzzle, Activity, FileCode, LayoutList } from 'lucide-react';
 import { theme } from './theme';
 import { DataPanel } from './features/data/DataPanel';
-import { ConfigPanel } from './features/config/ConfigPanel';
-import { UserManagementPanel } from './features/users/UserManagementPanel';
-import { PluginsPanel } from './features/plugins/PluginsPanel';
-import { Users } from 'lucide-react';
+import { DisplayRulesPanel } from './features/config/DisplayRulesPanel';
+import { SystemManagementPanel } from './features/system/SystemManagementPanel';
+import { ObservabilityPanel } from './features/monitoring/ObservabilityPanel';
+import { EditorPanel } from './features/monitoring/EditorPanel';
 
 export default function App() {
   return (
@@ -33,33 +33,31 @@ export default function App() {
           <Container size="xl">
             <Tabs defaultValue="data" variant="pills" radius="md">
               <Tabs.List mb="xl">
-                <Tabs.Tab value="data" leftSection={<Database size={16} />}>Data Lifecycle</Tabs.Tab>
-                <Tabs.Tab value="config" leftSection={<Settings size={16} />}>System Config</Tabs.Tab>
-                <Tabs.Tab value="users" leftSection={<Users size={16} />}>Users</Tabs.Tab>
-                <Tabs.Tab value="plugins" leftSection={<Puzzle size={16} />}>Plugins</Tabs.Tab>
-                <Tabs.Tab value="mapping" leftSection={<MapIcon size={16} />}>Schema Mapping</Tabs.Tab>
+                <Tabs.Tab value="data" leftSection={<Database size={16} />}>Data Management</Tabs.Tab>
+                <Tabs.Tab value="rules" leftSection={<LayoutList size={16} />}>Display Rules</Tabs.Tab>
+                <Tabs.Tab value="telemetry" leftSection={<Activity size={16} />}>Observability</Tabs.Tab>
+                <Tabs.Tab value="system" leftSection={<Puzzle size={16} />}>System</Tabs.Tab>
+                <Tabs.Tab value="raw" leftSection={<FileCode size={16} />}>Raw Config</Tabs.Tab>
               </Tabs.List>
 
               <Tabs.Panel value="data">
                 <DataPanel />
               </Tabs.Panel>
 
-              <Tabs.Panel value="config">
-                <ConfigPanel />
+              <Tabs.Panel value="rules">
+                <DisplayRulesPanel />
               </Tabs.Panel>
               
-              <Tabs.Panel value="users">
-                <UserManagementPanel />
-              </Tabs.Panel>
-              
-              <Tabs.Panel value="plugins">
-                <PluginsPanel />
+              <Tabs.Panel value="telemetry">
+                <ObservabilityPanel />
               </Tabs.Panel>
 
-              <Tabs.Panel value="mapping">
-                <Container py="xl">
-                  <Text c="dimmed" ta="center">Schema mapping interface coming soon.</Text>
-                </Container>
+              <Tabs.Panel value="system">
+                <SystemManagementPanel />
+              </Tabs.Panel>
+
+              <Tabs.Panel value="raw">
+                <EditorPanel />
               </Tabs.Panel>
             </Tabs>
           </Container>

@@ -1,5 +1,11 @@
 # Griddy — Grid-Scale AMI Analytics App
 
+> [!CAUTION]
+> **HIGHLY EXPERIMENTAL DEVELOPMENT**
+> This project is currently in a pre-alpha/alpha state and is under active development. It contains experimental features, breaking architectural changes, and unoptimized code paths. **DO NOT USE THIS IN PRODUCTION SYSTEMS.**
+>
+> **AGENTIC CODING & SECURITY NOTICE**: This codebase has been developed with heavy assistance from AI agents. While this accelerates development, it may introduce subtle security vulnerabilities or non-idiomatic patterns. Users should perform a thorough security audit before any deployment.
+
 An interactive, full-stack application for analyzing electrical distribution grids. Griddy ingests a CIM-based grid model, generates synthetic AMI time-series data, and exposes a rich geospatial dashboard for voltage analysis, phase balancing, load-flow tracing, and alarm correlation.
 
 [Griddy App](https://griddy.peretti.xyz)
@@ -128,86 +134,61 @@ Most analyses let you configure **Degrees of Separation**, which controls the de
 
 ## Local Development
 
-Follow these steps to get a full development environment running with hot-reload on all three services.
+Follow these steps to get a full development environment running with hot-reload across all services using Docker.
 
-### Prerequisites
+### 1. Recommended: Development with Docker
 
+The development-optimized Docker Compose configuration enables hot-reloading for the backend, frontend, admin console, and documentation by mounting your local source code as volumes.
+
+**Prerequisites:**
+- [Docker Desktop](https://www.docker.com/products/docker-desktop)
+- Copy `.env.example` to `.env` in the project root.
+
+**Start the Development Stack:**
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
+
+**Development Services:**
+| Service | URL |
+| :--- | :--- |
+| **Web Dashboard** | <http://localhost:8080> |
+| **Admin Console** | <http://localhost:8091> |
+| **Backend API** | <http://localhost:8000/docs> |
+| **Docs** | <http://localhost:3002> |
+
+---
+
+### 2. Manual Development Setup (Legacy)
+
+If you prefer to run services natively on your host machine:
+
+#### Prerequisites
 - **Python 3.12+** and `pip`
 - **Node.js 20+** and `npm`
 
-### 1. Generate Sample Data
-
-Before the app can display anything useful you need a DuckDB database and Parquet readings. Run the bootstrap pipeline once from the `backend/` directory:
-
+#### Generate Sample Data
+Run the bootstrap pipeline once from the `backend/` directory:
 ```bash
 cd backend
-
-# Create a virtual environment and install dependencies
 python -m venv .venv
 .venv\Scripts\activate        # Windows
 # source .venv/bin/activate   # macOS / Linux
-
 pip install -r requirements.txt
 
-# Set required environment variables (adjust paths as needed)
-$env:DB_PATH      = "./data/grid_data_cim.duckdb"           # PowerShell
-$env:PARQUET_DIR  = "./data/cim_readings"
-$env:CIM_MODEL_PATH    = "./cim/IEEE8500.xml"
-$env:WEATHER_DATA_PATH = "./cim/weather.epw"
-$env:PYTHONPATH   = "."
-
-# Run the data pipeline
-mkdir -p data
+# Set required environment variables and run pipeline
+$env:DB_PATH="./data/grid_data_cim.duckdb"; $env:PARQUET_DIR="./data/cim_readings"; $env:CIM_MODEL_PATH="./cim/IEEE8500.xml"; $env:WEATHER_DATA_PATH="./cim/weather.epw"; $env:PYTHONPATH="."
 python scripts/ingest_cim_graph.py
 python scripts/ingest_weather.py
 python scripts/generate_cim_readings.py
 ```
 
-> **Tip:** You only need to run data generation once. The database and Parquet files persist in `backend/data/`.
-
-### 2. Start the Backend (FastAPI)
-
-```bash
-cd backend
-# activate venv if not already active
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-The API is now live at <http://localhost:8000> with Swagger docs at <http://localhost:8000/docs>.
-
-### 3. Start the Frontend (Vite)
-
-In a new terminal:
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-The dashboard opens at <http://localhost:3001> and proxies `/api` requests to the backend and `/docs` requests to the documentation site.
-
-### 4. Start the Documentation Site (Docusaurus)
-
-In a new terminal:
-
-```bash
-cd docs
-npm install
-npm run start
-```
-
-The docs site opens at <http://localhost:3002>.
-
-### Dev Server Summary
-
-| Service | Command | Port | URL |
-| :--- | :--- | :--- | :--- |
-| **Frontend (Admin)** | `npm run dev` (in `frontend/`) | `3001` | <http://localhost:3001> |
-| **Backend API** | `uvicorn main:app --reload` | `8000` | <http://localhost:8000> |
-| **Docs** | `npm run start` (in `docs/`) | `3002` | <http://localhost:3002> |
-
-> **Vite Dev Server (3001)**: The frontend development server automatically proxies `/api` → `localhost:8000` and `/docs` → `localhost:3002`. This allows you to access the consolidated application entirely through port `3001` during development.
+#### Start Services
+| Service | Command | Port |
+| :--- | :--- | :--- |
+| **Backend** | `uvicorn main:app --reload` | `8000` |
+| **Frontend** | `npm run dev` (in `frontend/`) | `3001` |
+| **Docs** | `npm run start` (in `docs/`) | `3002` |
 
 ---
 
@@ -242,12 +223,12 @@ Griddy/
 
 Full documentation is available at <http://localhost:3002> after starting the stack, and covers:
 
-- [Grid Analysis Guide](docs/docs/analysis-guide/index.md)
-- [Voltage Analysis](docs/docs/analysis-guide/voltage-analysis.md)
-- [Phase Balance / Load Flow](docs/docs/analysis-guide/load-flow.md)
-- [Voltage Map (Heatmap)](docs/docs/analysis-guide/voltage-map.md)
-- [Data Generation](docs/docs/data-generation.md)
-- [Docker Installation](docs/docs/docker-installation.md)
+- [Grid Analysis Guide](docs/docs/examples/analysis/index.md)
+- [Voltage Analysis](docs/docs/examples/analysis/voltage-analysis.md)
+- [Phase Balance / Load Flow](docs/docs/examples/analysis/load-flow.md)
+- [Voltage Map (Heatmap)](docs/docs/examples/analysis/voltage-map.md)
+- [Data Generation](docs/docs/getting-started/data-setup.md)
+- [Installation Guide](docs/docs/getting-started/installation.md)
 
 ---
 

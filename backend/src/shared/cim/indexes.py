@@ -15,10 +15,11 @@ class IndexBuilder:
     ``TopologyBuilder`` and ``CimModelManager``.
     """
 
-    def __init__(self, cim, graph, feeder_uri: str | None = None):
+    def __init__(self, cim, graph, feeder_uri: str | None = None, external_phases: dict | None = None):
         self.cim = cim
         self.graph = graph
         self._feeder_uri = feeder_uri
+        self._external_phases = external_phases or {}  # mRID -> list of phases
 
         # Public indexes
         self.equipment_index: dict[str, tuple[str, Any]] = {}     # mRID → (cls_name, obj)
@@ -274,6 +275,9 @@ ORDER BY mrid, loc_mrid, seq
         cim = self.cim
         graph = self.graph
 
+        # 1. Initialize with robust phases discovered directly via Neo4j
+        self.eq_phases = {k: list(v) for k, v in self._external_phases.items()}
+
         phase_class_map: list[tuple] = []
         for cls_name, parent_attr in [
             ("ACLineSegmentPhase",    "ACLineSegment"),
@@ -286,10 +290,16 @@ ORDER BY mrid, loc_mrid, seq
                 phase_class_map.append((cls, parent_attr))
 
         for phase_cls, parent_attr in phase_class_map:
-            for _pid, ph_obj in graph.get(phase_cls, {}).items():
+            objs = graph.get(phase_cls, {})
+            logger.info("  Processing %d objects for %s (parent_attr=%s)", len(objs), phase_cls.__name__, parent_attr)
+            for _pid, ph_obj in objs.items():
                 parent = getattr(ph_obj, parent_attr, None)
                 parent_id = _mrid_str(parent)
                 if not parent_id:
+                    # Log first 5 failed objects' attributes to see what's wrong
+                    if _pid == list(objs.keys())[0]:
+                        attrs = [a for a in dir(ph_obj) if not a.startswith("_")]
+                        logger.info("    Sample %s attributes: %s", phase_cls.__name__, attrs)
                     continue
                 pc = getattr(ph_obj, "phase", None)
                 if pc is None:
@@ -300,6 +310,8 @@ ORDER BY mrid, loc_mrid, seq
                     for p in parsed:
                         if p not in existing:
                             existing.append(p)
+        
+        logger.info("  Phase index complete: %d equipment mapped", len(self.eq_phases))
 
         # 2. Transformer Ends (PowerTransformerEnd / TransformerTankEnd)
         # Gather all candidates and pick the one with max voltage or min endNumber

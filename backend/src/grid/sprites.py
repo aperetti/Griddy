@@ -52,15 +52,26 @@ class SpriteGenerator:
         
         def get_inner(content: str) -> str:
             """Extracts everything inside the root <svg> tags."""
-            if not content or "<svg" not in content.lower():
-                return content or ""
-            # Find the first > after <svg
-            start_tag_end = content.find(">") + 1
-            # Find the last </svg>
-            end_tag_start = content.rfind("</svg>")
-            if start_tag_end > 0 and end_tag_start > start_tag_end:
-                return content[start_tag_end:end_tag_start]
-            return content
+            if not content:
+                return ""
+            
+            # Use regex to find everything between <svg...> and </svg>
+            # This is more robust than simple find() for nested SVGs
+            # We look for the FIRST <svg and LAST </svg>
+            try:
+                # Find start tag match
+                start_match = re.search(r'<svg[^>]*>', content, re.IGNORECASE)
+                if not start_match:
+                    return content
+                
+                # Find last end tag
+                end_match = list(re.finditer(r'</svg>', content, re.IGNORECASE))
+                if not end_match:
+                    return content[start_match.end():]
+                
+                return content[start_match.end():end_match[-1].start()]
+            except:
+                return content
 
         # 1. Extract Base ViewBox and Content
         vb_match = re.search(r'viewBox=["\']([^"]*)["\']', svg_str)
@@ -68,10 +79,8 @@ class SpriteGenerator:
         base_inner = get_inner(svg_str)
 
         # 2. Build the combined SVG
-        # We force width/height/viewBox to ensure consistent 100x100 frame
         final_color = color or "#cccccc"
-        # CRITICAL: We removed fill="{final_color}" from the root tag here to fix giant squares
-        result = [f'<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">']
+        result = [f'<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none">']
         
         # 3. Add Base Layer (scaled and CENTERED to fit 100x100 frame)
         try:
@@ -79,11 +88,9 @@ class SpriteGenerator:
             if len(parts) == 4:
                 vx, vy, vw, vh = parts
                 scale = min(100.0 / vw, 100.0 / vh)
-                # Calculate centering offsets
                 off_x = (100.0 - (vw * scale)) / 2.0
                 off_y = (100.0 - (vh * scale)) / 2.0
                 
-                # Full transform stack: move to center, scale, then move to original origin
                 transform = f'transform="translate({off_x:.3f}, {off_y:.3f}) scale({scale:.3f}) translate({-vx:.3f}, {-vy:.3f})"'
                 result.append(f'<g {transform}>{base_inner}</g>')
             else:
@@ -110,7 +117,6 @@ class SpriteGenerator:
         svg_str = "".join(result)
 
         # 5. Final color and font processing
-        # Inject color only into explicit currentColor placeholders
         svg_str = re.sub(r'\bcurrentColor\b', final_color, svg_str, flags=re.IGNORECASE)
 
         if "Arial" in svg_str:
@@ -124,16 +130,20 @@ class SpriteGenerator:
             if not svg_str:
                 return Image.new("RGBA", (self.item_size, self.item_size), (0, 0, 0, 0))
 
-            drawing = svg2rlg(BytesIO(svg_str.encode("utf-8")))
+            # ReportLab's svg2rlg is very picky about attribute quotes.
+            # Fix common "unquoted" attributes like fill=none or stroke=green
+            fixed_svg = re.sub(r'=(\w+)(?=[ \t>])', r'="\1"', svg_str)
+            
+            drawing = svg2rlg(BytesIO(fixed_svg.encode("utf-8")))
             if drawing is None:
                 return Image.new("RGBA", (self.item_size, self.item_size), (255, 0, 0, 50))
 
-            # Force drawing dimensions to 100x100 to prevent content-based shifting
             drawing.width = 100
             drawing.height = 100
 
             img_b = renderPM.drawToPIL(drawing, bg=0x000000)
             img_w = renderPM.drawToPIL(drawing, bg=0xFFFFFF)
+
 
             data_b = img_b.getdata()
             data_w = img_w.getdata()
@@ -238,7 +248,7 @@ class SpriteGenerator:
                     for i in range(1, k + 1):
                         for combo in itertools.combinations(conditional[:k], i):
                             active = unconditional + list(combo)
-                            render_ready = [{"svg": o['svg'], "mode": o['mode']} for o in active]
+                            render_ready = [{"svg": o.get('svg') or o.get('icon'), "mode": o.get('mode', 'add')} for o in active]
                             ov_hash = self._calculate_override_hash(render_ready)
                             items.append({
                                 "id": f"rule_{d['id']}_{ov_hash}",

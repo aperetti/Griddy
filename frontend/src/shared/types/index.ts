@@ -49,7 +49,7 @@ export interface Node {
     display_pixel_offset?: [number, number]; // [x, y] in screen pixels
     display_tooltip?: Record<string, any>;
     display_tooltip_data?: Record<string, any>;
-    display_tooltip_overrides?: Array<{ conditions: any; tooltip_config: Record<string, any> }>;
+    display_tooltip_overrides?: Array<{ conditions: any; tooltip_config?: Record<string, any> }>;
     // Edge-specific display overrides from rules
     display_line_weight?: number;
     display_line_style?: 'solid' | 'dashed' | 'dotted';
@@ -88,7 +88,7 @@ export interface Edge {
     display_pixel_offset?: [number, number]; // [x, y] in screen pixels
     display_tooltip?: Record<string, any>;
     display_tooltip_data?: Record<string, any>;
-    display_tooltip_overrides?: Array<{ conditions: any; tooltip_config: Record<string, any> }>;
+    display_tooltip_overrides?: Array<{ conditions: any; tooltip_config?: Record<string, any> }>;
     display_line_weight?: number;
     display_line_style?: 'solid' | 'dashed' | 'dotted';
     waypoints?: [number, number][];  // ordered polyline points [lon, lat] for ACLineSegments

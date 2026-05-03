@@ -1,5 +1,6 @@
 import os
 import re
+import logging
 from fastapi import APIRouter, Query, HTTPException, Depends
 from fastapi.concurrency import run_in_threadpool
 from src.shared.auth import get_current_username
@@ -9,10 +10,12 @@ import sqlite3
 from src.shared.dependencies import registry, ensure_graph_built, ADMIN_SQLITE_PATH
 
 router = APIRouter(prefix="/api/cim", tags=["discovery"])
+logger = logging.getLogger(__name__)
 
 
 def _find_manager_for_mrid(mrid: str):
     """Search all loaded models for an equipment mRID."""
+    logger.debug("Searching for mRID: %s", mrid)
     model_id = registry._mrid_to_model.get(mrid)
     if model_id:
         mgr = registry.get_manager(model_id)
@@ -84,8 +87,10 @@ async def get_equipment_by_class(class_name: str):
 @router.get("/equipment/{mrid}")
 async def get_equipment_detail(mrid: str):
     """Full CIM detail for any equipment by mRID."""
+    logger.info("Equipment detail requested for mRID: %s", mrid)
     detail = _find_manager_for_mrid(mrid)
     if detail is None:
+        logger.warning("Equipment not found: %s", mrid)
         raise HTTPException(status_code=404, detail=f"Equipment not found: {mrid}")
     return detail
 
@@ -93,6 +98,7 @@ async def get_equipment_detail(mrid: str):
 @router.get("/equipment/{mrid}/expanded")
 async def get_equipment_detail_expanded(mrid: str):
     """Equipment detail with terminal connectivity nodes expanded to full objects for tooltip resolution."""
+    logger.info("Expanded equipment detail requested for mRID: %s", mrid)
 
     def _get():
         model_id = registry._mrid_to_model.get(mrid)
@@ -250,6 +256,13 @@ async def get_class_connections(class_name: str):
     }
 
 
+@router.get("/ami-adapters")
+async def get_ami_adapters():
+    """List all installed AMI data adapters."""
+    from src.shared.meter_adapters.registry import discover_adapters
+    return await run_in_threadpool(discover_adapters)
+
+
 # ── Client-side Cypher execution ──────────────────────────────────
 
 # Pattern of write keywords that must not appear in read-only queries.
@@ -274,27 +287,27 @@ async def execute_cim_query(request: CypherQueryRequest):
 
     Returns: { columns: [...], rows: [{col: value, ...}], count: N }
     """
+    logger.info("Executing Cypher query")
     if _WRITE_KEYWORDS.search(request.cypher):
+        logger.warning("Rejected write-attempt Cypher query")
         raise HTTPException(
             status_code=400,
             detail="Only read-only Cypher queries are permitted.",
         )
 
     def _run() -> Dict[str, Any]:
-        neo4j_url = os.getenv("CIMG_URL")
-        if not neo4j_url:
+        logger.debug("Cypher query: %s | Params: %s", request.cypher, request.params)
+        
+        from src.shared.dependencies import get_neo4j_driver
+        driver = get_neo4j_driver()
+        if not driver:
             raise HTTPException(
-                status_code=503, detail="Neo4j URL (CIMG_URL) is not configured."
+                status_code=503, detail="Neo4j driver not initialized (check CIMG_URL)."
             )
 
-        from neo4j import GraphDatabase
-
-        neo4j_user = os.getenv("CIMG_USERNAME", "neo4j")
-        neo4j_password = os.getenv("CIMG_PASSWORD", "")
         neo4j_database = os.getenv("CIMG_DATABASE", "neo4j")
 
         try:
-            driver = GraphDatabase.driver(neo4j_url, auth=(neo4j_user, neo4j_password))
             with driver.session(database=neo4j_database) as session:
                 def work(tx):
                     res = tx.run(request.cypher, **request.params)
@@ -303,8 +316,8 @@ async def execute_cim_query(request: CypherQueryRequest):
                 if not keys and records:
                     keys = list(records[0].keys())
                 keys = keys or []
-            driver.close()
         except Exception as exc:
+            logger.error("Neo4j query error: %s", exc)
             raise HTTPException(status_code=500, detail=f"Neo4j query error: {exc}")
 
         # Extract mRIDs if the query returned them
@@ -327,8 +340,8 @@ def _get_admin_conn():
     return conn
 
 
-@router.get("/config")
-async def get_config_overrides():
+@router.get("/config", tags=["admin"])
+async def get_config_overrides(username: str = Depends(get_current_username)):
     """Read all configuration overrides from the admin database."""
 
     def _get():

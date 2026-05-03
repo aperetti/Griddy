@@ -53,20 +53,20 @@ export function useAnalyticsState() {
   }, []);
 
   const [globalConfig, setGlobalConfig] = useState<GlobalConfig>(() => {
-    const saved = localStorage.getItem('globalConfig');
+    const saved = localStorage.getItem(SETTINGS_KEY);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         return { ...DEFAULT_CONFIG, ...parsed };
       } catch (e) {
-        console.error('Failed to parse saved globalConfig', e);
+        console.error('Failed to parse saved ' + SETTINGS_KEY, e);
       }
     }
     return DEFAULT_CONFIG;
   });
 
   useEffect(() => {
-    localStorage.setItem('globalConfig', JSON.stringify(globalConfig));
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(globalConfig));
   }, [globalConfig]);
 
   const updateWindow = useCallback((id: string, updates: Partial<AnalysisInstance>) => {

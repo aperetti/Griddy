@@ -78,6 +78,7 @@ class TopologyBuilder:
         self.idx = idx
         self._nodes: list[dict] = []
         self._edges: list[dict] = []
+        self._node_locations: dict[str, tuple[float, float]] = {} # cn_mrid -> (lat, lon)
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -139,12 +140,22 @@ class TopologyBuilder:
                         coord = idx.eq_first_coord.get(eq_mrid)
 
                     if coord and coord != (0.0, 0.0):
-                        # Prefer point devices (switches, transformers) over polyline equipment
-                        eq_type_check = idx.equipment_types.get(eq_mrid, "")
-                        priority = 0 if eq_type_check in (
-                            "Breaker", "LoadBreakSwitch", "Fuse", "Disconnector", "Recloser", "Sectionaliser", "Switch",
-                            "PowerTransformer", "Regulator", "TransformerTank"
-                        ) else 1
+                        # Coordinate Priority Logic:
+                        # -1: Attached equipment (highest, pins node exactly)
+                        #  0: Edge with distinct first/last coords (no collapse)
+                        #  1: Edge with single coord (potential collapse, lowest priority)
+                        is_attached = self._is_attached(eq_mrid)
+                        first_c = idx.eq_first_coord.get(eq_mrid)
+                        last_c = idx.eq_last_coord.get(eq_mrid)
+                        has_multiple_points = (first_c != last_c) if (first_c and last_c) else False
+
+                        if is_attached:
+                            priority = -1
+                        elif has_multiple_points:
+                            priority = 0
+                        else:
+                            priority = 1
+
                         if priority < best_priority:
                             lat, lon = coord
                             best_priority = priority
@@ -188,6 +199,7 @@ class TopologyBuilder:
                 if bv:
                     base_voltage_kv = _safe_float(getattr(bv, "nominalVoltage", None))
 
+            self._node_locations[cn_mrid] = (lat, lon)
             self._nodes.append({
                 "node_id": cn_mrid,
                 "node_type": node_type,
@@ -245,8 +257,17 @@ class TopologyBuilder:
             # Source/target positions from equipment's own location
             sp = idx.eq_first_coord.get(eq_mrid)
             tp = idx.eq_last_coord.get(eq_mrid)
-            if sp: edge["sourcePosition"] = [sp[1], sp[0]] # [lon, lat]
-            if tp: edge["targetPosition"] = [tp[1], tp[0]] # [lon, lat]
+            
+            # If equipment has a polyline, use its exact endpoints
+            if sp and tp and sp != tp:
+                edge["sourcePosition"] = [sp[1], sp[0]] # [lon, lat]
+                edge["targetPosition"] = [tp[1], tp[0]] # [lon, lat]
+            else:
+                # Point device or missing coordinates: fall back to node locations
+                n1_loc = self._node_locations.get(cn1)
+                n2_loc = self._node_locations.get(cn2)
+                if n1_loc: edge["sourcePosition"] = [n1_loc[1], n1_loc[0]]
+                if n2_loc: edge["targetPosition"] = [n2_loc[1], n2_loc[0]]
 
             # Switch/breaker state
             if eq_type in ("Breaker", "LoadBreakSwitch", "Fuse", "Disconnector", "Recloser", "Sectionaliser", "Switch"):
@@ -331,11 +352,18 @@ class TopologyBuilder:
     # ------------------------------------------------------------------
 
     def _get_phases_for_cn(self, cn_mrid: str) -> list[str] | None:
+        all_phases = set()
         for eq_mrid in self.idx.cn_equipment.get(cn_mrid, []):
             phases = self._get_phases_for_equipment(eq_mrid)
             if phases:
-                return phases
-        return None
+                all_phases.update(phases)
+        
+        if not all_phases:
+            return None
+            
+        # Standard sort order
+        _order = {"A": 0, "B": 1, "C": 2, "N": 3, "S1": 4, "S2": 5}
+        return sorted(list(all_phases), key=lambda p: _order.get(p, 9))
 
     def _get_phases_for_equipment(self, eq_mrid: str) -> list[str] | None:
         # 1. Per-phase CIM objects — most reliable

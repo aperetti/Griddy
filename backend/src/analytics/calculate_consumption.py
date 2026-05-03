@@ -1,165 +1,108 @@
 """Use Case: Aggregate Consumption Analytics."""
-import duckdb
 import logging
 from typing import Dict, Any, List
 from src.shared.graph_engine import GraphEngine
+from src.shared.meter_data_repository import IMeterDataRepository
+from src.shared.perf import phase_timer
 
 logger = logging.getLogger(__name__)
 
 
-def _safe_parquet_path(path: str) -> str:
-    """Return a SQL-safe parquet directory path or raise ValueError."""
-    if "'" in path or '"' in path:
-        raise ValueError(f"PARQUET_DIR contains invalid characters: {path!r}")
-    return path.replace("\\", "/")
-
 class CalculateAggregateConsumptionUseCase:
-    """Aggregates kwh_dlv and kwh_rcv over time for downstream meters."""
-    
-    def __init__(self, graph_engine: GraphEngine, db_path: str, parquet_dir: str = 'readings'):
+    """Use case to calculate aggregate consumption for a given set of nodes and their downstream meters."""
+
+    def __init__(self, graph_engine: GraphEngine, meter_repo: IMeterDataRepository):
         self.graph_engine = graph_engine
-        # Handle case where db_path might be same as parquet_dir (for tests)
-        self.db_path = db_path
-        self.parquet_dir = parquet_dir if parquet_dir else db_path
-        
-    def estimate(self, start_node_ids: List[str], start_time: str, end_time: str) -> Dict[str, Any]:
-        """Returns the estimated number of rows to be processed for multiple nodes."""
+        self.meter_repo = meter_repo
+
+    def _resolve_downstream(self, start_node_ids: List[str]) -> set:
         all_downstream_nodes = set()
-        all_downstream_edges = set()
         for node_id in start_node_ids:
-            nodes, edges = self.graph_engine.find_downstream(node_id)
+            if node_id in all_downstream_nodes:
+                continue
+            all_downstream_nodes.add(node_id)
+            nodes, _ = self.graph_engine.find_downstream(node_id)
             if nodes:
                 all_downstream_nodes.update(nodes)
-            else:
-                all_downstream_nodes.add(node_id)
-            if edges:
-                all_downstream_edges.update(edges)
+        return all_downstream_nodes
 
-        nodes_to_query = list(all_downstream_nodes)
-        placeholders = ",".join(["?"] * len(nodes_to_query))
-        query_params = nodes_to_query + [start_time, end_time]
+    def _resolve_storage_keys(self, node_ids) -> set:
+        from src.shared.dependencies import _node_to_energy_consumers
+        storage_keys = set()
+        for nid in node_ids:
+            consumers = _node_to_energy_consumers.get(nid.upper(), [])
+            if consumers:
+                storage_keys.update(consumers)
+        return storage_keys
 
-        safe_dir = _safe_parquet_path(self.parquet_dir)
-        prefetch_query = f"""
-            SELECT COUNT(*) as estimated_rows
-            FROM read_parquet('{safe_dir}/*.parquet') r
-            WHERE r.node_id IN ({placeholders})
-              AND r.timestamp >= CAST(? AS TIMESTAMP)
-              AND r.timestamp <= CAST(? AS TIMESTAMP)
-        """
+    def estimate(self, start_node_ids: List[str], start_time: str, end_time: str) -> Dict[str, Any]:
+        """Returns the estimated number of rows to be processed for multiple nodes."""
+        with phase_timer("topology_resolve"):
+            all_downstream_nodes = self._resolve_downstream(start_node_ids)
 
-        with duckdb.connect(self.db_path, read_only=True) as conn:
-            prefetch_results = conn.execute(prefetch_query, query_params).fetchone()
+        with phase_timer("key_resolve"):
+            storage_keys = self._resolve_storage_keys(all_downstream_nodes)
+
+        with phase_timer("estimate_query"):
+            res = self.meter_repo.estimate_aggregate_consumption(list(storage_keys), start_time, end_time)
 
         return {
-            "estimated_rows": prefetch_results[0] if prefetch_results else 0,
-            "node_count": len(nodes_to_query),
-            "downstream_node_ids": nodes_to_query,
-            "downstream_edge_ids": list(all_downstream_edges),
+            "estimated_rows": res["estimated_rows"],
+            "node_count": len(storage_keys),
+            "downstream_node_ids": list(all_downstream_nodes),
         }
 
     def execute(self, start_node_ids: List[str], start_time: str, end_time: str) -> Dict[str, Any]:
         """
         Aggregates consumption data grouped by timestamp for multiple start nodes.
         """
-        all_downstream_nodes = set()
-        all_downstream_edges = set()
-        
-        for node_id in start_node_ids:
-            nodes, edges = self.graph_engine.find_downstream(node_id)
-            if nodes:
-                all_downstream_nodes.update(nodes)
-            else:
-                all_downstream_nodes.add(node_id)
-            if edges:
-                all_downstream_edges.update(edges)
-        
-        nodes_to_query = list(all_downstream_nodes)
-        node_phases = self.graph_engine.get_node_phases(nodes_to_query)
-        
-        # Security enhancement: Use parameterized query to prevent SQL Injection
-        # Build weight mapping for phase aggregation
-        weight_placeholders = []
-        weight_params = []
-        for nid in nodes_to_query:
-            p_raw = node_phases.get(nid, ["A", "B", "C"]) or ["A", "B", "C"]
-            # Only count phases we display (A, B, C) for energy balance in the graph
-            p_list = [p for p in p_raw if p in ("A", "B", "C")]
-            
-            w = {"A": 0.0, "B": 0.0, "C": 0.0}
-            if p_list:
-                share = 1.0 / len(p_list)
-                for p in p_list:
-                    w[p] = share
-            else:
-                # Fallback for nodes with no A/B/C phases (e.g. S1/S2 or Neutral only)
-                # Split evenly to ensure total energy remains correct in the aggregate time-series.
-                # 0.3333333333333333 * 3 = 1.0 (Python float precision handles this well)
-                w = {"A": 1.0/3.0, "B": 1.0/3.0, "C": 1.0/3.0}
-            
-            weight_placeholders.append("(?, ?, ?, ?)")
-            weight_params.extend([nid, w['A'], w['B'], w['C']])
+        try:
+            with phase_timer("topology_resolve"):
+                all_downstream_nodes = self._resolve_downstream(start_node_ids)
 
-        values_clause = ",".join(weight_placeholders)
-        # Combine weight params with the time params
-        query_params = weight_params + [start_time, end_time]
-        
-        safe_dir = _safe_parquet_path(self.parquet_dir)
-        query = f"""
-            WITH phase_weights(node_id, wa, wb, wc) AS (
-                VALUES {values_clause}
-            ),
-            aggregated AS (
-                SELECT
-                    r.timestamp,
-                    SUM(COALESCE(r.kwh_dlv, 0)) as total_kwh_dlv,
-                    SUM(COALESCE(r.kwh_rcv, 0)) as total_kwh_rcv,
-                    SUM(COALESCE(r.kwh_dlv, 0) * pw.wa) as kwh_a,
-                    SUM(COALESCE(r.kwh_dlv, 0) * pw.wb) as kwh_b,
-                    SUM(COALESCE(r.kwh_dlv, 0) * pw.wc) as kwh_c
-                FROM read_parquet('{safe_dir}/*.parquet') r
-                JOIN phase_weights pw ON r.node_id = pw.node_id
-                WHERE r.timestamp >= CAST(? AS TIMESTAMP)
-                  AND r.timestamp <= CAST(? AS TIMESTAMP)
-                GROUP BY r.timestamp
-            )
-            SELECT 
-                a.timestamp,
-                a.total_kwh_dlv,
-                a.total_kwh_rcv,
-                a.kwh_a,
-                a.kwh_b,
-                a.kwh_c,
-                w.temperature
-            FROM aggregated a
-            LEFT JOIN weather_recordings w 
-                ON w.month = EXTRACT(month FROM a.timestamp)
-                AND w.day = EXTRACT(day FROM a.timestamp)
-                AND w.hour = EXTRACT(hour FROM a.timestamp)
-            ORDER BY a.timestamp ASC
-        """
-        
-        with duckdb.connect(self.db_path, read_only=True) as conn:
-            results = conn.execute(query, query_params).fetchall()
+            with phase_timer("key_resolve"):
+                storage_keys = self._resolve_storage_keys(all_downstream_nodes)
 
-        time_series = [
-                {
-                    "timestamp": row[0].isoformat() + "Z",
-                    "kwh_delivered": float(row[1]),
-                    "kwh_received": float(row[2]),
-                    "net_consumption": float(row[1]) - float(row[2]),
-                    "kwh_a": float(row[3]),
-                    "kwh_b": float(row[4]),
-                    "kwh_c": float(row[5]),
-                    "temperature": float(row[6]) if row[6] else 0
+            if not storage_keys:
+                return {
+                    "start_node_ids": start_node_ids,
+                    "node_count": 0,
+                    "total_kwh_delivered": 0,
+                    "total_kwh_received": 0,
+                    "net_consumption": 0,
+                    "time_series": [],
+                    "downstream_node_ids": list(all_downstream_nodes),
                 }
-                for row in results
-            ]
-            
-        return {
-            "start_node_ids": start_node_ids,
-            "node_count": len(nodes_to_query),
-            "downstream_node_ids": nodes_to_query,
-            "downstream_edge_ids": list(all_downstream_edges),
-            "time_series": time_series
-        }
+
+            # Adapter publishes its own "query" and "py_postprocess" sub-phases
+            # via record_phase, so no wrapping needed here.
+            results = self.meter_repo.get_aggregate_consumption(list(storage_keys), {}, start_time, end_time)
+
+            with phase_timer("serialize"):
+                time_series = [
+                    {
+                        "timestamp": row["timestamp"],
+                        "kwh_delivered": row["kwh_delivered"],
+                        "kwh_received": row["kwh_received"],
+                        "net_consumption": row["kwh_delivered"] - row["kwh_received"],
+                        "temperature": row["temperature"],
+                    }
+                    for row in results
+                ]
+
+                total_dlv = sum(row["kwh_delivered"] for row in time_series)
+                total_rcv = sum(row["kwh_received"] for row in time_series)
+
+                response = {
+                    "start_node_ids": start_node_ids,
+                    "node_count": len(storage_keys),
+                    "total_kwh_delivered": total_dlv,
+                    "total_kwh_received": total_rcv,
+                    "net_consumption": total_dlv - total_rcv,
+                    "time_series": time_series,
+                    "downstream_node_ids": list(all_downstream_nodes),
+                }
+            return response
+        except Exception as e:
+            logger.exception("Consumption Analysis failed")
+            return {"error": str(e)}

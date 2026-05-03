@@ -3,14 +3,18 @@ import type { Node, Edge } from '../../../shared/types';
 export const SWITCH_EDGE_TYPES = new Set(['Breaker', 'LoadBreakSwitch', 'Fuse', 'Disconnector', 'Recloser', 'Sectionaliser', 'Switch']);
 
 export const getBearing = (start: [number, number], end: [number, number]): number => {
-    const startLat = (start[1] * Math.PI) / 180;
-    const startLng = (start[0] * Math.PI) / 180;
-    const endLat = (end[1] * Math.PI) / 180;
-    const endLng = (end[0] * Math.PI) / 180;
-    const y = Math.sin(endLng - startLng) * Math.cos(endLat);
-    const x = Math.cos(startLat) * Math.sin(endLat) -
-        Math.sin(startLat) * Math.cos(endLat) * Math.cos(endLng - startLng);
-    return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+    let dLon = end[0] - start[0];
+    if (dLon > 180) dLon -= 360;
+    if (dLon < -180) dLon += 360;
+    
+    const avgLat = ((start[1] + end[1]) / 2 * Math.PI) / 180;
+    const dx = dLon * Math.cos(avgLat);
+    const dy = end[1] - start[1];
+    
+    // Deck.gl getAngle is counter-clockwise, so we negate the clockwise bearing
+    // and add 90 degrees to make the icon perpendicular to the line
+    const bearingCW = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+    return (360 - bearingCW + 90) % 360;
 };
 
 export const stringToColor = (str: string): [number, number, number] => {
@@ -57,7 +61,7 @@ export const getNodeColor = (node: Node, visualType: string, isHighlighted: bool
 };
 
 export const getEdgeColor = (edge: Edge, isHighlighted: boolean, isHovered: boolean, circuitId?: string): [number, number, number] => {
-    if (isHighlighted) return [60, 160, 240];
+    if (isHighlighted) return [255, 200, 50]; // Amber/Yellow highlight
     if (isHovered) return [255, 255, 255];
     if (edge.display_color) {
         const hex = edge.display_color.replace('#', '');
@@ -97,9 +101,7 @@ export const getPathMidpoint = (path: [number, number][]): { position: [number, 
                 seg.start[0] + (seg.end[0] - seg.start[0]) * ratio,
                 seg.start[1] + (seg.end[1] - seg.start[1]) * ratio
             ];
-            const dx = (seg.end[0] - seg.start[0]) * Math.cos((seg.start[1] * Math.PI) / 180);
-            const dy = seg.end[1] - seg.start[1];
-            const bearing = (Math.atan2(dx, dy) * 180) / Math.PI;
+            const bearing = getBearing(seg.start, seg.end);
             return { position: pos, bearing, segmentIndex: i };
         }
         halfLen -= seg.len;

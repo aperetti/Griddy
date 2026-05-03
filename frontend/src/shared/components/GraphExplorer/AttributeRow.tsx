@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
-import { Menu, Box } from '@mantine/core';
-import { Plus } from 'lucide-react';
+import { Menu, Box, Tooltip } from '@mantine/core';
+import { useClipboard } from '@mantine/hooks';
+import { Plus, Copy } from 'lucide-react';
 
 interface AttributeRowProps {
     path: string;
@@ -14,6 +15,7 @@ interface AttributeRowProps {
 export const AttributeRow: React.FC<AttributeRowProps> = ({ path, label, value, isMobile, onSelectAttribute, children }) => {
     const longPressTimer = useRef<any>(null);
     const [menuOpened, setMenuOpened] = useState(false);
+    const clipboard = useClipboard({ timeout: 2000 });
 
     const handleTouchStart = (e: React.TouchEvent) => {
         e.stopPropagation();
@@ -32,11 +34,22 @@ export const AttributeRow: React.FC<AttributeRowProps> = ({ path, label, value, 
         setMenuOpened(true);
     };
 
+    const handleLeftClick = (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        // Copy logic
+        const textToCopy = typeof value === 'object' && value !== null 
+            ? JSON.stringify(value, null, 2) 
+            : String(value);
+            
+        clipboard.copy(textToCopy);
+    };
+
     return (
         <Menu 
             opened={menuOpened} 
             onChange={setMenuOpened} 
-            trigger="click" 
             withinPortal 
             zIndex={1000000}
             position={isMobile ? "bottom" : "right-start"}
@@ -66,24 +79,32 @@ export const AttributeRow: React.FC<AttributeRowProps> = ({ path, label, value, 
             }}
         >
             <Menu.Target>
-                <Box 
-                    mb={4} 
-                    onContextMenu={handleContextMenu}
-                    onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                    onTouchStart={handleTouchStart}
-                    onTouchEnd={handleTouchEnd}
-                    style={{ 
-                        cursor: 'context-menu', 
-                        borderRadius: '4px', 
-                        transition: 'background 0.2s',
-                        userSelect: 'none',
-                        WebkitUserSelect: 'none'
-                    }}
-                    onMouseEnter={(e: React.MouseEvent) => ((e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)')}
-                    onMouseLeave={(e: React.MouseEvent) => ((e.currentTarget as HTMLElement).style.background = 'transparent')}
+                <Tooltip 
+                    label="Copied to clipboard!" 
+                    opened={clipboard.copied} 
+                    withArrow 
+                    position="top"
+                    zIndex={1000001}
                 >
-                    {children}
-                </Box>
+                    <Box 
+                        mb={4} 
+                        onContextMenu={handleContextMenu}
+                        onClick={handleLeftClick}
+                        onTouchStart={handleTouchStart}
+                        onTouchEnd={handleTouchEnd}
+                        style={{ 
+                            cursor: 'pointer', 
+                            borderRadius: '4px', 
+                            transition: 'background 0.2s',
+                            userSelect: 'none',
+                            WebkitUserSelect: 'none'
+                        }}
+                        onMouseEnter={(e: React.MouseEvent) => ((e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)')}
+                        onMouseLeave={(e: React.MouseEvent) => ((e.currentTarget as HTMLElement).style.background = 'transparent')}
+                    >
+                        {children}
+                    </Box>
+                </Tooltip>
             </Menu.Target>
 
             <Menu.Dropdown>
@@ -92,6 +113,7 @@ export const AttributeRow: React.FC<AttributeRowProps> = ({ path, label, value, 
                 <Menu.Item leftSection={<Plus size={14} />} onClick={() => onSelectAttribute(path, value, '!=')}>Does not equal value</Menu.Item>
                 <Menu.Item leftSection={<Plus size={14} />} onClick={() => onSelectAttribute(path, null, 'exists')}>Exists</Menu.Item>
                 <Menu.Item leftSection={<Plus size={14} />} onClick={() => onSelectAttribute(path, null, 'not_exists')}>Does not exist</Menu.Item>
+                <Menu.Item leftSection={<Copy size={14} />} onClick={handleLeftClick}>Copy value</Menu.Item>
                 {Array.isArray(value) && (
                     <Menu.Item leftSection={<Plus size={14} />} onClick={() => onSelectAttribute(path, 1, 'length_gt')}>Has more than one</Menu.Item>
                 )}

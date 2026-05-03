@@ -21,13 +21,16 @@ interface DesktopExplorerProps {
   selectedId: string | null;
   onSelectWithPath: any;
   schema: any;
+  handleNodePointerOver?: (node: any, event?: any) => void;
+  handleNodePointerOut?: (node: any, event?: any) => void;
 }
 
 export function DesktopExplorer({
   nodes, edges, graphRef, selections, actives,
   onNodeClick, onCanvasClick, expandNode, reset,
   setPopOut, pendingExpansion, loadingIds,
-  selectedDetails, selectedId, onSelectWithPath, schema
+  selectedDetails, selectedId, onSelectWithPath, schema,
+  handleNodePointerOver, handleNodePointerOut,
 }: DesktopExplorerProps) {
   return (
     <Flex gap="md" align="stretch" style={{ flex: 1, minHeight: 0, height: '100%' }}>
@@ -53,6 +56,8 @@ export function DesktopExplorer({
             onCanvasClick={onCanvasClick}
             expandNode={expandNode}
             loading={loadingIds.size > 0}
+            handleNodePointerOver={handleNodePointerOver}
+            handleNodePointerOut={handleNodePointerOut}
           />
 
           {/* Toolbar */}
@@ -93,10 +98,13 @@ export function DesktopExplorer({
           <Group gap={6} justify="space-between">
             <Group gap={6}>
               <Badge color="yellow" size="xs" variant="dot">Root</Badge>
-              <Badge color="blue" size="xs" variant="dot">Equipment</Badge>
-              <Badge color="green" size="xs" variant="dot">ConnectivityNode</Badge>
+              <Badge color="green" size="xs" variant="dot">Topology</Badge>
+              <Badge color="blue" size="xs" variant="dot">Wires (Core)</Badge>
+              <Badge color="violet" size="xs" variant="dot">Asset Mgmt</Badge>
+              <Badge color="orange" size="xs" variant="dot">Location</Badge>
+              <Badge color="yellow" size="xs" variant="dot" style={{ opacity: 0.7 }}>Extension</Badge>
             </Group>
-            <Text size="10px" c="dimmed">Dbl-click to expand • Scroll to Attributes →</Text>
+            <Text size="10px" c="dimmed">Click CN to expand • Dbl-click any node • Hover for details</Text>
           </Group>
         </Box>
       </Box>
