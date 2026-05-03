@@ -7,7 +7,13 @@ All persistent state lives in two databases:
 import os
 import sqlite3
 import hashlib
+import zlib
 from pathlib import Path
+
+def to_int_id(name: str) -> int:
+    """Stable string-to-int mapping for DuckDB Parquet skipping."""
+    if not name: return 0
+    return zlib.crc32(name.encode('utf-8')) & 0xffffffff
 
 # Robust project root detection (works if run from /app, /app/src, or locally)
 _THIS_DIR = Path(__file__).resolve().parent
@@ -22,6 +28,9 @@ ADMIN_SQLITE_PATH = os.getenv("ADMIN_DB_PATH") or os.getenv("CONFIG_DB_PATH") or
 
 # ── DuckDB: analytics engine (weather_recordings + parquet reads) ─
 DB_PATH = os.getenv("DB_PATH", str(BASE_DIR / "grid_data_cim.duckdb"))
+
+# Legacy path for topology ingestion scripts
+SQLITE_PATH = os.getenv("TOPOLOGY_DB_PATH", str(BASE_DIR / "grid_topology.sqlite"))
 
 # ── Parquet directories ───────────────────────────────────────────
 PARQUET_DIR = os.getenv("PARQUET_DIR", str(_PROJECT_ROOT / "cim_readings"))

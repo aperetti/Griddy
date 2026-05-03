@@ -10,9 +10,6 @@ class ConsumptionTimeseriesPoint(TypedDict):
     timestamp: str
     kwh_delivered: float
     kwh_received: float
-    kwh_a: float
-    kwh_b: float
-    kwh_c: float
     temperature: Optional[float]
 
 class VoltageDistributionPoint(TypedDict):

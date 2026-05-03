@@ -269,3 +269,19 @@ class NetworkXEngine(GraphEngine):
     def get_node_phases(self, node_ids: List[str]) -> dict[str, List[str]]:
         """Returns a mapping of node IDs to their phase lists."""
         return {nid: self.nodes[nid].phases for nid in node_ids if nid in self.nodes}
+
+    def get_nodes(self, node_ids: List[str]) -> List[GraphNode]:
+        """Returns a list of GraphNode objects for the given IDs."""
+        return [self.nodes[nid] for nid in node_ids if nid in self.nodes]
+
+    def get_edges(self, edge_ids: List[str]) -> List[dict]:
+        """Returns a list of edge dictionaries for the given IDs."""
+        edges = []
+        for u, v, data in self.graph.edges(data=True):
+            eid = data.get("edge_id")
+            if eid and eid in edge_ids:
+                # Reconstruct dict from edge data
+                edge_dict = {"from_node_id": u, "to_node_id": v}
+                edge_dict.update(data)
+                edges.append(edge_dict)
+        return edges

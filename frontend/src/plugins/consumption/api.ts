@@ -1,3 +1,5 @@
+import { perf } from '@plugin-sdk';
+
 const API_BASE = '/api/plugins/consumption';
 
 export interface ConsumptionRecord {
@@ -5,9 +7,6 @@ export interface ConsumptionRecord {
     kwh_delivered: number;
     kwh_received: number;
     net_consumption: number;
-    kwh_a: number;
-    kwh_b: number;
-    kwh_c: number;
     temperature: number;
 }
 
@@ -33,15 +32,21 @@ function buildQuery(start: string, end: string, force = false): string {
     return params.toString();
 }
 
+async function fetchAndParse<T>(label: string, url: string): Promise<T> {
+    const res = await perf.measureAsync(`${label}:fetch`, () => fetch(url));
+    perf.recordServerTiming(res.headers.get('Server-Timing'));
+    if (!res.ok) throw new Error(`${label} failed: ${res.status}`);
+    return perf.measureAsync(`${label}:parse`, () => res.json() as Promise<T>);
+}
+
 export async function fetchConsumptionPlugin(
     nodeIds: string[],
     start: string,
     end: string,
     force = false,
 ): Promise<ConsumptionResponse> {
-    const res = await fetch(`${API_BASE}/${nodeIds.join(',')}?${buildQuery(start, end, force)}`);
-    if (!res.ok) throw new Error(`Consumption fetch failed: ${res.status}`);
-    return res.json();
+    const url = `${API_BASE}/${nodeIds.join(',')}?${buildQuery(start, end, force)}`;
+    return fetchAndParse<ConsumptionResponse>('consumption', url);
 }
 
 export async function fetchConsumptionEstimatePlugin(
@@ -49,7 +54,6 @@ export async function fetchConsumptionEstimatePlugin(
     start: string,
     end: string,
 ): Promise<ConsumptionEstimateResponse> {
-    const res = await fetch(`${API_BASE}/${nodeIds.join(',')}/estimate?${buildQuery(start, end)}`);
-    if (!res.ok) throw new Error(`Consumption estimate failed: ${res.status}`);
-    return res.json();
+    const url = `${API_BASE}/${nodeIds.join(',')}/estimate?${buildQuery(start, end)}`;
+    return fetchAndParse<ConsumptionEstimateResponse>('consumption_estimate', url);
 }

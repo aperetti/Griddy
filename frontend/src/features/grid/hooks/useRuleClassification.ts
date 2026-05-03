@@ -239,28 +239,34 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
         return () => { cancelled = true; };
     }, [activeMridsKey, refreshVersion]);
 
-    // Apply rule display props to nodes. Allows multiple matching rules per node by cloning
-    // the node and applying a radial pixel offset.
+    // Apply rule display props to nodes. Optimized with map-based lookup.
     const classifiedNodes = useMemo((): Node[] => {
         if (ruleMatches.length === 0) return rawNodes;
 
+        // Pre-index rule matches by MRID for O(1) lookup
+        const mridToMatches = new Map<string, Array<{ rule: RuleMatch; mrid: string }>>();
+        
+        for (const rule of ruleMatches) {
+            if (rule.entityType !== 'node') continue;
+            for (const mrid of rule.matchingMrids) {
+                if (!mridToMatches.has(mrid)) mridToMatches.set(mrid, []);
+                mridToMatches.get(mrid)!.push({ rule, mrid });
+            }
+        }
+
         const result: Node[] = [];
         for (const node of rawNodes) {
-            const equipMrids = (node.attached_equipment || []).map(eq => eq.mrid);
             const matches: Array<{ rule: RuleMatch; mrid: string }> = [];
 
-            // 1. Gather all matching rules for this node or its attached equipment
-            for (const rule of ruleMatches) {
-                // Node rules only match in Node list
-                if (rule.entityType !== 'node') continue;
+            // Check node itself
+            const nodeMatches = mridToMatches.get(node.id);
+            if (nodeMatches) matches.push(...nodeMatches);
 
-                if (rule.matchingMrids.has(node.id)) {
-                    matches.push({ rule, mrid: node.id });
-                } else {
-                    const matchMrid = equipMrids.find(mrid => rule.matchingMrids.has(mrid));
-                    if (matchMrid) {
-                        matches.push({ rule, mrid: matchMrid });
-                    }
+            // Check attached equipment
+            for (const eq of node.attached_equipment || []) {
+                if (eq.mrid) {
+                    const eqMatches = mridToMatches.get(eq.mrid);
+                    if (eqMatches) matches.push(...eqMatches);
                 }
             }
 
@@ -269,8 +275,16 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
                 continue;
             }
 
+            // Deduplicate rules (one node might match the same rule via different equipment)
+            // But we keep the first one found or highest priority? ruleMatches is already sorted by priority.
+            const uniqueRules = new Map<number, { rule: RuleMatch; mrid: string }>();
+            for (const m of matches) {
+                if (!uniqueRules.has(m.rule.ruleId)) uniqueRules.set(m.rule.ruleId, m);
+            }
+            const finalMatches = Array.from(uniqueRules.values());
+
             // 2. Generate one Node object per matching rule
-            matches.forEach((match, index) => {
+            finalMatches.forEach((match, index) => {
                 const { rule, mrid: matchMrid } = match;
                 let finalConfig = { ...rule.config };
                 const activeOverrides: any[] = [];
@@ -305,15 +319,14 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
 
                 // Calculate radial offset if there are multiple icons
                 let pixelOffset: [number, number] | undefined = undefined;
-                if (matches.length > 1) {
+                if (finalMatches.length > 1) {
                     const radius = 18; // pixels
-                    const angle = (index / matches.length) * 2 * Math.PI - Math.PI / 2;
+                    const angle = (index / finalMatches.length) * 2 * Math.PI - Math.PI / 2;
                     pixelOffset = [Math.cos(angle) * radius, Math.sin(angle) * radius];
                 }
 
                 result.push({ 
                     ...node,
-                    // Ensure unique ID for deck.gl if we have multiple icons for one physical node
                     id: index === 0 ? node.id : `${node.id}_v${index}`,
                     ...buildDisplayProps(
                         finalConfig, 
@@ -329,10 +342,19 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
         return result;
     }, [rawNodes, ruleMatches]);
 
-    // Apply rule display props to edges. Allows multiple matching rules per edge by cloning
-    // the edge and applying a radial pixel offset for icons.
+    // Apply rule display props to edges. Optimized with map-based lookup.
     const classifiedEdges = useMemo((): Edge[] => {
         if (ruleMatches.length === 0) return rawEdges;
+
+        // Pre-index rule matches by MRID for O(1) lookup
+        const mridToMatches = new Map<string, RuleMatch[]>();
+        for (const rule of ruleMatches) {
+            if (rule.entityType !== 'edge') continue;
+            for (const mrid of rule.matchingMrids) {
+                if (!mridToMatches.has(mrid)) mridToMatches.set(mrid, []);
+                mridToMatches.get(mrid)!.push(rule);
+            }
+        }
 
         const result: Edge[] = [];
         for (const edge of rawEdges) {
@@ -341,24 +363,14 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
                 continue;
             }
 
-            const matches: Array<{ rule: RuleMatch }> = [];
-            for (const rule of ruleMatches) {
-                // Edge rules only match in Edge list
-                if (rule.entityType !== 'edge') continue;
-
-                if (rule.matchingMrids.has(edge.id)) {
-                    matches.push({ rule });
-                }
-            }
-
-            if (matches.length === 0) {
+            const matches = mridToMatches.get(edge.id);
+            if (!matches || matches.length === 0) {
                 result.push(edge);
                 continue;
             }
 
             // Generate one Edge object per matching rule
-            matches.forEach((match, index) => {
-                const { rule } = match;
+            matches.forEach((rule, index) => {
                 const matchMrid = edge.id!;
                 let finalConfig = { ...rule.config };
                 const activeOverrides: any[] = [];
@@ -404,7 +416,6 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
 
                 result.push({ 
                     ...edge,
-                    // Ensure unique ID for deck.gl
                     id: index === 0 ? edge.id : `${edge.id}_v${index}`,
                     ...edgeProps,
                     display_pixel_offset: pixelOffset,

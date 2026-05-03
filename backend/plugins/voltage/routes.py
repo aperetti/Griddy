@@ -15,7 +15,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from plugins.sdk import get_sdk
-from src.shared.dependencies import ensure_graph_built
+from src.shared.dependencies import ensure_graph_built, resolve_request_ids
+from src.shared.perf import phase_timer
 
 router = APIRouter(prefix="/api/plugins/voltage", tags=["plugins"])
 sdk = get_sdk("voltage")
@@ -56,11 +57,13 @@ async def estimate_voltage(
     degrees: Optional[int] = Query(None),
 ):
     """Return estimated row count for a voltage distribution query without running it."""
-    ensure_graph_built()
-    ids = _parse_ids(node_ids)
-    _validate_datetimes(start_time, end_time)
+    with phase_timer("request_setup"):
+        ensure_graph_built()
+        ids = _parse_ids(node_ids)
+        resolved_ids = resolve_request_ids(ids)
+        _validate_datetimes(start_time, end_time)
     try:
-        return await run_in_threadpool(sdk.analytics.estimate_voltage, ids, start_time, end_time, degrees)
+        return await run_in_threadpool(sdk.analytics.estimate_voltage, resolved_ids, start_time, end_time, degrees)
     except Exception as exc:
         logger.error("estimate_voltage failed: %s", exc)
         raise HTTPException(status_code=500, detail="Analytics estimate failed")
@@ -78,13 +81,15 @@ async def get_voltage_distribution(
 
     Add ?force=true to bypass the row-count threshold.
     """
-    ensure_graph_built()
-    ids = _parse_ids(node_ids)
-    _validate_datetimes(start_time, end_time)
+    with phase_timer("request_setup"):
+        ensure_graph_built()
+        ids = _parse_ids(node_ids)
+        resolved_ids = resolve_request_ids(ids)
+        _validate_datetimes(start_time, end_time)
 
     if not force:
         try:
-            est = await run_in_threadpool(sdk.analytics.estimate_voltage, ids, start_time, end_time, degrees)
+            est = await run_in_threadpool(sdk.analytics.estimate_voltage, resolved_ids, start_time, end_time, degrees)
         except Exception as exc:
             logger.error("voltage pre-check estimate failed: %s", exc)
             raise HTTPException(status_code=500, detail="Analytics estimate failed")
@@ -101,7 +106,7 @@ async def get_voltage_distribution(
             )
 
     try:
-        return await run_in_threadpool(sdk.analytics.get_voltage_distribution, ids, start_time, end_time, degrees)
+        return await run_in_threadpool(sdk.analytics.get_voltage_distribution, resolved_ids, start_time, end_time, degrees)
     except Exception as exc:
         logger.error("get_voltage_distribution failed: %s", exc)
         raise HTTPException(status_code=500, detail="Analytics query failed")

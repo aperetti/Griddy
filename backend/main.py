@@ -15,12 +15,38 @@ except ImportError:
     print("dotenv not installed")
     pass
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from starlette.responses import Response
+import orjson
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+import time
+
+from src.shared.perf import dump_server_timing, phase_timer, reset_phases
+
+
+class TimedORJSONResponse(Response):
+    """Default response class that serializes via orjson.
+
+    orjson is 5-10x faster than the default json.dumps + jsonable_encoder
+    pipeline for dict/list/datetime payloads. Wrapping render() in a phase
+    timer publishes the encode cost in the Server-Timing header.
+    """
+
+    media_type = "application/json"
+
+    def render(self, content) -> bytes:
+        with phase_timer("response_encode"):
+            return orjson.dumps(
+                content,
+                option=orjson.OPT_NON_STR_KEYS | orjson.OPT_SERIALIZE_NUMPY,
+            )
 
 # Feature Slice Routers
 from src.shared.config_watcher import watcher
+from src.shared.telemetry import init_telemetry, setup_tracing
 # Plugin system
 from plugins import include_plugin_routers
 from plugins.registry_routes import router as plugin_registry_router
@@ -49,6 +75,14 @@ async def lifespan(app: FastAPI):
     # Start the background config watcher
     await watcher.start()
 
+    # Initialize telemetry (dynamic logging)
+    workspace_root = Path(__file__).resolve().parents[1]
+    init_telemetry(workspace_root)
+
+    # Initialize tracing
+    setup_tracing("grid-backend")
+    FastAPIInstrumentor.instrument_app(app)
+
     yield
     # shutdown
     watcher.stop()
@@ -57,7 +91,42 @@ app = FastAPI(
     title="Grid-Scale Analytical Agent",
     version="1.0.0",
     lifespan=lifespan,
+    default_response_class=TimedORJSONResponse,
 )
+
+# Compress JSON payloads above 1 KiB. Time-series responses with repetitive
+# ISO timestamps + floats compress 5-10x.
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
+
+access_logger = logging.getLogger("api.access")
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    reset_phases()
+    start_time = time.time()
+    response = await call_next(request)
+    process_time = time.time() - start_time
+    process_ms = process_time * 1000
+    phases_str = dump_server_timing()
+    server_timing = f"total;dur={process_ms:.2f}"
+    if phases_str:
+        server_timing = f"{server_timing}, {phases_str}"
+    response.headers["Server-Timing"] = server_timing
+    # Browsers won't expose custom response headers to JS by default. Allow
+    # frontend perf.ts to read Server-Timing across origins (CORS).
+    existing_expose = response.headers.get("Access-Control-Expose-Headers", "")
+    if "Server-Timing" not in existing_expose:
+        response.headers["Access-Control-Expose-Headers"] = (
+            f"{existing_expose}, Server-Timing".lstrip(", ")
+        )
+    # Structured log format optimized for Loki parsing
+    access_logger.info(
+        f"API Request: method={request.method} path={request.url.path} "
+        f"status={response.status_code} duration_ms={process_ms:.2f} "
+        f"phases=[{phases_str}] "
+        f"client={request.client.host if request.client else 'unknown'}"
+    )
+    return response
 
 # CORS configuration
 allowed_origins_env = os.environ.get("ALLOWED_ORIGINS")
@@ -68,7 +137,8 @@ else:
         "http://localhost:3000",
         "http://localhost:3001",
         "http://localhost:8000",
-        "http://localhost:8080"
+        "http://localhost:8080",
+        "http://localhost:8081"
     ]
 
 app.add_middleware(

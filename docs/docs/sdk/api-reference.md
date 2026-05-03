@@ -5,10 +5,12 @@ sidebar_position: 3
 
 # SDK API Reference
 
-Import the singleton from `plugins.sdk` — never instantiate the classes directly.
+Initialize the SDK for your plugin using the `get_sdk` factory. The factory reads your plugin's `manifest.json` to determine authorized permissions.
 
 ```python
-from plugins.sdk import sdk
+from plugins.sdk import get_sdk
+
+sdk = get_sdk("my_plugin_name")
 ```
 
 The SDK exposes three namespaced services:
@@ -186,6 +188,36 @@ Voltage distribution (KDE + time-series) for the given nodes. `degrees` controls
 
 ---
 
+### `get_voltage_map`
+
+```python
+sdk.analytics.get_voltage_map(
+    agg: str,
+    start_time: str,
+    end_time: str,
+    start_node_id: str | None = None,
+) -> dict[str, Any]
+```
+
+Calculate aggregated voltage values for map-wide visualization. `agg` can be `min`, `max`, or `avg`. Returns a mapping of `node_id -> value`.
+
+---
+
+### `get_edge_load_map`
+
+```python
+sdk.analytics.get_edge_load_map(
+    agg: str,
+    start_time: str,
+    end_time: str,
+    start_node_id: str | None = None,
+) -> dict[str, Any]
+```
+
+Calculate aggregated edge load for map-wide visualization. Returns a mapping of `edge_id -> value`.
+
+---
+
 ### `estimate_consumption`
 
 ```python
@@ -221,40 +253,90 @@ Same as `estimate_consumption` but for voltage distribution queries.
 
 ---
 
+### `estimate_voltage_map`
+
+```python
+sdk.analytics.estimate_voltage_map(
+    agg: str,
+    start_time: str,
+    end_time: str,
+    start_node_id: str | None = None,
+) -> dict[str, Any]
+```
+
+Estimate row count for a voltage map query.
+
+---
+
+### `estimate_edge_load_map`
+
+```python
+sdk.analytics.estimate_edge_load_map(
+    agg: str,
+    start_time: str,
+    end_time: str,
+    start_node_id: str | None = None,
+) -> dict[str, Any]
+```
+
+Estimate row count for an edge load map query.
+
+---
+
+### `get_phase_balancing`
+
+```python
+sdk.analytics.get_phase_balancing(
+    node_id: str,
+    start_time: str,
+    end_time: str,
+) -> dict[str, Any]
+```
+
+Calculate phase balancing (currents and load) aggregated across all meters downstream of the given `node_id`. Returns medians, peaks, and total energy delivered per phase.
+
+---
+
 ## Frontend TypeScript Contracts
 
 ### `PluginDefinition`
 
 ```typescript
-interface PluginDefinition {
-    /** Unique slug — becomes AnalysisInstance.type. */
+export interface PluginDefinition {
+    /** Unique slug — becomes AnalysisInstance.type for windows this plugin owns. */
     type: string;
 
-    /** Human-readable label shown in the toolbar and minimized tray. */
+    /** Categorization for UI placement. */
+    category: 'node' | 'system';
+
+    /** Human-readable label shown in toolbar tooltip and minimized tray. */
     label: string;
 
-    /** Lucide icon component (pass the component, not JSX). */
+    /** Lucide icon component (pass the component, not JSX: e.g. `Zap` not `<Zap />`). */
     icon: React.ComponentType<{ size?: number; color?: string }>;
 
-    /** Mantine color name for the toolbar button accent. */
+    /** Mantine color name for toolbar button accent. */
     color: string;
 
     /**
-     * Return true if this plugin's button should be shown for the current
-     * selection. Called on every selection change.
+     * Return true if this plugin's toolbar button should be shown for the
+     * current selection. Called every time the selection changes.
+     * @param nodes Currently selected nodes
+     * @param edgeCount Number of currently selected edges
      */
     appliesToNodes: (nodes: Node[], edgeCount?: number) => boolean;
 
     /**
-     * Called when the user clicks the toolbar button. Should create an
-     * AnalysisInstance with loading=true, append it to the window list,
-     * then fetch data and update the instance when done.
+     * Called when the user clicks the toolbar button.
+     * Should create an AnalysisInstance (loading=true), append it to the
+     * window list, then fetch data and update the instance when done.
      */
     handleRun: (ctx: PluginExecutionContext) => void;
 
     /**
-     * Render the floating window for an AnalysisInstance owned by this
-     * plugin. Must wrap the shared AnalysisWindow container.
+     * Render the floating window for an AnalysisInstance whose type matches
+     * this plugin's `type` field.  Must return a React element that wraps
+     * the shared AnalysisWindow container.
      */
     renderWindow: (instance: AnalysisInstance, callbacks: PluginWindowCallbacks) => ReactNode;
 }
@@ -278,6 +360,10 @@ Available as the `ctx` argument passed to `handleRun`.
 | `systemConfig` | `Record<string, string>` | System config overrides (e.g. `analytics_threshold`) |
 | `addHighlightedNodes` | `(ids: string[]) => void` | Additively highlight nodes on the map |
 | `addHighlightedEdges` | `(ids: string[]) => void` | Additively highlight edges on the map |
+| `setNodeAverages` | `(avgs: Record<string, number> \| null) => void` | Update map-wide node colors (for heatmaps) |
+| `setEdgeAverages` | `(avgs: Record<string, number> \| null) => void` | Update map-wide edge colors (for load maps) |
+| `setVoltageScale` | `(scale: VoltageScale) => void` | Update the global voltage color scale |
+| `selectAndNavigateToNode` | `(id: string \| string[]) => void` | Center map and select node(s) |
 
 ---
 
@@ -289,4 +375,9 @@ Passed as the second argument to `renderWindow`.
 |---|---|---|
 | `onClose` | `() => void` | Close and remove the window |
 | `onMinimize` | `() => void` | Minimize to the tray |
+| `onFocus` | `() => void` | Bring window to front |
 | `updateWindow` | `(updates: Partial<AnalysisInstance>) => void` | Pre-bound to the instance ID — update without knowing the ID |
+| `setNodeAverages` | `(avgs: Record<string, number> \| null) => void` | Proxy for the context method |
+| `setEdgeAverages` | `(avgs: Record<string, number> \| null) => void` | Proxy for the context method |
+| `setVoltageScale` | `(scale: any) => void` | Proxy for the context method |
+| `selectAndNavigateToNode` | `(id: string \| string[]) => void` | Proxy for the context method |

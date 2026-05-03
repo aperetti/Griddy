@@ -23,9 +23,10 @@ Create `backend/plugins/my_analysis/__init__.py` (empty) and `backend/plugins/my
 ```python
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
-from plugins.sdk import sdk
+from plugins.sdk import get_sdk
 
 router = APIRouter(prefix="/api/plugins/my-analysis", tags=["plugins"])
+sdk = get_sdk("my_analysis")
 
 _CYPHER = """
 MATCH (eq:MyEquipmentClass)
@@ -49,13 +50,33 @@ async def get_my_analysis(node_ids: str):
 ```
 
 Rules:
-- Only import from `plugins.sdk` — no direct `neo4j`, `duckdb`, or `sqlite3` imports.
+- Only import from `plugins.sdk` via `get_sdk("<name>")` — no direct `neo4j`, `duckdb`, or `sqlite3` imports.
 - Use `run_in_threadpool` because the SDK calls are synchronous.
 - `sdk.cim.run_cypher` rejects write Cypher (CREATE, MERGE, SET, DELETE).
 
 ---
 
-## Step 2 — Register the backend route
+## Step 2 — Manifest file
+
+Every plugin requires a `manifest.json` in its backend directory. This file defines the plugin's metadata and required permissions.
+
+Create `backend/plugins/my_analysis/manifest.json`:
+
+```json
+{
+    "name": "my_analysis",
+    "label": "My Analysis",
+    "permissions": [
+        "cim:read"
+    ]
+}
+```
+
+The `get_sdk` factory reads this file to authorize data access. Available permissions include `cim:read`, `topology:read`, `analytics:consumption`, `analytics:voltage`, and `analytics:load`.
+
+---
+
+## Step 3 — Register the backend route
 
 ```python
 # backend/plugins/__init__.py
@@ -71,7 +92,7 @@ That's the only existing file you need to touch on the backend.
 
 ---
 
-## Step 3 — Frontend API module
+## Step 4 — Frontend API module
 
 Create `frontend/src/plugins/my_analysis/api.ts`:
 
@@ -98,7 +119,7 @@ export async function fetchMyAnalysis(nodeIds: string[]): Promise<MyAnalysisResp
 
 ---
 
-## Step 4 — Frontend plugin definition
+## Step 5 — Frontend plugin definition
 
 Create `frontend/src/plugins/my_analysis/index.ts`:
 
@@ -111,6 +132,7 @@ import { MyAnalysisWindow } from './MyAnalysisWindow';
 
 export const myPlugin: PluginDefinition = {
     type: 'my_analysis',
+    category: 'node',
     label: 'My Analysis',
     icon: Cpu,
     color: 'grape',
@@ -146,7 +168,7 @@ export const myPlugin: PluginDefinition = {
 
 ---
 
-## Step 5 — Window component
+## Step 6 — Window component
 
 Create `frontend/src/plugins/my_analysis/MyAnalysisWindow.tsx`:
 
@@ -208,7 +230,7 @@ export const MyAnalysisWindow = memo(function MyAnalysisWindow({ instance, onClo
 
 ---
 
-## Step 6 — Register the frontend plugin
+## Step 7 — Register the frontend plugin
 
 ```typescript
 // frontend/src/plugins/index.ts

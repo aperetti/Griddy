@@ -149,6 +149,7 @@ export const voltagePlugin: SdkPluginDefinition = {
             zIndex: instance.zIndex ?? 1000,
             layoutMode: 'floating',
             onConfirm,
+            onFocus: callbacks.onFocus,
         });
     },
 };

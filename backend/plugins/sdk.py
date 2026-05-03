@@ -6,8 +6,9 @@ no duckdb.connect, no sqlite3.connect).  All data access goes through this SDK,
 which delegates to the existing shared infrastructure.
 
 Usage in a plugin route:
-    from plugins.sdk import sdk
+    from plugins.sdk import get_sdk
 
+    sdk = get_sdk("my_plugin")
     rows = sdk.cim.run_cypher(CYPHER, {"node_ids": ids})
     nodes, edges = sdk.topology.get_downstream(node_id)
     result = sdk.analytics.get_consumption(node_ids, start, end)
@@ -27,8 +28,10 @@ logger = logging.getLogger(__name__)
 class PluginCimService:
     """Query CIM data stored in Neo4j via the shared registry."""
 
-    def __init__(self, permissions: list[str]):
+    def __init__(self, plugin_name: str, permissions: list[str]):
+        self.plugin_name = plugin_name
         self.permissions = permissions
+        self._logger = logging.getLogger(f"plugins.{plugin_name}")
 
     def _check(self, required: str):
         if required not in self.permissions:
@@ -42,6 +45,7 @@ class PluginCimService:
     def run_cypher(self, query: str, params: dict | None = None) -> list[dict]:
         """Execute a read-only Cypher query across all active CIM models."""
         self._check("cim:read")
+        self._logger.info("Executing Cypher query")
         import re
         _WRITE = re.compile(
             r"\b(CREATE|MERGE|SET|DELETE|REMOVE|DROP|FOREACH"
@@ -118,8 +122,10 @@ class PluginCimService:
 class PluginTopologyService:
     """Traverse the grid topology graph via the shared NetworkX engine."""
 
-    def __init__(self, permissions: list[str]):
+    def __init__(self, plugin_name: str, permissions: list[str]):
+        self.plugin_name = plugin_name
         self.permissions = permissions
+        self._logger = logging.getLogger(f"plugins.{plugin_name}")
 
     def _check(self, required: str):
         if required not in self.permissions:
@@ -137,11 +143,13 @@ class PluginTopologyService:
     ) -> tuple[list[str], list[str]]:
         """Return (node_ids, edge_ids) downstream of the given node."""
         self._check("topology:read")
+        self._logger.info("Trace downstream requested for node %s", node_id)
         return self._engine.find_downstream(node_id, max_depth=max_depth)
 
     def get_upstream(self, node_id: str) -> tuple[list[str], list[str]]:
         """Return (node_ids, edge_ids) upstream of the given node."""
         self._check("topology:read")
+        self._logger.info("Trace upstream requested for node %s", node_id)
         return self._engine.find_upstream(node_id)
 
     def get_active_model_ids(self) -> list[str]:
@@ -158,8 +166,10 @@ class PluginTopologyService:
 class PluginAnalyticsService:
     """Run pre-built analytics queries via the shared use-case layer."""
 
-    def __init__(self, permissions: list[str]):
+    def __init__(self, plugin_name: str, permissions: list[str]):
+        self.plugin_name = plugin_name
         self.permissions = permissions
+        self._logger = logging.getLogger(f"plugins.{plugin_name}")
 
     def _check(self, required: str):
         if required not in self.permissions:
@@ -183,6 +193,7 @@ class PluginAnalyticsService:
     ) -> dict[str, Any]:
         """Aggregate consumption time series for the given nodes."""
         self._check("analytics:consumption")
+        self._logger.info("Calculating consumption for %d nodes", len(node_ids))
         from src.analytics.calculate_consumption import CalculateAggregateConsumptionUseCase
         uc = CalculateAggregateConsumptionUseCase(self._engine, self._meter_repo)
         return uc.execute(node_ids, start_time, end_time)
@@ -196,6 +207,7 @@ class PluginAnalyticsService:
     ) -> dict[str, Any]:
         """Voltage distribution (KDE + timeseries) for the given nodes."""
         self._check("analytics:voltage")
+        self._logger.info("Calculating voltage distribution for %d nodes", len(node_ids))
         from src.analytics.calculate_voltage import CalculateVoltageDistributionUseCase
         uc = CalculateVoltageDistributionUseCase(self._engine, self._meter_repo)
         return uc.execute(node_ids, start_time, end_time, degrees=degrees)
@@ -234,6 +246,7 @@ class PluginAnalyticsService:
     ) -> dict[str, Any]:
         """Calculate aggregated voltage values for map-wide visualization."""
         self._check("analytics:voltage")
+        self._logger.info("Generating map voltage summary (agg=%s, root_node=%s)", agg, start_node_id)
         from src.analytics.map_voltage import MapVoltageUseCase
         uc = MapVoltageUseCase(self._engine, self._meter_repo)
         return uc.execute(start_time, end_time, agg, start_node_id=start_node_id)
@@ -260,6 +273,7 @@ class PluginAnalyticsService:
     ) -> dict[str, Any]:
         """Calculate aggregated edge load for map-wide visualization."""
         self._check("analytics:load")
+        self._logger.info("Generating edge load summary (agg=%s, root_node=%s)", agg, start_node_id)
         from src.analytics.map_edge_load import MapEdgeLoadUseCase
         uc = MapEdgeLoadUseCase(self._engine, self._meter_repo)
         return uc.execute(start_time, end_time, agg, start_node_id=start_node_id)
@@ -277,6 +291,19 @@ class PluginAnalyticsService:
         uc = MapEdgeLoadUseCase(self._engine, self._meter_repo)
         return uc.estimate(start_time, end_time, agg, start_node_id=start_node_id)
 
+    def get_phase_balancing(
+        self,
+        node_id: str,
+        start_time: str,
+        end_time: str,
+    ) -> dict[str, Any]:
+        """Calculate phase balancing (currents/load) for the given node and its downstream."""
+        self._check("analytics:consumption")
+        self._logger.info("Calculating phase balancing for node %s", node_id)
+        from src.analytics.phase_balancing import PhaseBalancingUseCase
+        uc = PhaseBalancingUseCase(self._engine, self._meter_repo)
+        return uc.execute(node_id, start_time, end_time)
+
 
 
 # ---------------------------------------------------------------------------
@@ -288,9 +315,10 @@ class PluginSDK:
     def __init__(self, plugin_name: str, permissions: list[str]):
         self.plugin_name = plugin_name
         self.permissions = permissions
-        self.cim = PluginCimService(permissions)
-        self.topology = PluginTopologyService(permissions)
-        self.analytics = PluginAnalyticsService(permissions)
+        self.logger = logging.getLogger(f"plugins.{plugin_name}")
+        self.cim = PluginCimService(plugin_name, permissions)
+        self.topology = PluginTopologyService(plugin_name, permissions)
+        self.analytics = PluginAnalyticsService(plugin_name, permissions)
 
 def get_sdk(plugin_name: str) -> PluginSDK:
     """Factory to get an authorized SDK for a specific plugin."""
