@@ -20,6 +20,9 @@ const sidebars: SidebarsConfig = {
       items: [
         'overview',
         'architecture',
+        'application-architecture',
+        'database-schema',
+        'security-architecture',
         'user-interface',
       ],
     },
