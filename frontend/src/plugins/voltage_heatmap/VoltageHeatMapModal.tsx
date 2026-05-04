@@ -15,6 +15,7 @@ export interface VoltageHeatMapModalProps {
   isPaused: boolean;
   zIndex: number;
   onConfirm: () => void;
+  onFocus?: () => void;
 }
 
 export const VoltageHeatMapModal: React.FC<VoltageHeatMapModalProps> = ({
@@ -29,6 +30,7 @@ export const VoltageHeatMapModal: React.FC<VoltageHeatMapModalProps> = ({
   isPaused,
   zIndex,
   onConfirm,
+  onFocus,
 }) => {
   return (
     <AnalysisWindow
@@ -37,6 +39,7 @@ export const VoltageHeatMapModal: React.FC<VoltageHeatMapModalProps> = ({
       isMinimized={isMinimized}
       onClose={onClose}
       onMinimize={onMinimize}
+      onFocus={onFocus}
       zIndex={zIndex}
       storageKey="voltage_heatmap_window"
     >

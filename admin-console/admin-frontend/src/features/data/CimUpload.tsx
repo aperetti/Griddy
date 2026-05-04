@@ -1,4 +1,4 @@
-import { Group, Text, rem, Stack, Paper, Title } from '@mantine/core';
+import { Group, Text, rem, Stack, Paper, Title, Alert } from '@mantine/core';
 import { Upload, FileCode, X } from 'lucide-react';
 import { Dropzone } from '@mantine/dropzone';
 import { dataApi } from '../../api';
@@ -39,10 +39,9 @@ export function CimUpload() {
     <Paper withBorder p="md" radius="md">
       <Stack gap="xs">
         <Title order={5}>Upload CIM XML</Title>
-        <Text size="sm" c="dimmed">
-          Drop a CIM XML file here to trigger automatic ingestion into Neo4j.
-        </Text>
-        
+        <Alert title="Automatic Ingestion" color="blue" icon={<Upload size={16} />}>
+          Drop a CIM XML file here to automatically queue it for processing. The system continuously monitors the ingest folder and handles parsing, neo4j loading, and spatial data generation in the background.
+        </Alert>
         <Dropzone
           onDrop={handleUpload}
           onReject={(files) => {

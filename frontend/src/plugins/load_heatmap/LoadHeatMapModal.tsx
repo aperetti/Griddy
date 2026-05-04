@@ -15,6 +15,7 @@ export interface LoadHeatMapModalProps {
   isPaused: boolean;
   zIndex: number;
   onConfirm: () => void;
+  onFocus?: () => void;
   startTime?: string;
   endTime?: string;
 }
@@ -31,6 +32,7 @@ export const LoadHeatMapModal: React.FC<LoadHeatMapModalProps> = ({
   isPaused,
   zIndex,
   onConfirm,
+  onFocus,
   startTime,
   endTime,
 }) => {
@@ -58,6 +60,7 @@ export const LoadHeatMapModal: React.FC<LoadHeatMapModalProps> = ({
       isMinimized={isMinimized}
       onClose={onClose}
       onMinimize={onMinimize}
+      onFocus={onFocus}
       zIndex={zIndex}
       storageKey="load_heatmap_window"
     >

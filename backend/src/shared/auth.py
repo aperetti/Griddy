@@ -6,10 +6,16 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from src.shared.database_setup import ADMIN_DB_PATH
 
-security = HTTPBasic()
+security = HTTPBasic(auto_error=False)
 
 
 def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+    
     correct_username = None
     stored_hash = None
     stored_salt = None

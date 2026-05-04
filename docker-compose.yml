@@ -122,12 +122,14 @@ services:
     volumes:
       - grid_config:/data/config
       - ./infra:/infra
+      - ./ingest:/data/ingest
     environment:
       - ADMIN_CONSOLE_PORT=8090
       - ADMIN_DB_PATH=/data/config/admin.sqlite
       - RULES_DB_PATH=/data/config/rules.sqlite
       - MAIN_BACKEND_URL=http://backend:8000
       - INFRA_DIR=/infra
+      - INGEST_DIR=/data/ingest
       - TELEMETRY_CONFIG_PATH=/infra/telemetry_config.json
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4317
     ports:

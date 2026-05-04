@@ -37,8 +37,10 @@ services:
       - ./admin-console/admin-backend:/app
       - /app/node_modules
       - ./infra:/app/infra
+      - ./ingest:/data/ingest
     environment:
       - INFRA_DIR=/app/infra
+      - INGEST_DIR=/data/ingest
       - TELEMETRY_CONFIG_PATH=/app/infra/telemetry_config.json
       - ADMIN_DB_PATH=/app/admin.sqlite
       - RULES_DB_PATH=/app/rules.sqlite

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Grid, Stack, Title, Text, Button, Group, ActionIcon, List, ThemeIcon, Box, Paper, Alert, Loader, Textarea } from '@mantine/core';
+import { Grid, Stack, Title, Text, Button, Group, ActionIcon, List, Box, Paper, Alert, Loader, Textarea } from '@mantine/core';
 import { Save, RefreshCcw, FileJson, FileCode, FileText, Check, AlertCircle } from 'lucide-react';
 import { configApi } from '../../api';
 import { notifications } from '@mantine/notifications';

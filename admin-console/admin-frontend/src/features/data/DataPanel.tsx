@@ -1,91 +1,11 @@
-import { useState } from 'react';
-import { Button, Group, Paper, Title, Stack, Text, Alert, ThemeIcon } from '@mantine/core';
-import { Database, Play, Info, Activity } from 'lucide-react';
-import { dataApi } from '../../api';
+import { Stack, Title } from '@mantine/core';
 import { CimUpload } from './CimUpload';
 
 export function DataPanel() {
-  const [loading, setLoading] = useState<string | null>(null);
-  const [result, setResult] = useState<{ success: boolean; output: string; error: string } | null>(null);
-
-  const handleAction = async (type: 'generate' | 'ingest') => {
-    setLoading(type);
-    setResult(null);
-    try {
-      const res = await (type === 'generate' ? dataApi.generate() : dataApi.ingest());
-      setResult(res);
-    } catch (err: any) {
-      setResult({ success: false, output: '', error: err.message });
-    } finally {
-      setLoading(null);
-    }
-  };
-
   return (
     <Stack gap="md">
       <Title order={4}>Pipeline Control</Title>
       <CimUpload />
-      
-      <Group grow>
-        <Paper>
-          <Stack>
-            <Group justify="space-between">
-              <ThemeIcon size="lg" variant="light" color="blue">
-                <Database size={20} />
-              </ThemeIcon>
-              <Button 
-                variant="filled" 
-                leftSection={<Play size={16} />} 
-                loading={loading === 'ingest'}
-                onClick={() => handleAction('ingest')}
-              >
-                Run Ingestion
-              </Button>
-            </Group>
-            <Title order={5}>CIM Ingestor</Title>
-            <Text size="sm" c="dimmed">
-              Executes `ingest_cim_to_neo4j.py` to refresh the Neo4j grid topology from uploaded XML files.
-            </Text>
-          </Stack>
-        </Paper>
-
-        <Paper>
-          <Stack>
-            <Group justify="space-between">
-              <ThemeIcon size="lg" variant="light" color="cyan">
-                <Activity size={20} color="cyan" />
-              </ThemeIcon>
-              <Button 
-                variant="filled" 
-                color="cyan"
-                leftSection={<Play size={16} />} 
-                loading={loading === 'generate'}
-                onClick={() => handleAction('generate')}
-              >
-                Bulk Ingest
-              </Button>
-            </Group>
-            <Title order={5}>Full Ingestion Pipeline</Title>
-            <Text size="sm" c="dimmed">
-              Orchestrates full ingestion of all models into Neo4j. (Readings are now generated in-memory on demand).
-            </Text>
-          </Stack>
-        </Paper>
-      </Group>
-
-      {result && (
-        <Alert 
-          icon={<Info size={16} />} 
-          title={result.success ? "Execution Successful" : "Execution Failed"} 
-          color={result.success ? "green" : "red"}
-          withCloseButton
-          onClose={() => setResult(null)}
-        >
-          <Text size="xs" style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>
-            {result.error || result.output}
-          </Text>
-        </Alert>
-      )}
     </Stack>
   );
 }
