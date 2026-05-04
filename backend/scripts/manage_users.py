@@ -16,17 +16,18 @@ else:
 sys.path.insert(0, str(BASE_DIR))
 
 try:
-    from src.shared.database_setup import ADMIN_SQLITE_PATH
+    from src.shared.database_setup import ADMIN_DB_PATH
 except ImportError:
     print("Error: Could not import database_setup. Make sure you run this script from the project root or backend directory.")
     sys.exit(1)
 
 
-def get_connection():
-    if not os.path.exists(ADMIN_SQLITE_PATH):
-        print(f"Error: Admin database not found at {ADMIN_SQLITE_PATH}. Please start the backend to initialize it.")
+def get_db():
+    if not os.path.exists(ADMIN_DB_PATH):
+        print(f"Error: Admin database not found at {ADMIN_DB_PATH}. Please start the backend to initialize it.")
         sys.exit(1)
-    return sqlite3.connect(ADMIN_SQLITE_PATH)
+    return sqlite3.connect(ADMIN_DB_PATH)
+
 
 
 def list_users(args):

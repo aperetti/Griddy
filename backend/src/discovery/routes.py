@@ -7,7 +7,7 @@ from src.shared.auth import get_current_username
 from pydantic import BaseModel
 from typing import Any, Dict, List
 import sqlite3
-from src.shared.dependencies import registry, ensure_graph_built, ADMIN_SQLITE_PATH
+from src.shared.dependencies import registry, ensure_graph_built, ADMIN_DB_PATH
 
 router = APIRouter(prefix="/api/cim", tags=["discovery"])
 logger = logging.getLogger(__name__)
@@ -335,7 +335,8 @@ class ConfigUpdate(BaseModel):
 
 
 def _get_admin_conn():
-    conn = sqlite3.connect(ADMIN_SQLITE_PATH)
+    # Enforce Read-Only mode
+    conn = sqlite3.connect(f"file:{ADMIN_DB_PATH}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
 

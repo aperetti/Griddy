@@ -2,14 +2,14 @@ import sqlite3
 import json
 import logging
 from typing import Dict, Any, List
-from src.shared.database_setup import ADMIN_SQLITE_PATH
+from src.shared.database_setup import RULES_DB_PATH
 
 logger = logging.getLogger(__name__)
 
 class DisplayRuleIO:
     """Handles import/export of display configuration profiles and their rules."""
 
-    def __init__(self, db_path: str = ADMIN_SQLITE_PATH):
+    def __init__(self, db_path: str = RULES_DB_PATH):
         self.db_path = db_path
 
     def _get_conn(self):

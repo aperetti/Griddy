@@ -13,7 +13,7 @@ import hashlib
 import itertools
 import logging
 
-from src.shared.dependencies import ADMIN_SQLITE_PATH
+from src.shared.dependencies import RULES_DB_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -204,7 +204,8 @@ class SpriteGenerator:
             })
 
         try:
-            with sqlite3.connect(ADMIN_SQLITE_PATH) as conn:
+            # Enforce Read-Only mode
+            with sqlite3.connect(f"file:{RULES_DB_PATH}?mode=ro", uri=True) as conn:
                 conn.row_factory = sqlite3.Row
                 rules = conn.execute("SELECT * FROM display_config_rules WHERE enabled = 1").fetchall()
                 for rule in rules:

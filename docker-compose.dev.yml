@@ -40,6 +40,8 @@ services:
     environment:
       - INFRA_DIR=/app/infra
       - TELEMETRY_CONFIG_PATH=/app/infra/telemetry_config.json
+      - ADMIN_DB_PATH=/app/admin.sqlite
+      - RULES_DB_PATH=/app/rules.sqlite
 
   admin-frontend:
     build:

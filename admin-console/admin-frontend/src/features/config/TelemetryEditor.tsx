@@ -181,7 +181,7 @@ export function TelemetryEditor({ hideHeader = false }: { hideHeader?: boolean }
       )}
 
       {config && (
-        <Tabs defaultValue="logging">
+        <Tabs defaultValue="logging" keepMounted={false}>
           <Tabs.List>
             <Tabs.Tab value="logging" leftSection={<Settings size={16} />}>Log Levels</Tabs.Tab>
             <Tabs.Tab value="tracing" leftSection={<Activity size={16} />}>Tracing</Tabs.Tab>
@@ -257,7 +257,7 @@ export function TelemetryEditor({ hideHeader = false }: { hideHeader?: boolean }
                     min={0}
                     max={1}
                     step={0.1}
-                    precision={2}
+                    decimalScale={2}
                     value={config.tracing?.sampling_rate}
                     onChange={updateSamplingRate}
                     style={{ maxWidth: 200 }}

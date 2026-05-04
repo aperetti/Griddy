@@ -11,7 +11,7 @@ export function SystemManagementPanel() {
         <Text size="sm" c="dimmed">Control platform features, access, and security.</Text>
       </Stack>
 
-      <Tabs defaultValue="plugins">
+      <Tabs defaultValue="plugins" keepMounted={false}>
         <Tabs.List mb="md">
           <Tabs.Tab value="plugins" leftSection={<Puzzle size={14} />}>Features & Plugins</Tabs.Tab>
           <Tabs.Tab value="users" leftSection={<Users size={14} />}>User Access</Tabs.Tab>

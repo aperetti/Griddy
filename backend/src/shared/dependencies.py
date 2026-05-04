@@ -23,24 +23,20 @@ def get_neo4j_driver():
         _neo4j_driver = GraphDatabase.driver(url, auth=(user, password))
     return _neo4j_driver
 from src.shared.cim_registry import CimModelRegistry
-from src.shared.sqlite_repository import AlarmRepository
 
 logger = logging.getLogger(__name__)
 from src.grid.topology_engine import TopologyEngine
 from src.grid.display_rule_engine import DisplayRuleEngine
 from src.shared.meter_data_repository import IMeterDataRepository
 from src.shared.meter_adapters.duckdb_adapter import DuckDBMeterDataRepository
-from src.shared.database_setup import DB_PATH, ADMIN_SQLITE_PATH, PARQUET_DIR
+from src.shared.database_setup import DB_PATH, ADMIN_DB_PATH, RULES_DB_PATH, PARQUET_DIR
 
 # ── Global Instances ─────────────────────────────────────────────
 # CIM model registry (populated during FastAPI lifespan startup)
 registry = CimModelRegistry.get_instance()
 
-# Alarms are stored in admin.sqlite alongside display-rule configuration
-alarm_repo = AlarmRepository(ADMIN_SQLITE_PATH)
-
-# Display rule engine for node classification
-display_engine = DisplayRuleEngine(ADMIN_SQLITE_PATH)
+# Display rule engine for node classification (Reads from rules.sqlite)
+display_engine = DisplayRuleEngine(RULES_DB_PATH)
 
 # topology graph engine (dependency-free BFS over pre-computed CIM edges)
 graph_engine = TopologyEngine()

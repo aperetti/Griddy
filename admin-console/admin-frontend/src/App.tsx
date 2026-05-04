@@ -31,7 +31,7 @@ export default function App() {
 
         <AppShell.Main>
           <Container size="xl">
-            <Tabs defaultValue="data" variant="pills" radius="md">
+            <Tabs defaultValue="data" variant="pills" radius="md" keepMounted={false}>
               <Tabs.List mb="xl">
                 <Tabs.Tab value="data" leftSection={<Database size={16} />}>Data Management</Tabs.Tab>
                 <Tabs.Tab value="rules" leftSection={<LayoutList size={16} />}>Display Rules</Tabs.Tab>

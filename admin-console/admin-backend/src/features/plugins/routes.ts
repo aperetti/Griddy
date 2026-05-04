@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { getDb } from '../../shared/database.js';
+import { getAdminDb } from '../../shared/database.js';
 
 const MAIN_BACKEND_URL = process.env.MAIN_BACKEND_URL || 'http://localhost:8000';
 
@@ -12,7 +12,7 @@ export async function pluginsRoutes(fastify: FastifyInstance) {
       }
       const registry = await response.json() as { name: string; enabled: boolean; description?: string; permissions?: string[] }[];
 
-      const db = await getDb();
+      const db = await getAdminDb();
       const configs: { key: string; value: string }[] = await db.all(
         "SELECT key, value FROM config_overrides WHERE key LIKE 'plugin.%.enabled'"
       );
@@ -34,7 +34,7 @@ export async function pluginsRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const { name } = request.params;
       const { enabled } = request.body;
-      const db = await getDb();
+      const db = await getAdminDb();
       await db.run(
         'INSERT OR REPLACE INTO config_overrides (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)',
         [`plugin.${name}.enabled`, String(enabled)]

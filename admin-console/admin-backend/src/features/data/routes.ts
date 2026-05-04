@@ -5,6 +5,21 @@ import fs from 'fs';
 import { pipeline } from 'stream/promises';
 import multipart from '@fastify/multipart';
 
+/**
+ * Resolves the Python executable path based on the environment.
+ */
+function resolvePythonPath(): string {
+  // Check for virtualenv in dev (Windows/Linux)
+  const winVenv = path.join(process.cwd(), '..', '..', '.venv', 'Scripts', 'python.exe');
+  const nixVenv = path.join(process.cwd(), '..', '..', '.venv', 'bin', 'python');
+  
+  if (fs.existsSync(winVenv)) return winVenv;
+  if (fs.existsSync(nixVenv)) return nixVenv;
+  
+  // Default to system python in Docker/Production
+  return 'python3';
+}
+
 export async function dataRoutes(fastify: FastifyInstance) {
   // Register multipart support for this route group
   await fastify.register(multipart, {
@@ -14,9 +29,11 @@ export async function dataRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/generate', async (request, reply) => {
-    const pythonPath = path.join(process.cwd(), '..', '..', '.venv', 'Scripts', 'python.exe');
+    const pythonPath = resolvePythonPath();
     const scriptPath = path.join(process.cwd(), '..', '..', 'backend', 'scripts', 'generate_all.py');
-    const result = await runCommand(`${pythonPath} ${scriptPath}`);
+    
+    // Secure: arguments passed as array
+    const result = await runCommand(pythonPath, [scriptPath]);
     return { 
       success: result.stderr === '', 
       output: result.stdout, 
@@ -25,10 +42,12 @@ export async function dataRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/ingest', async (request, reply) => {
-    const pythonPath = path.join(process.cwd(), '..', '..', '.venv', 'Scripts', 'python.exe');
+    const pythonPath = resolvePythonPath();
     const scriptPath = path.join(process.cwd(), '..', '..', 'backend', 'scripts', 'ingest_cim_to_neo4j.py');
     const ingestDir = path.join(process.cwd(), '..', '..', 'ingest');
-    const result = await runCommand(`${pythonPath} ${scriptPath} ${ingestDir}`);
+    
+    // Secure: arguments passed as array
+    const result = await runCommand(pythonPath, [scriptPath, ingestDir]);
     return { 
       success: result.stderr === '', 
       output: result.stdout, 

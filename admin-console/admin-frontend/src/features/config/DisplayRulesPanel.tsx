@@ -47,7 +47,7 @@ export function DisplayRulesPanel() {
         <Text size="sm" c="dimmed">Manage how data is interpreted and visualized across the system.</Text>
       </Stack>
 
-      <Tabs defaultValue="profiles">
+      <Tabs defaultValue="profiles" keepMounted={false}>
         <Tabs.List mb="md">
           <Tabs.Tab value="profiles" leftSection={<Layout size={14} />}>Visual Profiles</Tabs.Tab>
           <Tabs.Tab value="overrides" leftSection={<ListFilter size={14} />}>Business Overrides</Tabs.Tab>

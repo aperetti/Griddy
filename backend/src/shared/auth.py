@@ -4,7 +4,7 @@ import sqlite3
 import hashlib
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from src.shared.database_setup import ADMIN_SQLITE_PATH
+from src.shared.database_setup import ADMIN_DB_PATH
 
 security = HTTPBasic()
 
@@ -15,8 +15,9 @@ def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
     stored_salt = None
 
     try:
-        if os.path.exists(ADMIN_SQLITE_PATH):
-            conn = sqlite3.connect(ADMIN_SQLITE_PATH)
+        if os.path.exists(ADMIN_DB_PATH):
+            # Enforce Read-Only mode for authentication
+            conn = sqlite3.connect(f"file:{ADMIN_DB_PATH}?mode=ro", uri=True)
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT username, password_hash, salt FROM users WHERE username = ?",

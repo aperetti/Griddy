@@ -16,7 +16,7 @@ from src.shared.meter_data_repository import (
     MapAggregationPoint, 
     PhaseBalancingResult
 )
-from src.shared.database_setup import DB_PATH, ADMIN_SQLITE_PATH, PARQUET_DIR, to_int_id
+from src.shared.database_setup import DB_PATH, PARQUET_DIR, to_int_id
 from src.shared.perf import record_phase
 
 logger = logging.getLogger(__name__)

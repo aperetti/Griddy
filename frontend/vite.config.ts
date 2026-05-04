@@ -38,6 +38,16 @@ export default defineConfig(({ mode }) => {
             });
           },
         },
+        '/admin-api': {
+          target: env.VITE_ADMIN_API_PROXY_TARGET || 'http://admin-backend:8090',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/admin-api/, '/api'),
+          configure: (proxy, _options) => {
+            proxy.on('error', (err, _req, _res) => {
+              console.log('admin proxy error', err);
+            });
+          },
+        },
         '/api': {
           target: env.VITE_API_PROXY_TARGET || 'http://backend:8000',
           changeOrigin: true,

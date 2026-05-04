@@ -11,7 +11,7 @@ export function ObservabilityPanel() {
         <Text size="sm" c="dimmed">Monitor system health and configure real-time tracing/logging.</Text>
       </Stack>
 
-      <Tabs defaultValue="dashboards">
+      <Tabs defaultValue="dashboards" keepMounted={false}>
         <Tabs.List mb="md">
           <Tabs.Tab value="dashboards" leftSection={<BarChart3 size={14} />}>Dashboards</Tabs.Tab>
           <Tabs.Tab value="config" leftSection={<Settings size={14} />}>Log & Trace Levels</Tabs.Tab>

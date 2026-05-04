@@ -24,7 +24,12 @@ else:
 
 # Find project root for admin database (which lives in admin-console/admin-backend)
 _PROJECT_ROOT = BASE_DIR if (BASE_DIR / "admin-console").exists() else BASE_DIR.parent
-ADMIN_SQLITE_PATH = os.getenv("ADMIN_DB_PATH") or os.getenv("CONFIG_DB_PATH") or str(_PROJECT_ROOT / "admin-console" / "admin-backend" / "admin.sqlite")
+
+# ── SQLite paths: Separated for Least-Privilege Access ──────────
+# admin.sqlite  — users, config overrides, jobs
+# rules.sqlite  — display profiles and rules
+ADMIN_DB_PATH = os.getenv("ADMIN_DB_PATH") or str(_PROJECT_ROOT / "admin-console" / "admin-backend" / "admin.sqlite")
+RULES_DB_PATH = os.getenv("RULES_DB_PATH") or str(_PROJECT_ROOT / "admin-console" / "admin-backend" / "rules.sqlite")
 
 # ── DuckDB: analytics engine (weather_recordings + parquet reads) ─
 DB_PATH = os.getenv("DB_PATH", str(BASE_DIR / "grid_data_cim.duckdb"))
@@ -38,20 +43,55 @@ PARQUET_ALARMS_DIR = os.getenv("PARQUET_ALARMS_DIR", str(_PROJECT_ROOT / "cim_al
 
 
 def init_admin_db():
-    """Initialises the admin database schema (display rules)."""
-    # Ensure the parent directory exists
-    admin_db_dir = os.path.dirname(ADMIN_SQLITE_PATH)
-    if admin_db_dir and not os.path.exists(admin_db_dir):
-        try:
-            os.makedirs(admin_db_dir, exist_ok=True)
-            print(f"Created directory for admin database: {admin_db_dir}")
-        except Exception as e:
-            print(f"Warning: Could not create directory {admin_db_dir}: {e}")
+    """Initialises the administrative and rules databases."""
+    for path in [ADMIN_DB_PATH, RULES_DB_PATH]:
+        db_dir = os.path.dirname(path)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
 
-    conn = sqlite3.connect(ADMIN_SQLITE_PATH)
+    # 1. Initialize Admin DB (Users & Overrides)
+    admin_conn = sqlite3.connect(ADMIN_DB_PATH)
+    admin_conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            salt TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    admin_conn.execute("""
+        CREATE TABLE IF NOT EXISTS config_overrides (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     
-    # Tables for display configurations (profiles)
-    conn.execute("""
+    # Seed default admin user
+    cursor = admin_conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM users")
+    if cursor.fetchone()[0] == 0:
+        salt = os.urandom(16)
+        password_hash = hashlib.pbkdf2_hmac('sha256', b"admin", salt, 100000)
+        admin_conn.execute(
+            "INSERT INTO users (username, password_hash, salt) VALUES (?, ?, ?)",
+            ("admin", password_hash.hex(), salt.hex())
+        )
+    
+    # Seed default analytics threshold
+    cursor.execute("SELECT COUNT(*) FROM config_overrides WHERE key = 'analytics_threshold'")
+    if cursor.fetchone()[0] == 0:
+        admin_conn.execute(
+            "INSERT INTO config_overrides (key, value) VALUES (?, ?)",
+            ("analytics_threshold", "2000000")
+        )
+    admin_conn.commit()
+    admin_conn.close()
+
+    # 2. Initialize Rules DB (Display Configs)
+    rules_conn = sqlite3.connect(RULES_DB_PATH)
+    rules_conn.execute("""
         CREATE TABLE IF NOT EXISTS display_configs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
@@ -61,11 +101,7 @@ def init_admin_db():
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    
-    # Table for display rules within a configuration
-    # match_conditions stores JSON of CIM conditions
-    # config stores JSON of display configuration (icon, color, etc.)
-    conn.execute("""
+    rules_conn.execute("""
         CREATE TABLE IF NOT EXISTS display_config_rules (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
             config_id           INTEGER NOT NULL REFERENCES display_configs(id) ON DELETE CASCADE,
@@ -80,65 +116,12 @@ def init_admin_db():
     """)
     
     from .migrations import run_admin_migrations
-    run_admin_migrations(conn)
-
-    # ── Users Table ───────────────────────────────────────────────
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL UNIQUE,
-            password_hash TEXT NOT NULL,
-            salt TEXT NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM users")
-    if cursor.fetchone()[0] == 0:
-        salt = os.urandom(16)
-        password_hash = hashlib.pbkdf2_hmac('sha256', b"admin", salt, 100000)
-        conn.execute(
-            "INSERT INTO users (username, password_hash, salt) VALUES (?, ?, ?)",
-            ("admin", password_hash.hex(), salt.hex())
-        )
-        print("Default admin user created.")
+    run_admin_migrations(rules_conn) # Apply display rule migrations to rules DB
     
-    # ── Config Overrides ──────────────────────────────────────────
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS config_overrides (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # Seed default analytics threshold if not exists
-    cursor.execute("SELECT COUNT(*) FROM config_overrides WHERE key = 'analytics_threshold'")
-    if cursor.fetchone()[0] == 0:
-        conn.execute(
-            "INSERT INTO config_overrides (key, value) VALUES (?, ?)",
-            ("analytics_threshold", "2000000")
-        )
-
-    # ── Alarms ────────────────────────────────────────────────────
-    # Operational alarm events referencing CIM node mRIDs.
-    # Kept here (not in Neo4j) because they are written by external
-    # SCADA/ingestion processes and do not belong in the CIM graph.
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS alarms (
-            alarm_id  TEXT PRIMARY KEY,
-            node_id   TEXT,
-            timestamp TEXT,
-            alarm_code TEXT,
-            severity  TEXT,
-            message   TEXT,
-            is_active INTEGER DEFAULT 1
-        )
-    """)
-
-    conn.commit()
-    conn.close()
-    print(f"Admin database initialised at {ADMIN_SQLITE_PATH}")
+    rules_conn.commit()
+    rules_conn.close()
+    
+    print(f"Databases initialised: \n - {ADMIN_DB_PATH}\n - {RULES_DB_PATH}")
 
 
 def init_db():

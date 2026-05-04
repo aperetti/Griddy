@@ -95,9 +95,9 @@ export async function configRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // ... (rest of the routes)
+  // ── Configuration Overrides ──────────────────────────────────
   fastify.get('/overrides', async () => {
-    const db = await getDb();
+    const db = await getAdminDb();
     return db.all('SELECT * FROM config_overrides');
   });
 
@@ -116,7 +116,7 @@ export async function configRoutes(fastify: FastifyInstance) {
 
   fastify.post('/overrides', async (request, reply) => {
     const { key, value } = request.body as { key: string, value: string };
-    const db = await getDb();
+    const db = await getAdminDb();
     await db.run(
       'INSERT OR REPLACE INTO config_overrides (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)',
       [key, value]
@@ -128,7 +128,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   
   // List all profiles
   fastify.get('/configs', async () => {
-    const db = await getDb();
+    const db = await getRulesDb();
     const rows = await db.all(`
       SELECT 
         c.*,
@@ -142,7 +142,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   // Create profile
   fastify.post('/configs', async (request, reply) => {
     const { name, description } = request.body as { name: string, description?: string };
-    const db = await getDb();
+    const db = await getRulesDb();
     const result = await db.run(
       'INSERT INTO display_configs (name, description, is_default) VALUES (?, ?, 0)',
       [name, description || '']
@@ -155,7 +155,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   fastify.put('/configs/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
     const { name, description } = request.body as { name: string, description?: string };
-    const db = await getDb();
+    const db = await getRulesDb();
     
     const result = await db.run(
       'UPDATE display_configs SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
@@ -169,7 +169,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   // Set default profile
   fastify.put('/configs/:id/set-default', async (request, reply) => {
     const { id } = request.params as { id: string };
-    const db = await getDb();
+    const db = await getRulesDb();
     
     await db.run('BEGIN TRANSACTION');
     try {
@@ -190,7 +190,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   // Delete profile
   fastify.delete('/configs/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
-    const db = await getDb();
+    const db = await getRulesDb();
     const config = await db.get('SELECT is_default FROM display_configs WHERE id = ?', [id]);
     if (!config) return reply.status(404).send({ error: 'Config not found' });
     if (config.is_default) return reply.status(400).send({ error: 'Cannot delete default config' });
@@ -204,7 +204,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   // Get rules for a config
   fastify.get('/configs/:configId/rules', async (request, reply) => {
     const { configId } = request.params as { configId: string };
-    const db = await getDb();
+    const db = await getRulesDb();
     const rows = await db.all(
       'SELECT * FROM display_config_rules WHERE config_id = ? ORDER BY priority DESC, name ASC',
       [configId]
@@ -221,7 +221,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   fastify.post('/configs/:configId/rules', async (request, reply) => {
     const { configId } = request.params as { configId: string };
     const rule = request.body as DisplayRule;
-    const db = await getDb();
+    const db = await getRulesDb();
     
     const result = await db.run(
       `INSERT INTO display_config_rules (config_id, name, priority, match_conditions, config, enabled) 
@@ -250,7 +250,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   fastify.put('/rules/:ruleId', async (request, reply) => {
     const { ruleId } = request.params as { ruleId: string };
     const rule = request.body as DisplayRule;
-    const db = await getDb();
+    const db = await getRulesDb();
     
     const result = await db.run(
       `UPDATE display_config_rules SET 
@@ -284,7 +284,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   // Delete a rule
   fastify.delete('/rules/:ruleId', async (request, reply) => {
     const { ruleId } = request.params as { ruleId: string };
-    const db = await getDb();
+    const db = await getRulesDb();
     await db.run('DELETE FROM display_config_rules WHERE id = ?', [ruleId]);
     return { success: true };
   });
@@ -292,7 +292,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   // Duplicate a rule
   fastify.post('/rules/:ruleId/duplicate', async (request, reply) => {
     const { ruleId } = request.params as { ruleId: string };
-    const db = await getDb();
+    const db = await getRulesDb();
     
     const rule = await db.get('SELECT * FROM display_config_rules WHERE id = ?', [ruleId]);
     if (!rule) return reply.status(404).send({ error: 'Rule not found' });
@@ -312,7 +312,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   // Export a profile (config + all rules)
   fastify.get('/configs/:id/export', async (request, reply) => {
     const { id } = request.params as { id: string };
-    const db = await getDb();
+    const db = await getRulesDb();
     
     const config = await db.get('SELECT * FROM display_configs WHERE id = ?', [id]);
     if (!config) return reply.status(404).send({ error: 'Config not found' });
@@ -343,7 +343,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: 'Invalid import format. Expected "profile" and "rules" keys.' });
     }
     
-    const db = await getDb();
+    const db = await getRulesDb();
     await db.run('BEGIN TRANSACTION');
     
     try {

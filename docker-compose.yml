@@ -4,6 +4,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     container_name: grid-backend
+    networks:
+      - app-net
     volumes:
       - grid_data:/data
       - grid_config:/data/config
@@ -14,8 +16,8 @@ services:
       - BOOTSTRAP_DATA=${BOOTSTRAP_DATA:-true}
       - DB_PATH=/data/grid_data_cim.duckdb
       - PARQUET_DIR=/data/cim_readings
-      - ADMIN_DB_PATH=/data/config/admin_config.db
-      - CONFIG_DB_PATH=/data/config/admin_config.db
+      - ADMIN_DB_PATH=/data/config/admin.sqlite
+      - RULES_DB_PATH=/data/config/rules.sqlite
       - TOPOLOGY_DB_PATH=/data/grid_topology.sqlite
       - CIM_MODEL_PATH=/app/cim/IEEE8500.xml
       - WEATHER_DATA_PATH=/app/cim/weather.epw
@@ -46,6 +48,8 @@ services:
     build:
       context: ./frontend
     container_name: grid-frontend
+    networks:
+      - app-net
     ports:
       - "${FRONTEND_PORT:-8080}:80"
     depends_on:
@@ -56,6 +60,8 @@ services:
     image: nginx:alpine
     profiles: [ "maintenance" ]
     container_name: grid-maintenance
+    networks:
+      - app-net
     volumes:
       - ./maintenance:/usr/share/nginx/html:ro
     ports:
@@ -66,6 +72,8 @@ services:
     build:
       context: ./docs
     container_name: grid-docs
+    networks:
+      - app-net
     ports:
       - "${WEBSITE_PORT:-3002}:3000"
     restart: unless-stopped
@@ -75,6 +83,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     container_name: grid-generator
+    networks:
+      - app-net
     volumes:
       - grid_data:/data
       - grid_config:/data/config
@@ -84,8 +94,8 @@ services:
     environment:
       - DB_PATH=/data/grid_data_cim.duckdb
       - PARQUET_DIR=/data/cim_readings
-      - ADMIN_DB_PATH=/data/config/admin_config.db
-      - CONFIG_DB_PATH=/data/config/admin_config.db
+      - ADMIN_DB_PATH=/data/config/admin.sqlite
+      - RULES_DB_PATH=/data/config/rules.sqlite
       - CIM_MODEL_PATH=/app/cim/IEEE8500.xml
       - WEATHER_DATA_PATH=/app/cim/weather.epw
       - CIMG_URL=bolt://neo4j:7687
@@ -106,15 +116,19 @@ services:
     build:
       context: ./admin-console/admin-backend
     container_name: grid-admin-backend
+    networks:
+      - app-net
+      - admin-net
     volumes:
       - grid_config:/data/config
-      - ./infra/telemetry_config.json:/etc/telemetry/telemetry_config.json:ro
+      - ./infra:/infra
     environment:
       - ADMIN_CONSOLE_PORT=8090
-      - ADMIN_DB_PATH=/data/config/admin_config.db
-      - DB_PATH=/data/config/admin_config.db
+      - ADMIN_DB_PATH=/data/config/admin.sqlite
+      - RULES_DB_PATH=/data/config/rules.sqlite
       - MAIN_BACKEND_URL=http://backend:8000
-      - TELEMETRY_CONFIG_PATH=/etc/telemetry/telemetry_config.json
+      - INFRA_DIR=/infra
+      - TELEMETRY_CONFIG_PATH=/infra/telemetry_config.json
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4317
     ports:
       - "${ADMIN_BACKEND_PORT:-8090}:8090"
@@ -124,6 +138,8 @@ services:
     build:
       context: ./admin-console/admin-frontend
     container_name: grid-admin-frontend
+    networks:
+      - admin-net
     ports:
       - "${ADMIN_FRONTEND_PORT:-8091}:80"
     depends_on:
@@ -133,6 +149,8 @@ services:
   neo4j:
     build: ./neo4j
     container_name: grid-neo4j
+    networks:
+      - app-net
     ports:
       - "7474:7474" # Neo4j Browser (HTTP)
       - "7687:7687" # Bolt
@@ -158,6 +176,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     container_name: grid-ingestor
+    networks:
+      - app-net
     volumes:
       - grid_data:/data
       - grid_config:/data/config
@@ -184,6 +204,8 @@ services:
   grafana:
     image: grafana/grafana:latest
     container_name: grid-grafana
+    networks:
+      - app-net
     volumes:
       - ./infra/grafana/provisioning:/etc/grafana/provisioning
     environment:
@@ -202,6 +224,8 @@ services:
   loki:
     image: grafana/loki:latest
     container_name: grid-loki
+    networks:
+      - app-net
     volumes:
       - ./infra/loki-config.yaml:/etc/loki/local-config.yaml
     command: -config.file=/etc/loki/local-config.yaml
@@ -217,6 +241,8 @@ services:
   tempo:
     image: grafana/tempo:latest
     container_name: grid-tempo
+    networks:
+      - app-net
     volumes:
       - ./infra/tempo-config.yaml:/etc/tempo/tempo.yaml
     command: -config.file=/etc/tempo/tempo.yaml
@@ -234,6 +260,8 @@ services:
   alloy:
     image: grafana/alloy:latest
     container_name: grid-alloy
+    networks:
+      - app-net
     volumes:
       - ./infra/alloy-config.alloy:/etc/alloy/config.alloy
       - /var/run/docker.sock:/var/run/docker.sock
@@ -244,6 +272,12 @@ services:
         limits:
           cpus: '0.25'
           memory: 256M
+
+networks:
+  app-net:
+    driver: bridge
+  admin-net:
+    driver: bridge
 
 volumes:
   grid_data:

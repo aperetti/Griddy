@@ -1,6 +1,6 @@
 import '@mantine/core/styles.css';
 import '@mantine/dates/styles.css';
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   MantineProvider,
   Box,
@@ -24,12 +24,13 @@ import { AnalysisTray } from './features/analytics/components/AnalysisTray';
 import { SchemaProvider } from './features/grid/context/SchemaContext';
 
 import { useTopology } from './hooks/useTopology';
+import { useTopologyLoader } from './hooks/useTopologyLoader';
+import { useNavigation } from './hooks/useNavigation';
+import { usePluginRegistry, usePluginContext } from './hooks/usePluginContext';
 import { useRuleClassification } from './features/grid/hooks/useRuleClassification';
 import { useAnalyticsState, SETTINGS_KEY } from './hooks/useAnalyticsState';
-import { fetchTopology, fetchModels, fetchPluginRegistry, resolveNodeModel, loadModel } from './shared/api';
 import type { Node, Edge } from './shared/types';
-import { initPluginRegistry } from './plugins';
-import type { PluginDefinition, PluginExecutionContext } from './plugins/types';
+import type { PluginDefinition } from './plugins/types';
 
 const calculateRange = (config: any) => {
   const end = config.endDateType === 'now' ? new Date() : new Date(config.fixedEndDate);
@@ -66,12 +67,17 @@ export default function App() {
     };
   });
   const [viewState, setViewState] = useState<any>(null);
-  const [targetLocation, setTargetLocation] = useState<{ longitude: number, latitude: number, zoom?: number } | null>(null);
 
-  // Hooks
+  // Core state hooks
   const topology = useTopology();
   const [spriteVersion, setSpriteVersion] = useState(0);
   const [edgeColorBase, setEdgeColorBase] = useState<'circuit' | 'model'>('circuit');
+
+  // Extracted hooks (Phases 1A/1B)
+  useTopologyLoader(topology);
+  const pluginRegistry = usePluginRegistry();
+  const navigation = useNavigation(topology);
+
   const { classifiedNodes, classifiedEdges, refresh: refreshRules, loading: rulesLoading } = useRuleClassification(
     topology.nodes,
     topology.edges,
@@ -83,62 +89,10 @@ export default function App() {
   );
 
   const [dateRange, setDateRange] = useState(() => calculateRange(analytics.globalConfig));
-  
-  const pendingNavigationRef = useRef<{ id: string, name?: string, zoom?: number } | null>(null);
-  const [navTrigger, setNavTrigger] = useState(0);
-
-  // Fulfill pending navigation once topology is loaded
-  useEffect(() => {
-    if (pendingNavigationRef.current && !topology.topologyLoading) {
-      const { id, zoom } = pendingNavigationRef.current;
-      
-      // Try Node
-      const node = topology.nodes.find(n => 
-        n.id === id || n.name === id || n.attached_equipment?.some(eq => eq.mrid === id || eq.name === id)
-      );
-      if (node) {
-        topology.setHighlightedNodes(new Set([node.id]));
-        topology.setHighlightedEdges(new Set());
-        setTargetLocation({ longitude: node.position[0], latitude: node.position[1], zoom });
-        pendingNavigationRef.current = null;
-        return;
-      }
-
-      // Try Edge
-      const edge = topology.edges.find(e => e.id === id || e.name === id || `${e.source}-${e.target}` === id);
-      if (edge) {
-        topology.setHighlightedNodes(new Set());
-        topology.setHighlightedEdges(new Set([edge.id || `${edge.source}-${edge.target}`]));
-        const midLon = (edge.sourcePosition[0] + edge.targetPosition[0]) / 2;
-        const midLat = (edge.sourcePosition[1] + edge.targetPosition[1]) / 2;
-        setTargetLocation({ longitude: midLon, latitude: midLat, zoom });
-        pendingNavigationRef.current = null;
-      }
-    }
-  }, [topology.nodes, topology.edges, topology.topologyLoading, navTrigger]);
 
   useEffect(() => {
     setDateRange(calculateRange(analytics.globalConfig));
   }, [analytics.globalConfig]);
-
-  const [pluginRegistry, setPluginRegistry] = useState<Map<string, PluginDefinition>>(new Map());
-  const enabledPluginNamesRef = useRef<string>('');
-  useEffect(() => {
-    const syncRegistry = () => {
-      fetchPluginRegistry()
-        .then(entries => {
-          const enabled = entries.filter(e => e.enabled).map(e => e.name).sort();
-          const key = enabled.join(',');
-          if (key === enabledPluginNamesRef.current) return;
-          enabledPluginNamesRef.current = key;
-          return initPluginRegistry(enabled).then(setPluginRegistry);
-        })
-        .catch(err => console.error('[plugins] Failed to initialize plugin registry:', err));
-    };
-    syncRegistry();
-  }, []);
-
-  const [fitTrigger, setFitTrigger] = useState(0);
 
   const selectedNodes = topology.nodes.filter(n => topology.highlightedNodes.has(n.id));
   const selectedEdgeIds = Array.from(topology.highlightedEdges);
@@ -147,95 +101,22 @@ export default function App() {
     p => p.appliesToNodes(selectedNodes, topology.highlightedEdges.size)
   );
 
-  const selectAndNavigateToNode = useCallback(async (targetId: string | string[], hintModelId?: string, clearPrevious: boolean = true) => {
-    const ids = Array.isArray(targetId) ? targetId : [targetId];
-
-    if (ids.length === 1) {
-      const id = ids[0];
-
-      // 1. Try finding as a Node (or attached equipment on a node)
-      const node = topology.nodes.find(n =>
-        n.id === id ||
-        n.name === id ||
-        n.attached_equipment?.some(eq => eq.mrid === id || eq.name === id)
-      );
-
-      if (node) {
-        topology.setHighlightedNodes(new Set([node.id]));
-        if (clearPrevious) topology.setHighlightedEdges(new Set());
-        setTargetLocation({ longitude: node.position[0], latitude: node.position[1], zoom: 18 });
-        return;
-      }
-
-      // 2. Try finding as an Edge (e.g. PowerTransformer edge)
-      const edge = topology.edges.find(e => e.id === id || e.name === id || `${e.source}-${e.target}` === id);
-      if (edge) {
-        if (clearPrevious) topology.setHighlightedNodes(new Set());
-        topology.setHighlightedEdges(new Set([edge.id || `${edge.source}-${edge.target}`]));
-
-        // Center on edge midpoint
-        const midLon = (edge.sourcePosition[0] + edge.targetPosition[0]) / 2;
-        const midLat = (edge.sourcePosition[1] + edge.targetPosition[1]) / 2;
-        setTargetLocation({ longitude: midLon, latitude: midLat, zoom: 18 });
-        return;
-      }
-
-      // 3. Not found in currently loaded models — activate the model then navigate
-      try {
-        let feeder_id = hintModelId;
-        if (!feeder_id) {
-          const res = await resolveNodeModel(id);
-          feeder_id = res.feeder_id;
-        }
-
-        pendingNavigationRef.current = { id, zoom: 18 };
-
-        if (!topology.activeModelIds.includes(feeder_id)) {
-          topology.setActiveModelIds(prev => [...new Set([...prev, feeder_id!])]);
-        } else {
-          // Model already active but node not yet visible — trigger re-check
-          setNavTrigger(prev => prev + 1);
-        }
-      } catch (err) {
-        console.error('[App] Failed to resolve target for navigation:', err);
-      }
-    } else if (ids.length > 1) {
-      topology.setHighlightedNodes(new Set(ids));
-      if (clearPrevious) topology.setHighlightedEdges(new Set());
-      setFitTrigger(prev => prev + 1);
-      setTargetLocation(null);
-    }
-  }, [topology.nodes, topology.edges, topology.activeModelIds]);
-
-  const pluginCtx: PluginExecutionContext = {
+  const pluginCtx = usePluginContext({
     selectedNodes,
     selectedEdgeIds,
-    resolveEdgeNodesToNodeIds: (edgeIds: string[]) =>
-      Array.from(new Set(
-        edgeIds.map(eid =>
-          topology.edges.find(e => e.id === eid || `${e.source}-${e.target}` === eid)?.target
-        ).filter(Boolean) as string[]
-      )),
+    edges: topology.edges,
     setAnalysisWindows: analytics.setAnalysisWindows,
     bringWindowToFront: analytics.bringWindowToFront,
     updateWindow: analytics.updateWindow,
     dateRange,
     systemConfig: analytics.systemConfig,
-    addHighlightedNodes: (ids: string[]) => topology.setHighlightedNodes(prev => {
-      const next = new Set(prev);
-      ids.forEach(id => next.add(id));
-      return next;
-    }),
-    addHighlightedEdges: (ids: string[]) => topology.setHighlightedEdges(prev => {
-      const next = new Set(prev);
-      ids.forEach(id => next.add(id));
-      return next;
-    }),
-    setNodeAverages: (averages: Record<string, number> | null) => topology.setNodeAverages(averages),
-    setEdgeAverages: (averages: Record<string, number> | null) => topology.setEdgeAverages(averages),
-    setVoltageScale: setVoltageScale,
-    selectAndNavigateToNode: (ids, hint) => selectAndNavigateToNode(ids, hint, false),
-  };
+    setHighlightedNodes: topology.setHighlightedNodes,
+    setHighlightedEdges: topology.setHighlightedEdges,
+    setNodeAverages: topology.setNodeAverages,
+    setEdgeAverages: topology.setEdgeAverages,
+    setVoltageScale,
+    selectAndNavigateToNode: navigation.selectAndNavigateToNode,
+  });
 
   // Cleanup effect for heatmap averages when windows close
   useEffect(() => {
@@ -252,101 +133,6 @@ export default function App() {
     setDisplayRulesZIndex(analytics.getNextZIndex());
   }, [analytics]);
 
-  const lastActiveModelIds = useRef<string[]>([]);
-
-  // Initial Load & Topology Refresh
-  useEffect(() => {
-    console.log('[App] useEffect triggered', { version: topology.topologyVersion, active: topology.activeModelIds });
-    const load = async () => {
-      // Initialize with a single model if nothing is active
-      if (topology.activeModelIds.length === 0) {
-        console.log('[App] No active models, fetching...');
-        try {
-          const models = await fetchModels();
-          console.log('[App] Discovered models:', models);
-          if (models.length > 0) {
-            console.log('[App] Auto-activating first model:', models[0].feeder_id);
-            topology.setActiveModelIds([models[0].feeder_id]);
-            return;
-          }
-        } catch (err) {
-          console.error('[App] Failed to fetch models for initialization:', err);
-        }
-      }
-
-      const current = topology.activeModelIds;
-      const prev = lastActiveModelIds.current;
-
-      const added = current.filter(id => !prev.includes(id));
-      const removed = prev.filter(id => !current.includes(id));
-
-      // Force full reload if topologyVersion changes (manual refresh)
-      const isRefresh = topology.topologyVersion > 0 && added.length === 0 && removed.length === 0;
-
-      if (isRefresh) {
-        try {
-          // Ensure all active models are loaded in backend memory before fetching
-          // We load them individually so one failure doesn't block the refresh
-          await Promise.all(current.map(id => 
-            loadModel(id).catch(err => console.error(`[App] Failed to load model ${id}:`, err))
-          ));
-          const data = await fetchTopology(current);
-          topology.setNodes(data.nodes);
-          topology.setEdges(data.edges);
-          lastActiveModelIds.current = current;
-        } finally {
-          topology.setTopologyLoading(false);
-          topology.setIsSearching(false);
-        }
-        return;
-      }
-
-      // Incremental Update logic
-      if (added.length > 0 || removed.length > 0) {
-        topology.setTopologyLoading(true);
-        try {
-          // Remove nodes/edges for models that are no longer active
-          if (removed.length > 0) {
-            const removedSet = new Set(removed);
-            topology.setNodes(nodes => nodes.filter(n => !n.model_id || !removedSet.has(n.model_id)));
-            topology.setEdges(edges => edges.filter(e => !e.model_id || !removedSet.has(e.model_id)));
-          }
-
-          // Fetch and add nodes/edges for new models
-          if (added.length > 0) {
-            // Ensure new models are loaded in backend memory first
-            // We track which ones actually succeeded to avoid fetching empty data
-            const loadResults = await Promise.all(added.map(async id => {
-              try {
-                await loadModel(id);
-                return id;
-              } catch (err) {
-                console.error(`[App] Failed to load model ${id}:`, err);
-                return null;
-              }
-            }));
-
-            const successfulIds = loadResults.filter((id): id is string => id !== null);
-            
-            if (successfulIds.length > 0) {
-              const data = await fetchTopology(successfulIds);
-              topology.setNodes(nodes => [...nodes, ...data.nodes]);
-              topology.setEdges(edges => [...edges, ...data.edges]);
-            }
-          }
-
-          lastActiveModelIds.current = current;
-        } catch (err) {
-          console.error('[App] Incremental topology load failed:', err);
-        } finally {
-          topology.setTopologyLoading(false);
-          topology.setIsSearching(false);
-        }
-      }
-    };
-    load();
-  }, [topology.topologyVersion, topology.activeModelIds]);
-
   const onNodeClick = useCallback((node: Node, multi: boolean) => {
     const isMulti = multi || !!isMobile;
     topology.setHighlightedNodes(prev => {
@@ -355,8 +141,8 @@ export default function App() {
       return next;
     });
 
-    setTargetLocation(null);
-  }, [topology, isMobile]);
+    navigation.setTargetLocation(null);
+  }, [topology, isMobile, navigation]);
 
   const onEdgeClick = useCallback((edge: Edge, multi: boolean) => {
     const isMulti = multi || !!isMobile;
@@ -366,8 +152,8 @@ export default function App() {
       return next;
     });
 
-    setTargetLocation(null);
-  }, [topology, isMobile]);
+    navigation.setTargetLocation(null);
+  }, [topology, isMobile, navigation]);
 
   return (
     <MantineProvider defaultColorScheme="dark">
@@ -407,8 +193,8 @@ export default function App() {
             onMapClick={topology.handleClearSelection}
             voltageScale={voltageScale}
             onViewStateChange={setViewState}
-            goToLocation={targetLocation}
-            fitHighlightedNodesTrigger={fitTrigger}
+            goToLocation={navigation.targetLocation}
+            fitHighlightedNodesTrigger={navigation.fitTrigger}
             spriteVersion={spriteVersion}
             edgeColorBase={edgeColorBase}
           />
@@ -418,7 +204,7 @@ export default function App() {
               nodes={topology.nodes}
               edges={topology.edges}
               viewState={viewState}
-              onNavigate={(lon, lat) => setTargetLocation({ longitude: lon, latitude: lat })}
+              onNavigate={(lon, lat) => navigation.setTargetLocation({ longitude: lon, latitude: lat })}
               selectedNodeIds={Array.from(topology.highlightedNodes)}
             />
           )}
@@ -458,7 +244,7 @@ export default function App() {
           <OverlayControls
             activeModelIds={topology.activeModelIds}
             setActiveModelIds={topology.setActiveModelIds}
-            onSearchSelect={(node) => selectAndNavigateToNode(node.id, node.model_id)}
+            onSearchSelect={(node) => navigation.selectAndNavigateToNode(node.id, node.model_id)}
             onSettingsClick={() => setSettingsOpen(true)}
             onDisplayRulesClick={() => setDisplayRulesOpen(true)}
             onRefreshTopology={topology.refreshTopology}
@@ -538,7 +324,7 @@ export default function App() {
           onSetEdgeAverages={topology.setEdgeAverages}
           onSetVoltageScale={setVoltageScale}
           onFocus={analytics.bringWindowToFront}
-          onSelectAndNavigateToNode={selectAndNavigateToNode}
+          onSelectAndNavigateToNode={navigation.selectAndNavigateToNode}
         />
       </div>
       </SchemaProvider>

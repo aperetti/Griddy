@@ -1,11 +1,11 @@
 import { FastifyInstance } from 'fastify';
-import { getDb } from '../../shared/database.js';
+import { getAdminDb } from '../../shared/database.js';
 import crypto from 'crypto';
 
 export async function usersRoutes(fastify: FastifyInstance) {
   // List all users
   fastify.get('/', async () => {
-    const db = await getDb();
+    const db = await getAdminDb();
     return db.all('SELECT id, username, created_at FROM users');
   });
 
@@ -16,7 +16,7 @@ export async function usersRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: "Username and password are required" });
     }
 
-    const db = await getDb();
+    const db = await getAdminDb();
     // Replicate Python's: os.urandom(16)
     const salt = crypto.randomBytes(16);
     // Replicate Python's: hashlib.pbkdf2_hmac('sha256', pwd, salt, 100000).hex()
@@ -40,7 +40,7 @@ export async function usersRoutes(fastify: FastifyInstance) {
   // Delete a user
   fastify.delete('/:username', async (request, reply) => {
     const { username } = request.params as { username: string };
-    const db = await getDb();
+    const db = await getAdminDb();
     
     // Prevent deleting the very last user to avoid accidental lockouts
     const countRow = await db.get('SELECT COUNT(*) as count FROM users');

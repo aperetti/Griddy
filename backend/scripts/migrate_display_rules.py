@@ -7,16 +7,16 @@ from pathlib import Path
 # Add src to path so we can import dependencies if needed
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from src.shared.dependencies import ADMIN_SQLITE_PATH
+from src.shared.dependencies import RULES_DB_PATH
 
 def migrate():
-    print(f"Starting migration for {ADMIN_SQLITE_PATH}...")
+    print(f"Starting migration for {RULES_DB_PATH}...")
     
-    if not os.path.exists(ADMIN_SQLITE_PATH):
-        print("Admin database not found. Skipping migration.")
+    if not os.path.exists(RULES_DB_PATH):
+        print(f"Database not found at {RULES_DB_PATH}")
         return
 
-    conn = sqlite3.connect(ADMIN_SQLITE_PATH)
+    conn = sqlite3.connect(RULES_DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
