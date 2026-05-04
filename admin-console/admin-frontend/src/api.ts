@@ -40,6 +40,21 @@ export const configApi = {
     
   deleteDisplayProfile: (id: number) => 
     api.delete(`/display-rules/configs/${id}`).then(res => res.data),
+
+  // ── Rules Management ────────────────────────────────────────────
+  getRules: (configId: number): Promise<any[]> => 
+    api.get(`/display-rules/configs/${configId}/rules`).then(res => res.data),
+    
+  saveRule: (configId: number, rule: any) => 
+    rule.id 
+      ? api.put(`/display-rules/rules/${rule.id}`, rule).then(res => res.data)
+      : api.post(`/display-rules/configs/${configId}/rules`, rule).then(res => res.data),
+      
+  deleteRule: (ruleId: number) => 
+    api.delete(`/display-rules/rules/${ruleId}`).then(res => res.data),
+    
+  duplicateRule: (ruleId: number) => 
+    api.post(`/display-rules/rules/${ruleId}/duplicate`).then(res => res.data),
 };
 
 export const pluginsApi = {

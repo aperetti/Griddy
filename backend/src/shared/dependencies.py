@@ -29,6 +29,7 @@ from src.grid.topology_engine import TopologyEngine
 from src.grid.display_rule_engine import DisplayRuleEngine
 from src.shared.meter_data_repository import IMeterDataRepository
 from src.shared.meter_adapters.duckdb_adapter import DuckDBMeterDataRepository
+from src.shared.alarm_repository import DuckDBAlarmRepository
 from src.shared.database_setup import DB_PATH, ADMIN_DB_PATH, RULES_DB_PATH, PARQUET_DIR
 
 # ── Global Instances ─────────────────────────────────────────────
@@ -40,6 +41,9 @@ display_engine = DisplayRuleEngine(RULES_DB_PATH)
 
 # topology graph engine (dependency-free BFS over pre-computed CIM edges)
 graph_engine = TopologyEngine()
+
+# Alarm repository for active alerts (Reads from DuckDB)
+alarm_repo = DuckDBAlarmRepository(DB_PATH)
 
 class MeterDataRepositoryProxy(IMeterDataRepository):
     """Proxy to dynamically resolve the active AMI adapter."""

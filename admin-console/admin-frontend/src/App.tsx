@@ -1,10 +1,12 @@
 import '@mantine/core/styles.css';
 import { MantineProvider, AppShell, Group, Title, Stack, Container, Tabs, Text } from '@mantine/core';
-import { Settings, Database, Puzzle, Activity, FileCode, LayoutList } from 'lucide-react';
+import { Settings, Database, Puzzle, Activity, FileCode, LayoutList, Users } from 'lucide-react';
 import { theme } from './theme';
 import { DataPanel } from './features/data/DataPanel';
 import { DisplayRulesPanel } from './features/config/DisplayRulesPanel';
-import { SystemManagementPanel } from './features/system/SystemManagementPanel';
+import { PluginsPanel } from './features/plugins/PluginsPanel';
+import { AmiAdapterPanel } from './features/config/AmiAdapterPanel';
+import { UserManagementPanel } from './features/users/UserManagementPanel';
 import { ObservabilityPanel } from './features/monitoring/ObservabilityPanel';
 import { EditorPanel } from './features/monitoring/EditorPanel';
 
@@ -21,7 +23,7 @@ export default function App() {
               <Group>
                 <Settings size={28} color="#339af0" />
                 <Stack gap={0}>
-                  <Title order={3}>Griddy Admin</Title>
+                  <Title order={3}>Admin</Title>
                   <Text size="xs" c="dimmed">System Management Console</Text>
                 </Stack>
               </Group>
@@ -35,8 +37,10 @@ export default function App() {
               <Tabs.List mb="xl">
                 <Tabs.Tab value="data" leftSection={<Database size={16} />}>Data Management</Tabs.Tab>
                 <Tabs.Tab value="rules" leftSection={<LayoutList size={16} />}>Display Rules</Tabs.Tab>
+                <Tabs.Tab value="plugins" leftSection={<Puzzle size={16} />}>Plugins</Tabs.Tab>
+                <Tabs.Tab value="ami" leftSection={<Database size={16} />}>AMI Adapters</Tabs.Tab>
+                <Tabs.Tab value="users" leftSection={<Users size={16} />}>Users</Tabs.Tab>
                 <Tabs.Tab value="telemetry" leftSection={<Activity size={16} />}>Observability</Tabs.Tab>
-                <Tabs.Tab value="system" leftSection={<Puzzle size={16} />}>System</Tabs.Tab>
                 <Tabs.Tab value="raw" leftSection={<FileCode size={16} />}>Raw Config</Tabs.Tab>
               </Tabs.List>
 
@@ -47,13 +51,21 @@ export default function App() {
               <Tabs.Panel value="rules">
                 <DisplayRulesPanel />
               </Tabs.Panel>
+
+              <Tabs.Panel value="plugins">
+                <PluginsPanel />
+              </Tabs.Panel>
+
+              <Tabs.Panel value="ami">
+                <AmiAdapterPanel />
+              </Tabs.Panel>
+
+              <Tabs.Panel value="users">
+                <UserManagementPanel />
+              </Tabs.Panel>
               
               <Tabs.Panel value="telemetry">
                 <ObservabilityPanel />
-              </Tabs.Panel>
-
-              <Tabs.Panel value="system">
-                <SystemManagementPanel />
               </Tabs.Panel>
 
               <Tabs.Panel value="raw">
