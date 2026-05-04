@@ -8,6 +8,7 @@ import os
 import sqlite3
 import hashlib
 import zlib
+import secrets
 from pathlib import Path
 
 def to_int_id(name: str) -> int:
@@ -72,8 +73,13 @@ def init_admin_db():
     cursor = admin_conn.cursor()
     cursor.execute("SELECT COUNT(*) FROM users")
     if cursor.fetchone()[0] == 0:
+        admin_pass = os.getenv("INITIAL_ADMIN_PASSWORD")
+        if not admin_pass:
+            admin_pass = secrets.token_hex(12)
+            print(f"Generated default admin password: {admin_pass}")
+
         salt = os.urandom(16)
-        password_hash = hashlib.pbkdf2_hmac('sha256', b"admin", salt, 100000)
+        password_hash = hashlib.pbkdf2_hmac('sha256', admin_pass.encode('utf-8'), salt, 100000)
         admin_conn.execute(
             "INSERT INTO users (username, password_hash, salt) VALUES (?, ?, ?)",
             ("admin", password_hash.hex(), salt.hex())
