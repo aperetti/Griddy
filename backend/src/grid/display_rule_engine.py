@@ -43,8 +43,8 @@ class DisplayRuleEngine:
     def load_rules(self):
         """Loads rules from the default configuration in the admin database."""
         try:
-            # Enforce Read-Only mode for security
-            conn = sqlite3.connect(f"file:{self.admin_db_path}?mode=ro", uri=True)
+            # Open the database (writable for potential migrations or updates)
+            conn = sqlite3.connect(self.admin_db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 

@@ -5,6 +5,8 @@ services:
     environment:
       - DUCKDB_THREADS=2
       - DUCKDB_MEMORY_LIMIT=3GB
+      - ADMIN_DB_PATH=/data/config/admin.sqlite
+      - RULES_DB_PATH=/data/config/rules.sqlite
     deploy:
       resources:
         limits:
@@ -16,6 +18,7 @@ services:
       - ./cim_alarms:/data/cim_alarms
       - ./grid_data_cim.duckdb:/data/grid_data_cim.duckdb
       - ./infra/telemetry_config.json:/etc/telemetry/telemetry_config.json
+      - grid_config:/data/config
 
   frontend:
     build:
@@ -38,12 +41,13 @@ services:
       - /app/node_modules
       - ./infra:/app/infra
       - ./ingest:/data/ingest
+      - grid_config:/data/config
     environment:
       - INFRA_DIR=/app/infra
       - INGEST_DIR=/data/ingest
       - TELEMETRY_CONFIG_PATH=/app/infra/telemetry_config.json
-      - ADMIN_DB_PATH=/app/admin.sqlite
-      - RULES_DB_PATH=/app/rules.sqlite
+      - ADMIN_DB_PATH=/data/config/admin.sqlite
+      - RULES_DB_PATH=/data/config/rules.sqlite
 
   admin-frontend:
     build:
@@ -52,10 +56,14 @@ services:
     volumes:
       - ./admin-console/admin-frontend:/app
       - /app/node_modules
+    networks:
+      - app-net
+      - admin-net
     environment:
       - PORT=80
       - HMR_PORT=8091
       - VITE_API_PROXY_TARGET=http://admin-backend:8090
+      - VITE_BACKEND_PROXY_TARGET=http://backend:8000
 
   documentation:
     build:
@@ -67,3 +75,6 @@ services:
     environment:
       - CHOKIDAR_USEPOLLING=true
       - WATCHPACK_POLLING=true
+
+volumes:
+  grid_config:

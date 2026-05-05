@@ -16,9 +16,281 @@ class RuleTestRequest(BaseModel):
     match_conditions: Dict[str, Any]
     target_class: str
 
+class DisplayConfigBase(BaseModel):
+    name: str
+    description: Optional[str] = ""
+
+class DisplayRuleBase(BaseModel):
+    name: str
+    priority: int = 0
+    match_conditions: Dict[str, Any]
+    config: Dict[str, Any]
+    enabled: bool = True
+
 # ── Helpers ───────────────────────────────────────────────────────
-def _get_admin_conn():
-    # Enforce Read-Only mode for the Rules DB
+def _get_conn():
+    # Writable connection for management routes
+    conn = sqlite3.connect(RULES_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+# ── Management Routes ─────────────────────────────────────────────
+
+@router.get("/configs")
+async def list_display_profiles(username: str = Depends(get_current_username)):
+    """Returns all display profiles."""
+    def _list():
+        with _get_conn() as conn:
+            rows = conn.execute("""
+                SELECT c.*, 
+                (SELECT COUNT(*) FROM display_config_rules WHERE config_id = c.id) as rules_count
+                FROM display_configs c
+                ORDER BY is_default DESC, name ASC
+            """).fetchall()
+            return [dict(r) for r in rows]
+    return await run_in_threadpool(_list)
+
+@router.post("/configs")
+async def create_display_profile(config: DisplayConfigBase, username: str = Depends(get_current_username)):
+    """Creates a new display profile."""
+    def _create():
+        with _get_conn() as conn:
+            cursor = conn.execute(
+                "INSERT INTO display_configs (name, description, is_default) VALUES (?, ?, 0)",
+                (config.name, config.description)
+            )
+            config_id = cursor.lastrow_id
+            conn.commit()
+            row = conn.execute("SELECT * FROM display_configs WHERE id = ?", (config_id,)).fetchone()
+            return dict(row)
+    return await run_in_threadpool(_create)
+
+@router.put("/configs/{config_id}")
+async def update_display_profile(config_id: int, config: DisplayConfigBase, username: str = Depends(get_current_username)):
+    """Updates profile metadata."""
+    def _update():
+        with _get_conn() as conn:
+            cursor = conn.execute(
+                "UPDATE display_configs SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (config.name, config.description, config_id)
+            )
+            if cursor.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Profile not found")
+            conn.commit()
+            row = conn.execute("SELECT * FROM display_configs WHERE id = ?", (config_id,)).fetchone()
+            return dict(row)
+    return await run_in_threadpool(_update)
+
+@router.delete("/configs/{config_id}")
+async def delete_display_profile(config_id: int, username: str = Depends(get_current_username)):
+    """Deletes a display profile."""
+    def _delete():
+        with _get_conn() as conn:
+            # Check if default
+            row = conn.execute("SELECT is_default FROM display_configs WHERE id = ?", (config_id,)).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Profile not found")
+            if row['is_default']:
+                raise HTTPException(status_code=400, detail="Cannot delete the default profile")
+            
+            conn.execute("DELETE FROM display_configs WHERE id = ?", (config_id,))
+            conn.commit()
+            return {"success": True}
+    return await run_in_threadpool(_delete)
+
+@router.put("/configs/{config_id}/set-default")
+async def set_default_profile(config_id: int, username: str = Depends(get_current_username)):
+    """Sets a profile as the system default."""
+    def _set():
+        with _get_conn() as conn:
+            conn.execute("BEGIN TRANSACTION")
+            try:
+                conn.execute("UPDATE display_configs SET is_default = 0")
+                cursor = conn.execute("UPDATE display_configs SET is_default = 1 WHERE id = ?", (config_id,))
+                if cursor.rowcount == 0:
+                    conn.execute("ROLLBACK")
+                    raise HTTPException(status_code=404, detail="Profile not found")
+                conn.commit()
+                # Trigger engine reload
+                display_engine.load_rules()
+                return {"success": True}
+            except Exception as e:
+                conn.execute("ROLLBACK")
+                raise e
+    return await run_in_threadpool(_set)
+
+@router.get("/configs/{config_id}/rules")
+async def get_profile_rules(config_id: int, username: str = Depends(get_current_username)):
+    """Returns rules for a specific profile."""
+    def _get():
+        with _get_conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM display_config_rules WHERE config_id = ? ORDER BY priority DESC, name ASC",
+                (config_id,)
+            ).fetchall()
+            result = []
+            for r in rows:
+                rd = dict(r)
+                try:
+                    rd['match_conditions'] = json.loads(rd['match_conditions']) if rd.get('match_conditions') else {}
+                    rd['config'] = json.loads(rd['config']) if rd.get('config') else {}
+                except: pass
+                result.append(rd)
+            return result
+    return await run_in_threadpool(_get)
+
+@router.post("/configs/{config_id}/rules")
+async def create_rule(config_id: int, rule: DisplayRuleBase, username: str = Depends(get_current_username)):
+    """Adds a new rule to a profile."""
+    def _create():
+        with _get_conn() as conn:
+            cursor = conn.execute(
+                """INSERT INTO display_config_rules (config_id, name, priority, match_conditions, config, enabled)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (config_id, rule.name, rule.priority, json.dumps(rule.match_conditions), json.dumps(rule.config), 1 if rule.enabled else 0)
+            )
+            new_id = cursor.lastrow_id
+            conn.commit()
+            display_engine.load_rules()
+            row = conn.execute("SELECT * FROM display_config_rules WHERE id = ?", (new_id,)).fetchone()
+            rd = dict(row)
+            rd['match_conditions'] = json.loads(rd['match_conditions'])
+            rd['config'] = json.loads(rd['config'])
+            return rd
+    return await run_in_threadpool(_create)
+
+@router.put("/rules/{rule_id}")
+async def update_rule(rule_id: int, rule: DisplayRuleBase, username: str = Depends(get_current_username)):
+    """Updates an existing rule."""
+    def _update():
+        with _get_conn() as conn:
+            cursor = conn.execute(
+                """UPDATE display_config_rules 
+                   SET name = ?, priority = ?, match_conditions = ?, config = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
+                   WHERE id = ?""",
+                (rule.name, rule.priority, json.dumps(rule.match_conditions), json.dumps(rule.config), 1 if rule.enabled else 0, rule_id)
+            )
+            if cursor.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Rule not found")
+            conn.commit()
+            display_engine.load_rules()
+            row = conn.execute("SELECT * FROM display_config_rules WHERE id = ?", (rule_id,)).fetchone()
+            rd = dict(row)
+            rd['match_conditions'] = json.loads(rd['match_conditions'])
+            rd['config'] = json.loads(rd['config'])
+            return rd
+    return await run_in_threadpool(_update)
+
+@router.delete("/rules/{rule_id}")
+async def delete_rule(rule_id: int, username: str = Depends(get_current_username)):
+    """Deletes a rule."""
+    def _delete():
+        with _get_conn() as conn:
+            conn.execute("DELETE FROM display_config_rules WHERE id = ?", (rule_id,))
+            conn.commit()
+            display_engine.load_rules()
+            return {"success": True}
+    return await run_in_threadpool(_delete)
+
+@router.post("/rules/{rule_id}/duplicate")
+async def duplicate_rule(rule_id: int, username: str = Depends(get_current_username)):
+    """Duplicates an existing rule."""
+    def _dup():
+        with _get_conn() as conn:
+            row = conn.execute("SELECT * FROM display_config_rules WHERE id = ?", (rule_id,)).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Rule not found")
+            
+            cursor = conn.execute(
+                """INSERT INTO display_config_rules (config_id, name, priority, match_conditions, config, enabled)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (row['config_id'], f"{row['name']} (Copy)", row['priority'], row['match_conditions'], row['config'], row['enabled'])
+            )
+            new_id = cursor.lastrow_id
+            conn.commit()
+            display_engine.load_rules()
+            return {"id": new_id, "name": f"{row['name']} (Copy)"}
+    return await run_in_threadpool(_dup)
+
+# ── Import/Export Routes ──────────────────────────────────────────
+
+@router.get("/configs/{config_id}/export")
+async def export_display_profile(config_id: int, username: str = Depends(get_current_username)):
+    """Exports a profile and all its rules as a single JSON object."""
+    def _export():
+        with _get_conn() as conn:
+            config = conn.execute("SELECT * FROM display_configs WHERE id = ?", (config_id,)).fetchone()
+            if not config:
+                raise HTTPException(status_code=404, detail="Profile not found")
+            
+            rules = conn.execute("SELECT * FROM display_config_rules WHERE config_id = ?", (config_id,)).fetchall()
+            
+            return {
+                "profile": {
+                    "name": config['name'],
+                    "description": config['description']
+                },
+                "rules": [
+                    {
+                        "name": r['name'],
+                        "priority": r['priority'],
+                        "match_conditions": json.loads(r['match_conditions']),
+                        "config": json.loads(r['config']),
+                        "enabled": bool(r['enabled'])
+                    } for r in rules
+                ]
+            }
+    return await run_in_threadpool(_export)
+
+@router.post("/configs/import")
+async def import_display_profile(data: Dict[str, Any], username: str = Depends(get_current_username)):
+    """Imports a profile and its rules from a JSON object."""
+    def _import():
+        if not data.get('profile') or not data.get('rules'):
+            raise HTTPException(status_code=400, detail="Invalid import format. Expected 'profile' and 'rules' keys.")
+        
+        with _get_conn() as conn:
+            conn.execute("BEGIN TRANSACTION")
+            try:
+                import datetime
+                name = data['profile']['name']
+                # Check for collisions
+                existing = conn.execute("SELECT id FROM display_configs WHERE name = ?", (name,)).fetchone()
+                if existing:
+                    name = f"{name} (Imported {datetime.date.today().isoformat()})"
+                
+                cursor = conn.execute(
+                    "INSERT INTO display_configs (name, description, is_default) VALUES (?, ?, 0)",
+                    (name, data['profile'].get('description', ''))
+                )
+                config_id = cursor.lastrow_id
+                
+                for rule in data['rules']:
+                    conn.execute(
+                        """INSERT INTO display_config_rules (config_id, name, priority, match_conditions, config, enabled)
+                           VALUES (?, ?, ?, ?, ?, ?)""",
+                        (
+                            config_id, 
+                            rule['name'], 
+                            rule.get('priority', 0), 
+                            json.dumps(rule['match_conditions']), 
+                            json.dumps(rule['config']), 
+                            1 if rule.get('enabled', True) else 0
+                        )
+                    )
+                
+                conn.commit()
+                row = conn.execute("SELECT * FROM display_configs WHERE id = ?", (config_id,)).fetchone()
+                return dict(row)
+            except Exception as e:
+                conn.execute("ROLLBACK")
+                raise HTTPException(status_code=500, detail=str(e))
+    return await run_in_threadpool(_import)
+
+# ── Public / Read-Only Routes ─────────────────────────────────────
+
+def _get_read_conn():
+    # Enforce Read-Only mode for public consumption
     conn = sqlite3.connect(f"file:{RULES_DB_PATH}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
@@ -52,7 +324,7 @@ async def get_active_display_rules():
     consumed by the map for client-side classification.
     """
     def _load():
-        with _get_admin_conn() as conn:
+        with _get_read_conn() as conn:
             config = conn.execute(
                 "SELECT id FROM display_configs WHERE is_default = 1 LIMIT 1"
             ).fetchone()
@@ -81,7 +353,7 @@ async def get_active_display_rules():
 async def get_active_config():
     """Returns the current active configuration profile and its rules."""
     def _get():
-        with _get_admin_conn() as conn:
+        with _get_read_conn() as conn:
             config = conn.execute("SELECT * FROM display_configs WHERE is_default = 1 LIMIT 1").fetchone()
             if not config:
                 return {"config": None, "rules": []}

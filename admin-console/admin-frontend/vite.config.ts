@@ -17,6 +17,10 @@ export default defineConfig(({ mode }) => {
         clientPort: env.HMR_PORT ? parseInt(env.HMR_PORT) : 8091,
       },
       proxy: {
+        '/api/display-rules': {
+          target: env.VITE_BACKEND_PROXY_TARGET || 'http://backend:8000',
+          changeOrigin: true,
+        },
         '/api': {
           target: env.VITE_API_PROXY_TARGET || 'http://admin-backend:8090',
           changeOrigin: true,
