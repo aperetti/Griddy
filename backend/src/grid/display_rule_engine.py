@@ -446,10 +446,11 @@ class DisplayRuleEngine:
         # 1. Normalize and Sort
         normalized = []
         for o in overrides:
-            # We only care about the visual impact: content and mode
+            # We only care about the visual impact: content, mode, and color
             content = o.get('svg') or o.get('icon') or ''
             mode = o.get('mode', 'add')
-            normalized.append(f"{content}|{mode}")
+            color_hex = o.get('color_hex') or ''
+            normalized.append(f"{content}|{mode}|{color_hex}")
         
         normalized.sort()
         

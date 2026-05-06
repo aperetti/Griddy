@@ -20,6 +20,40 @@ class TestSpriteGenerator(unittest.TestCase):
         res = self.generator._process_svg(svg_src, color="#FF0000")
         self.assertIn('fill="#FF0000"', res)
 
+    def test_override_currentColor_uses_override_color_not_base(self):
+        """Regression: an override icon with currentColor must paint with the override's
+        own color_hex, not the base rule's color. Previously a single global regex
+        replaced every currentColor with the base color, masking the override."""
+        base_svg = '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="40" fill="currentColor"/></svg>'
+        override_svg = '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="10" width="20" height="20" fill="currentColor"/></svg>'
+
+        res = self.generator._process_svg(
+            base_svg,
+            color="#0000FF",
+            overrides=[{"svg": override_svg, "mode": "add", "color_hex": "#FF0000"}],
+        )
+
+        # The override's rect must be painted red, not the base's blue.
+        self.assertIn('<rect x="10" y="10" width="20" height="20" fill="#FF0000"/>', res)
+        # The base's circle must still be painted blue.
+        self.assertIn('<circle cx="50" cy="50" r="40" fill="#0000FF"/>', res)
+        # No leftover currentColor tokens — every layer's color is resolved.
+        self.assertNotIn('currentColor', res)
+
+    def test_override_without_color_hex_falls_back_to_base(self):
+        """An override that doesn't specify color_hex inherits the base rule's color."""
+        base_svg = '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="40" fill="currentColor"/></svg>'
+        override_svg = '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="10" height="10" fill="currentColor"/></svg>'
+
+        res = self.generator._process_svg(
+            base_svg,
+            color="#00FF00",
+            overrides=[{"svg": override_svg, "mode": "add"}],
+        )
+
+        self.assertIn('fill="#00FF00"', res)
+        self.assertNotIn('currentColor', res)
+
     def test_process_svg_injects_css(self):
         svg_src = '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="40" fill="white"/></svg>'
         css_str = ".custom { fill: blue; }"

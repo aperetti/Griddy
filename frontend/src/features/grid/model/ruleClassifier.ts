@@ -17,15 +17,17 @@ export interface RuleMatch {
     overridesData?: Array<{ index: number; mrids: Set<string> }>;
 }
 
-/** DJB2 hash function to match backend SpriteGenerator (using stable delimited string) */
-export function calculateOverrideHash(overrides: Array<{ svg?: string; icon?: string; mode: string }>): string {
+/** DJB2 hash function to match backend SpriteGenerator (using stable delimited string).
+ * Must stay in sync with `_calculate_override_hash` in backend/src/grid/{sprites.py,display_rule_engine.py}. */
+export function calculateOverrideHash(overrides: Array<{ svg?: string; icon?: string; mode: string; color_hex?: string }>): string {
     if (overrides.length === 0) return '';
-    
+
     // 1. Normalize and Sort
     const normalized = overrides.map(o => {
         const content = o.svg || o.icon || '';
         const mode = o.mode || 'add';
-        return `${content}|${mode}`;
+        const colorHex = o.color_hex || '';
+        return `${content}|${mode}|${colorHex}`;
     });
     normalized.sort();
     

@@ -73,15 +73,19 @@ class SpriteGenerator:
             except:
                 return content
 
+        def paint(content: str, c: str) -> str:
+            return re.sub(r'currentColor', c, content, flags=re.IGNORECASE)
+
         # 1. Extract Base ViewBox and Content
         vb_match = re.search(r'viewBox=["\']([^"]*)["\']', svg_str)
         view_box = vb_match.group(1) if vb_match else "0 0 100 100"
         base_inner = get_inner(svg_str)
 
         # 2. Build the combined SVG
-        final_color = color or "#cccccc"
+        base_color = color or "#cccccc"
+        base_inner_painted = paint(base_inner, base_color)
         result = [f'<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none">']
-        
+
         # 3. Add Base Layer (scaled and CENTERED to fit 100x100 frame)
         try:
             parts = [float(x) for x in view_box.split()]
@@ -90,35 +94,36 @@ class SpriteGenerator:
                 scale = min(100.0 / vw, 100.0 / vh)
                 off_x = (100.0 - (vw * scale)) / 2.0
                 off_y = (100.0 - (vh * scale)) / 2.0
-                
-                transform = f'transform="translate({off_x:.3f}, {off_y:.3f}) scale({scale:.3f}) translate({-vx:.3f}, {-vy:.3f})"'
-                result.append(f'<g {transform}>{base_inner}</g>')
-            else:
-                result.append(f'<g>{base_inner}</g>')
-        except:
-            result.append(f'<g>{base_inner}</g>')
 
-        # 4. Add Overlays (each wrapped in its own group)
+                transform = f'transform="translate({off_x:.3f}, {off_y:.3f}) scale({scale:.3f}) translate({-vx:.3f}, {-vy:.3f})"'
+                result.append(f'<g {transform} fill="{base_color}" stroke="{base_color}">{base_inner_painted}</g>')
+            else:
+                result.append(f'<g fill="{base_color}" stroke="{base_color}">{base_inner_painted}</g>')
+        except:
+            result.append(f'<g fill="{base_color}" stroke="{base_color}">{base_inner_painted}</g>')
+
+        # 4. Add Overlays — each override resolves currentColor against its OWN color_hex
+        # (or falls back to the base color if it doesn't specify one).
         if overrides:
             for o in overrides:
                 mode = o.get('mode', 'add')
                 content = o.get('svg') or o.get('icon') or ''
                 if not content:
                     continue
-                
-                ov_inner = get_inner(content)
+
+                ov_color = o.get('color_hex') or base_color
+                ov_inner_painted = paint(get_inner(content), ov_color)
+                wrapper = f'<g fill="{ov_color}" stroke="{ov_color}">{ov_inner_painted}</g>'
+
                 if mode == 'replace':
-                    # Replacement mode wipes the base and previous overlays
-                    result = [result[0], f'<g>{ov_inner}</g>']
+                    result = [result[0], wrapper]
                 else:
-                    result.append(f'<g>{ov_inner}</g>')
+                    result.append(wrapper)
 
         result.append("</svg>")
         svg_str = "".join(result)
 
-        # 5. Final color and font processing
-        svg_str = re.sub(r'\bcurrentColor\b', final_color, svg_str, flags=re.IGNORECASE)
-
+        # 5. Font processing (Arial -> Helvetica for ReportLab)
         if "Arial" in svg_str:
             svg_str = svg_str.replace("Arial", "Helvetica")
 
@@ -131,8 +136,9 @@ class SpriteGenerator:
                 return Image.new("RGBA", (self.item_size, self.item_size), (0, 0, 0, 0))
 
             # ReportLab's svg2rlg is very picky about attribute quotes.
-            # Fix common "unquoted" attributes like fill=none or stroke=green
-            fixed_svg = re.sub(r'=(\w+)(?=[ \t>])', r'="\1"', svg_str)
+            # Fix common "unquoted" attributes like fill=none or stroke=#ff0000
+            # We use a pattern that quotes values but respects self-closing tags (/>)
+            fixed_svg = re.sub(r'=(?!")([^ \t>/]+)(?=[ \t>/])', r'="\1"', svg_str)
             
             drawing = svg2rlg(BytesIO(fixed_svg.encode("utf-8")))
             if drawing is None:
@@ -185,7 +191,7 @@ class SpriteGenerator:
         if not overrides: return ""
         normalized = []
         for o in overrides:
-            normalized.append(f"{o.get('svg','') or o.get('icon','')}|{o.get('mode','add')}")
+            normalized.append(f"{o.get('svg','') or o.get('icon','')}|{o.get('mode','add')}|{o.get('color_hex') or ''}")
         normalized.sort()
         combined_str = "||".join(normalized)
         hash_val = 5381
@@ -226,6 +232,7 @@ class SpriteGenerator:
                             candidates.append({
                                 "svg": ov_content,
                                 "mode": o.get('mode', 'add'),
+                                "color_hex": o.get('color_hex'),
                                 "conditions": o.get('conditions', {})
                             })
                     for o in (config.get('css_overrides') or []):
@@ -233,6 +240,7 @@ class SpriteGenerator:
                             candidates.append({
                                 "svg": f"<style>{o.get('css')}</style>",
                                 "mode": 'add',
+                                "color_hex": None,
                                 "conditions": o.get('conditions', {})
                             })
 
@@ -249,7 +257,7 @@ class SpriteGenerator:
                     for i in range(1, k + 1):
                         for combo in itertools.combinations(conditional[:k], i):
                             active = unconditional + list(combo)
-                            render_ready = [{"svg": o.get('svg') or o.get('icon'), "mode": o.get('mode', 'add')} for o in active]
+                            render_ready = [{"svg": o.get('svg') or o.get('icon'), "mode": o.get('mode', 'add'), "color_hex": o.get('color_hex')} for o in active]
                             ov_hash = self._calculate_override_hash(render_ready)
                             items.append({
                                 "id": f"rule_{d['id']}_{ov_hash}",
