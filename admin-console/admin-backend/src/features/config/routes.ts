@@ -3,7 +3,13 @@ import { getAdminDb, getRulesDb } from '../../shared/database.js';
 import fs from 'fs';
 import path from 'path';
 
-// ... (RuleConfig and DisplayRule interfaces)
+interface DisplayRule {
+  name: string;
+  priority?: number;
+  match_conditions?: any;
+  config?: any;
+  enabled?: boolean;
+}
 
 const MAIN_BACKEND_URL = process.env.MAIN_BACKEND_URL || 'http://localhost:8000';
 const INFRA_DIR = process.env.INFRA_DIR || path.resolve(process.cwd(), '../../infra');
@@ -32,7 +38,8 @@ export async function configRoutes(fastify: FastifyInstance) {
     const filePath = path.join(INFRA_DIR, filename);
     
     // Security: prevent directory traversal
-    if (!filePath.startsWith(INFRA_DIR)) {
+    const safeInfraDir = INFRA_DIR.endsWith(path.sep) ? INFRA_DIR : INFRA_DIR + path.sep;
+    if (!filePath.startsWith(safeInfraDir) && filePath !== INFRA_DIR) {
       return reply.status(403).send({ error: 'Access denied' });
     }
 
@@ -55,7 +62,8 @@ export async function configRoutes(fastify: FastifyInstance) {
     const filePath = path.join(INFRA_DIR, filename);
     
     // Security: prevent directory traversal
-    if (!filePath.startsWith(INFRA_DIR)) {
+    const safeInfraDir = INFRA_DIR.endsWith(path.sep) ? INFRA_DIR : INFRA_DIR + path.sep;
+    if (!filePath.startsWith(safeInfraDir) && filePath !== INFRA_DIR) {
       return reply.status(403).send({ error: 'Access denied' });
     }
 
