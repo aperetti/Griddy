@@ -1,0 +1,4 @@
+## 2024-05-28 - Path Traversal Vulnerability in `startsWith` check
+**Vulnerability:** A directory traversal vulnerability exists when validating file paths using `String.prototype.startsWith()` if the base directory path does not end with a path separator (`/` or `\`).
+**Learning:** `startsWith()` does an exact substring match. For example, if `INFRA_DIR` is `/app/infra`, then an attacker requesting `/app/infra-secrets.txt` via directory traversal (e.g., `../infra-secrets.txt`) will pass the check `/app/infra-secrets.txt.startsWith('/app/infra')`, allowing unauthorized access to files outside the intended directory.
+**Prevention:** To securely validate paths using `startsWith()`, always ensure that the target directory string ends with `path.sep` (e.g., `/app/infra/`) before performing the check, or evaluate directory traversal securely using functions like `path.relative` to ensure the resolved path truly sits within the boundary.
