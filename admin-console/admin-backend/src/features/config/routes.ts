@@ -4,6 +4,15 @@ import fs from 'fs';
 import path from 'path';
 
 // ... (RuleConfig and DisplayRule interfaces)
+interface DisplayRule {
+  id?: number;
+  config_id: number;
+  name: string;
+  priority: number;
+  match_conditions: any;
+  config: any;
+  enabled: boolean;
+}
 
 const MAIN_BACKEND_URL = process.env.MAIN_BACKEND_URL || 'http://localhost:8000';
 const INFRA_DIR = process.env.INFRA_DIR || path.resolve(process.cwd(), '../../infra');
@@ -32,7 +41,8 @@ export async function configRoutes(fastify: FastifyInstance) {
     const filePath = path.join(INFRA_DIR, filename);
     
     // Security: prevent directory traversal
-    if (!filePath.startsWith(INFRA_DIR)) {
+    const safeInfraDir = path.resolve(INFRA_DIR).endsWith(path.sep) ? path.resolve(INFRA_DIR) : path.resolve(INFRA_DIR) + path.sep;
+    if (!path.resolve(filePath).startsWith(safeInfraDir)) {
       return reply.status(403).send({ error: 'Access denied' });
     }
 
@@ -55,7 +65,8 @@ export async function configRoutes(fastify: FastifyInstance) {
     const filePath = path.join(INFRA_DIR, filename);
     
     // Security: prevent directory traversal
-    if (!filePath.startsWith(INFRA_DIR)) {
+    const safeInfraDir = path.resolve(INFRA_DIR).endsWith(path.sep) ? path.resolve(INFRA_DIR) : path.resolve(INFRA_DIR) + path.sep;
+    if (!path.resolve(filePath).startsWith(safeInfraDir)) {
       return reply.status(403).send({ error: 'Access denied' });
     }
 
