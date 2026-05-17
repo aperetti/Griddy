@@ -15,77 +15,21 @@ from typing import Optional
 
 from src.shared.cim_model import CimModelManager
 from src.shared.cim.profile import CimProfileService
-
+from src.shared.cim.repository import CimRepository
 
 logger = logging.getLogger(__name__)
-
-
-def _discover_feeders_from_neo4j() -> list[dict]:
-    """Query Neo4j for all Feeder nodes and return them as loadable layers.
-    Includes retry logic for resilient startup.
-    """
-    import time
-    from neo4j import GraphDatabase
-    from neo4j.exceptions import ServiceUnavailable
-
-    url = os.getenv("CIMG_URL")
-    username = os.getenv("CIMG_USERNAME", "neo4j")
-    password = os.getenv("CIMG_PASSWORD", "")
-    database = os.getenv("CIMG_DATABASE", "neo4j")
-
-    max_retries = 10
-    retry_delay = 2
-    
-    for attempt in range(max_retries):
-        try:
-            driver = GraphDatabase.driver(url, auth=(username, password))
-            with driver.session(database=database) as session:
-                rows = list(session.run(
-                    "MATCH (f:Feeder) RETURN f.uri AS uri, f.`IdentifiedObject.name` AS name ORDER BY name"
-                ))
-            driver.close()
-            
-            results = []
-            for row in rows:
-                uri: str = row["uri"] or ""
-                feeder_mrid = uri.replace("urn:uuid:", "")
-                name = row["name"] or feeder_mrid
-                results.append({
-                    "feeder_id": name,
-                    "feeder_uri": feeder_mrid,
-                })
-
-            if not results:
-                logger.warning("No Feeder nodes found in Neo4j. Ingestion might be in progress.")
-
-            return results
-
-        except ServiceUnavailable as e:
-            if attempt < max_retries - 1:
-                logger.info(f"Neo4j not ready (Bolt port 7687). Retrying in {retry_delay}s... (Attempt {attempt + 1}/{max_retries})")
-                time.sleep(retry_delay)
-                retry_delay = min(retry_delay * 2, 10)  # Exponential backoff, cap at 10s
-            else:
-                logger.error("Failed to connect to Neo4j after %d attempts.", max_retries)
-                raise e
-        except Exception as e:
-            logger.error("Unexpected error during Neo4j discovery: %s", e)
-            raise e
-
-    return []
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # CimModelRegistry
 # ═══════════════════════════════════════════════════════════════════════════
-
 
 class CimModelRegistry:
     """Singleton registry that holds multiple named CimModelManager instances."""
 
     _instance: Optional["CimModelRegistry"] = None
 
-    def __init__(self):
+    def __init__(self, repository: CimRepository):
+        self.repository = repository
         self._managers: dict[str, CimModelManager] = {}  # feeder_id → manager
         self._available: list[dict] = []  # discovered feeder metadata from Neo4j
         self._active_models: set[str] = set()  # currently loaded feeder_ids
@@ -99,9 +43,11 @@ class CimModelRegistry:
 
 
     @classmethod
-    def get_instance(cls) -> "CimModelRegistry":
+    def get_instance(cls, repository: Optional[CimRepository] = None) -> "CimModelRegistry":
         if cls._instance is None:
-            cls._instance = CimModelRegistry()
+            if repository is None:
+                raise ValueError("CimRepository must be provided for initial registry instantiation")
+            cls._instance = CimModelRegistry(repository)
         return cls._instance
 
     @classmethod
@@ -111,13 +57,8 @@ class CimModelRegistry:
     # ── Discovery ─────────────────────────────────────────────────
 
     def discover(self):
-        """Discover available feeders from Neo4j (CIMG_URL required)."""
-        if not os.getenv("CIMG_URL"):
-            raise EnvironmentError(
-                "CIMG_URL is not set. A Neo4j connection is required to discover feeders."
-            )
-
-        self._available = _discover_feeders_from_neo4j()
+        """Discover available feeders from Neo4j via repository."""
+        self._available = self.repository.discover_feeders()
         logger.info(
             "Discovered %d feeder(s) in Neo4j: %s",
             len(self._available),
@@ -166,41 +107,11 @@ class CimModelRegistry:
 
     def resolve_node_to_model(self, node_id: str) -> Optional[dict[str, str]]:
         """Resolve node ID (mRID or name) to its containing feeder and full identity."""
-        url = os.getenv("CIMG_URL")
-        if not url:
-            return None
-
-        username = os.getenv("CIMG_USERNAME", "neo4j")
-        password = os.getenv("CIMG_PASSWORD", "")
-        database = os.getenv("CIMG_DATABASE", "neo4j")
-
-        # Resolve node to its containing Feeder in Neo4j
-        # We traverse memberships or direct associations.
-        query = """
-        MATCH (n:Resource)
-        WHERE n.`IdentifiedObject.mRID` = $node_id OR n.`IdentifiedObject.name` = $node_id
-        OPTIONAL MATCH (n)-[:`Equipment.EquipmentContainer`|`ConnectivityNode.ConnectivityNodeContainer`|`Terminal.ConductingEquipment`|`Terminal.ConnectivityNode`|`PowerTransformerEnd.PowerTransformer`|`TransformerTank.PowerTransformer`|`TransformerTankEnd.TransformerTank`*0..8]-(f:Feeder)
-        RETURN head(collect(DISTINCT f.`IdentifiedObject.name`)) AS feeder_id, n.`IdentifiedObject.mRID` AS mrid, n.`IdentifiedObject.name` AS name
-        LIMIT 1
-        """
-        
         try:
-            from neo4j import GraphDatabase
-            driver = GraphDatabase.driver(url, auth=(username, password))
-            with driver.session(database=database) as session:
-                result = session.run(query, {"node_id": node_id}).single()
-                if result:
-                    return {
-                        "feeder_id": result["feeder_id"],
-                        "mrid": result["mrid"],
-                        "name": result["name"]
-                    }
-            driver.close()
+            return self.repository.resolve_node_to_feeder(node_id)
         except Exception as e:
-            logger.error("Failed to resolve node '%s' in Neo4j: %s", node_id, e)
-
-        return None
-
+            logger.error("Failed to resolve node '%s' in repository: %s", node_id, e)
+            return None
 
     def unload_model(self, model_id: str):
         """Unload a model, freeing memory."""
@@ -275,51 +186,13 @@ class CimModelRegistry:
     # ── Combined topology ─────────────────────────────────────────
 
     def search_neo4j_global(self, query: str, class_name: str | None = None) -> list[dict]:
-        """Search all feeders in Neo4j directly, regardless of which are loaded in memory."""
-        url = os.getenv("CIMG_URL")
-        if not url:
-            return []
-
-        username = os.getenv("CIMG_USERNAME", "neo4j")
-        password = os.getenv("CIMG_PASSWORD", "")
-        database = os.getenv("CIMG_DATABASE", "neo4j")
-
-        # Build label filter clause
-        label_clause = f"AND any(lbl IN labels(n) WHERE toLower(lbl) CONTAINS toLower('{class_name}'))" if class_name else ""
-
-        # Improved Cypher:
-        # 1. Case-insensitive search using toLower()
-        # 2. Broader relationship types for Feeder navigation
-        # 3. Use collect() and head() to ensure only one feeder is returned per result node
-        # 4. Limit unique results to 50
-        cypher = f"""
-        MATCH (n:Resource)
-        WHERE toLower(n.`IdentifiedObject.name`) CONTAINS toLower($query) {label_clause}
-        WITH n LIMIT 50
-        OPTIONAL MATCH (n)-[:`Equipment.EquipmentContainer`|`ConnectivityNode.ConnectivityNodeContainer`|`Terminal.ConductingEquipment`|`Terminal.ConnectivityNode`|`PowerTransformerEnd.PowerTransformer`|`TransformerTank.PowerTransformer`|`TransformerTankEnd.TransformerTank`*0..6]-(f:Feeder)
-        RETURN
-            n.`IdentifiedObject.mRID`      AS id,
-            n.`IdentifiedObject.name`      AS name,
-            [lbl IN labels(n) WHERE lbl <> 'Resource'][0] AS cim_type,
-            head(collect(DISTINCT f.`IdentifiedObject.name`)) AS model_id
-        """
-
+        """Search all feeders in Neo4j directly via repository."""
         try:
-            from neo4j import GraphDatabase
-            driver = GraphDatabase.driver(url, auth=(username, password))
-            results = []
-            with driver.session(database=database) as session:
-                for record in session.run(cypher, {"query": query}):
-                    mid = record["model_id"] or ""
-                    results.append({
-                        "id": record["id"] or "",
-                        "name": record["name"] or record["id"] or "",
-                        "type": "equipment",
-                        "model_id": mid,
-                        "cim_type": record["cim_type"] or "Equipment",
-                        "loaded": mid in self._active_models if mid else False,
-                    })
-            driver.close()
+            results = self.repository.search_global(query, class_name)
+            # Add 'loaded' status to results
+            for r in results:
+                mid = r.get("model_id")
+                r["loaded"] = mid in self._active_models if mid else False
             return results
         except Exception as e:
             logger.error("Global Neo4j search failed: %s", e)

@@ -46,25 +46,35 @@ class DisplayRuleRepository:
             return dict(row) if row else None
 
     def create_config(self, name: str, description: str = "") -> Dict[str, Any]:
-        with self._get_conn() as conn:
-            cursor = conn.execute(
-                "INSERT INTO display_configs (name, description, is_default) VALUES (?, ?, 0)",
-                (name, description)
-            )
-            config_id = cursor.lastrowid
-            conn.commit()
-            return self.get_config(config_id)
+        current_name = name
+        while True:
+            try:
+                with self._get_conn() as conn:
+                    cursor = conn.execute(
+                        "INSERT INTO display_configs (name, description, is_default) VALUES (?, ?, 0)",
+                        (current_name, description)
+                    )
+                    config_id = cursor.lastrowid
+                    conn.commit()
+                    return self.get_config(config_id)
+            except sqlite3.IntegrityError:
+                current_name = f"{current_name} (New)"
 
     def update_config(self, config_id: int, name: str, description: str) -> Optional[Dict[str, Any]]:
-        with self._get_conn() as conn:
-            cursor = conn.execute(
-                "UPDATE display_configs SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (name, description, config_id)
-            )
-            if cursor.rowcount == 0:
-                return None
-            conn.commit()
-            return self.get_config(config_id)
+        current_name = name
+        while True:
+            try:
+                with self._get_conn() as conn:
+                    cursor = conn.execute(
+                        "UPDATE display_configs SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (current_name, description, config_id)
+                    )
+                    if cursor.rowcount == 0:
+                        return None
+                    conn.commit()
+                    return self.get_config(config_id)
+            except sqlite3.IntegrityError:
+                current_name = f"{name} ({datetime.now().strftime('%H%M%S')})"
 
     def delete_config(self, config_id: int) -> bool:
         with self._get_conn() as conn:
