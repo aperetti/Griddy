@@ -26,6 +26,7 @@ from src.shared.cim_registry import CimModelRegistry
 
 logger = logging.getLogger(__name__)
 from src.grid.topology_engine import TopologyEngine
+from src.grid.display_rule_repository import DisplayRuleRepository
 from src.grid.display_rule_engine import DisplayRuleEngine
 from src.shared.meter_data_repository import IMeterDataRepository
 from src.shared.meter_adapters.duckdb_adapter import DuckDBMeterDataRepository
@@ -36,8 +37,11 @@ from src.shared.database_setup import DB_PATH, ADMIN_DB_PATH, RULES_DB_PATH, PAR
 # CIM model registry (populated during FastAPI lifespan startup)
 registry = CimModelRegistry.get_instance()
 
+# Display rule repository (persistence layer for rules.sqlite)
+display_rule_repo = DisplayRuleRepository(RULES_DB_PATH)
+
 # Display rule engine for node classification (Reads from rules.sqlite)
-display_engine = DisplayRuleEngine(RULES_DB_PATH)
+display_engine = DisplayRuleEngine(display_rule_repo)
 
 # topology graph engine (dependency-free BFS over pre-computed CIM edges)
 graph_engine = TopologyEngine()

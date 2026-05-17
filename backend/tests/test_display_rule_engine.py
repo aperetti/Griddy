@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 from src.grid.display_rule_engine import DisplayRuleEngine
+from src.grid.display_rule_repository import DisplayRuleRepository
 
 class TestDisplayRuleEngine(unittest.TestCase):
     def setUp(self):
@@ -13,7 +14,7 @@ class TestDisplayRuleEngine(unittest.TestCase):
         cursor = conn.cursor()
         
         # Setup schema
-        cursor.execute("CREATE TABLE display_configs (id INTEGER PRIMARY KEY, name TEXT, is_default INTEGER)")
+        cursor.execute("CREATE TABLE display_configs (id INTEGER PRIMARY KEY, name TEXT, is_default INTEGER, description TEXT, created_at DATETIME, updated_at DATETIME)")
         cursor.execute("""
             CREATE TABLE display_config_rules (
                 id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,7 +37,8 @@ class TestDisplayRuleEngine(unittest.TestCase):
         conn.commit()
         conn.close()
         
-        self.engine = DisplayRuleEngine(self.db_path)
+        self.repo = DisplayRuleRepository(self.db_path)
+        self.engine = DisplayRuleEngine(self.repo)
 
     def tearDown(self):
         try:

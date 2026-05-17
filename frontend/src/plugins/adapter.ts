@@ -35,7 +35,7 @@ function adaptContext(ctx: PluginExecutionContext): SdkPluginContext {
             // Extract IDs to populate the mandatory nodeIds field
             const nodeIds = ctx.selectedNodes.map(n => n.id);
             const edgeIds = ctx.selectedEdgeIds;
-            ctx.setAnalysisWindows(prev => [
+            ctx.setAnalysisWindows((prev: any[]) => [
                 ...prev,
                 { id, type, nodeIds, edgeIds, nodeName, loading: true, data: [], isOpen: true, isMinimized: false }
             ]);

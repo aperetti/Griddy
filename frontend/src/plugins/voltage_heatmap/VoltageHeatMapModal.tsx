@@ -1,7 +1,7 @@
 import React from 'react';
 import { Button, Text, Stack, Alert, LoadingOverlay, Box, Group, Badge } from '@mantine/core';
 import { AlertCircle, Map as MapIcon, CheckCircle2 } from 'lucide-react';
-import { AnalysisWindow } from '../../features/analytics/components/AnalysisWindow';
+import { AnalysisWindow } from '@plugin-sdk';
 
 export interface VoltageHeatMapModalProps {
   isOpen: boolean;

@@ -165,3 +165,57 @@ export const CIM_OPERATORS = [
     { value: 'contains', label: 'Contains' },
     { value: 'length_gt', label: 'Length >' },
 ];
+
+import { type DisplayRule } from '../../../shared/api';
+
+export interface DisplayRuleGroup {
+    groupName: string | null;
+    rules: DisplayRule[];
+}
+
+/**
+ * Parses the CIM class from a rule's match conditions.
+ */
+export const getCimClassFromRule = (rule: DisplayRule): string => {
+    try {
+        const conds = typeof rule.match_conditions === 'string' 
+            ? JSON.parse(rule.match_conditions) 
+            : rule.match_conditions;
+        return conds?.target_class || 'Any Class';
+    } catch { 
+        return 'Any Class'; 
+    }
+};
+
+/**
+ * Pure function to sort and group rules for display.
+ */
+export const processRules = (
+    rules: DisplayRule[],
+    groupBy: 'none' | 'cim_class',
+    sortBy: 'priority' | 'name',
+    sortOrder: 'asc' | 'desc'
+): DisplayRuleGroup[] => {
+    const sorted = [...rules].sort((a, b) => {
+        let comparison = sortBy === 'priority' 
+            ? a.priority - b.priority 
+            : a.name.localeCompare(b.name);
+        return sortOrder === 'asc' ? comparison : -comparison;
+    });
+
+    if (groupBy === 'none') {
+        return [{ groupName: null, rules: sorted }];
+    }
+
+    const groups: Record<string, DisplayRule[]> = {};
+    sorted.forEach(rule => {
+        const cls = getCimClassFromRule(rule);
+        if (!groups[cls]) groups[cls] = [];
+        groups[cls].push(rule);
+    });
+
+    return Object.keys(groups)
+        .sort()
+        .map(name => ({ groupName: name, rules: groups[name] }));
+};
+

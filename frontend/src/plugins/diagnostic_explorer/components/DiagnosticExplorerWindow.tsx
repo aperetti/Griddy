@@ -1,7 +1,7 @@
 import React from 'react';
 import { Stack, Select, Group, Text, Box, Loader, Divider } from '@mantine/core';
 import { Search, Network } from 'lucide-react';
-import { AnalysisWindow } from '../../../features/analytics/components/AnalysisWindow';
+import { AnalysisWindow } from '@plugin-sdk';
 import { GraphExplorer } from '../../../shared/components/GraphExplorer/GraphExplorer';
 import { useDiagnosticExplorer } from '../hooks/useDiagnosticExplorer';
 import type { AnalysisInstance } from '../../../hooks/useAnalyticsState';

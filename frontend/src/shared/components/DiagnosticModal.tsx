@@ -2,8 +2,8 @@ import { useState, useEffect, memo } from 'react';
 import { Stack, Text, ScrollArea, Table, Loader, Alert, Badge, Group, Code, Tabs, Box, Button } from '@mantine/core';
 import { AlertCircle, Database, Network, List, Share2, MapPin, Zap, Activity } from 'lucide-react';
 import { AnalysisWindow } from './AnalysisWindow';
-import { fetchCimEquipment, fetchCimNode } from '../../../shared/api';
-import { autoExport, getDataToCopy } from '../../../shared/utils/exportUtils';
+import { fetchCimEquipment, fetchCimNode } from '../../shared/api';
+import { autoExport, getDataToCopy } from '../../shared/utils/exportUtils';
 import { AssetIntegratedExplorer } from './AssetIntegratedExplorer';
 
 interface DiagnosticModalProps {

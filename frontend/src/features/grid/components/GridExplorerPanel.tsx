@@ -5,7 +5,7 @@ import { copyToClipboard } from '../../../shared/utils/exportUtils';
 import type { Node } from '../../../shared/types';
 import { fetchAlarms, fetchCimEquipment, fetchCimNode, type Alarm } from '../../../shared/api';
 import { AlarmsList } from '../../analytics/components/AlarmsList';
-import { AssetIntegratedExplorer } from '../../analytics/components/AssetIntegratedExplorer';
+import { AssetIntegratedExplorer } from '../../../shared/components/AssetIntegratedExplorer';
 
 interface GridExplorerPanelProps {
     selectedNodes: Node[];

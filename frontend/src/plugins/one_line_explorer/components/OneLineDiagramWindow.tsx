@@ -1,6 +1,6 @@
 import { Box, Stack, Loader, Text, Alert, Badge, Group } from '@mantine/core';
 import { AlertTriangle } from 'lucide-react';
-import { AnalysisWindow } from '../../../features/analytics/components/AnalysisWindow';
+import { AnalysisWindow } from '@plugin-sdk';
 import { useOneLineDiagram } from '../hooks/useOneLineDiagram';
 import { OneLineDiagramSvg } from './OneLineDiagramSvg';
 import type { AnalysisInstance } from '../../../hooks/useAnalyticsState';

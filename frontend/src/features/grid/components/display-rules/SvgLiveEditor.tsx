@@ -6,7 +6,7 @@ import {
 } from '@mantine/core';
 import { Save, Eye, Code as CodeIcon } from 'lucide-react';
 import Editor from '@monaco-editor/react';
-import { AnalysisWindow } from '../../../analytics/components/AnalysisWindow';
+import { AnalysisWindow } from '../../../../shared/components/AnalysisWindow';
 import { InteractiveSvgPreview } from './InteractiveSvgPreview';
 
 interface SvgLiveEditorProps {

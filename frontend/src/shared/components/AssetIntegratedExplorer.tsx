@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Stack, Text, Group, ActionIcon, ScrollArea, NavLink, Badge, Box, Divider, Loader, Alert } from '@mantine/core';
 import { Network, Database, ChevronRight, MapPin, Share2, Component, Info } from 'lucide-react';
-import { fetchCimNeighbors, fetchCimEquipment, fetchCimNode } from '../../../shared/api';
+import { fetchCimNeighbors, fetchCimEquipment, fetchCimNode } from '../../shared/api';
 
 interface AssetIntegratedExplorerProps {
     id: string;

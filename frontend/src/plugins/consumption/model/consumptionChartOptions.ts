@@ -60,7 +60,7 @@ export function buildMarkLines(data: ReadingData[]) {
 
 /** Full-period consumption time-series chart. */
 export function buildTimeSeriesOption(
-    timeSeriesData: Array<[number, number | null, number | null, number | null, number | null]>,
+    timeSeriesData: any[][],
     markLines: any[],
 ) {
     return {

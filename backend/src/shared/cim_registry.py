@@ -21,37 +21,58 @@ logger = logging.getLogger(__name__)
 
 
 def _discover_feeders_from_neo4j() -> list[dict]:
-    """Query Neo4j for all Feeder nodes and return them as loadable layers."""
+    """Query Neo4j for all Feeder nodes and return them as loadable layers.
+    Includes retry logic for resilient startup.
+    """
+    import time
     from neo4j import GraphDatabase
+    from neo4j.exceptions import ServiceUnavailable
 
     url = os.getenv("CIMG_URL")
     username = os.getenv("CIMG_USERNAME", "neo4j")
     password = os.getenv("CIMG_PASSWORD", "")
     database = os.getenv("CIMG_DATABASE", "neo4j")
 
-    driver = GraphDatabase.driver(url, auth=(username, password))
-    try:
-        with driver.session(database=database) as session:
-            rows = list(session.run(
-                "MATCH (f:Feeder) RETURN f.uri AS uri, f.`IdentifiedObject.name` AS name ORDER BY name"
-            ))
-    finally:
-        driver.close()
+    max_retries = 10
+    retry_delay = 2
+    
+    for attempt in range(max_retries):
+        try:
+            driver = GraphDatabase.driver(url, auth=(username, password))
+            with driver.session(database=database) as session:
+                rows = list(session.run(
+                    "MATCH (f:Feeder) RETURN f.uri AS uri, f.`IdentifiedObject.name` AS name ORDER BY name"
+                ))
+            driver.close()
+            
+            results = []
+            for row in rows:
+                uri: str = row["uri"] or ""
+                feeder_mrid = uri.replace("urn:uuid:", "")
+                name = row["name"] or feeder_mrid
+                results.append({
+                    "feeder_id": name,
+                    "feeder_uri": feeder_mrid,
+                })
 
-    results = []
-    for row in rows:
-        uri: str = row["uri"] or ""
-        feeder_mrid = uri.replace("urn:uuid:", "")
-        name = row["name"] or feeder_mrid
-        results.append({
-            "feeder_id": name,
-            "feeder_uri": feeder_mrid,
-        })
+            if not results:
+                logger.warning("No Feeder nodes found in Neo4j. Ingestion might be in progress.")
 
-    if not results:
-        logger.warning("No Feeder nodes found in Neo4j. Ingestion might be in progress.")
+            return results
 
-    return results
+        except ServiceUnavailable as e:
+            if attempt < max_retries - 1:
+                logger.info(f"Neo4j not ready (Bolt port 7687). Retrying in {retry_delay}s... (Attempt {attempt + 1}/{max_retries})")
+                time.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, 10)  # Exponential backoff, cap at 10s
+            else:
+                logger.error("Failed to connect to Neo4j after %d attempts.", max_retries)
+                raise e
+        except Exception as e:
+            logger.error("Unexpected error during Neo4j discovery: %s", e)
+            raise e
+
+    return []
 
 
 # ═══════════════════════════════════════════════════════════════════════════

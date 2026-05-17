@@ -41,7 +41,7 @@ export interface PluginExecutionContext {
      */
     resolveEdgeNodesToNodeIds: (edgeIds: string[]) => string[];
 
-    setAnalysisWindows: React.Dispatch<React.SetStateAction<AnalysisInstance[]>>;
+    setAnalysisWindows: any;
     bringWindowToFront: (id: string) => void;
     updateWindow: (id: string, updates: Partial<AnalysisInstance>) => void;
 

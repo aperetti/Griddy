@@ -1,20 +1,25 @@
-import React, { useState, Fragment, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useMediaQuery } from '@mantine/hooks';
-import { Plus, Trash2, Copy, Lock, Filter, ArrowDownAZ, ListOrdered, FileDown, FileUp, MoreVertical, CheckCircle2, Pencil, CircleDashed } from 'lucide-react';
+import { Filter, ArrowDownAZ } from 'lucide-react';
 import { 
-    Table, Button, Group, ActionIcon, Stack, Text, 
-    Badge, Select, TextInput, Paper,
-    Box, Tooltip, Menu, rem, PasswordInput
+    Button, Group, Stack, 
+    Paper, Box, Tooltip, Menu
 } from '@mantine/core';
-import { AnalysisWindow } from '../../analytics/components/AnalysisWindow';
+import { AnalysisWindow } from '../../../shared/components/AnalysisWindow';
 
-import { RuleIconPreview } from './display-rules/RuleIconPreview';
-import { type DisplayRule } from '../../../shared/api';
 import { useDisplayRules } from '../hooks/useDisplayRules';
 import { RuleEditor } from './display-rules/RuleEditor';
 import { SvgLiveEditor } from './display-rules/SvgLiveEditor';
 import { ConfirmationModal } from './display-rules/ConfirmationModal';
 import { InputModal } from './display-rules/InputModal';
+
+// New Sub-components
+import { RuleAuthOverlay } from './display-rules/RuleAuthOverlay';
+import { ConfigToolbar } from './display-rules/ConfigToolbar';
+import { RuleTable } from './display-rules/RuleTable';
+
+// Model Logic
+import { processRules } from '../model/rules';
 
 interface DisplayRulesManagerProps {
     opened: boolean;
@@ -47,8 +52,6 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
     
     // Auth local UI state
-    const [authUsername, setAuthUsername] = useState('');
-    const [authPassword, setAuthPassword] = useState('');
     const [authError, setAuthError] = useState<string | null>(null);
     const [isAuthenticating, setIsAuthenticating] = useState(false);
     
@@ -83,42 +86,16 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
 
     const isMobile = useMediaQuery('(max-width: 768px)');
 
-    // Grouping/Sorting Logic
-    const processedRules = useMemo(() => {
-        const getCimClass = (rule: DisplayRule) => {
-            try {
-                const conds = typeof rule.match_conditions === 'string' 
-                    ? JSON.parse(rule.match_conditions) 
-                    : rule.match_conditions;
-                return conds?.target_class || 'Any Class';
-            } catch { return 'Any Class'; }
-        };
+    // Realignment: Use pure Model function for processing rules
+    const processedRules = useMemo(() => 
+        processRules(rules, groupBy, sortBy, sortOrder),
+    [rules, groupBy, sortBy, sortOrder]);
 
-        const sorted = [...rules].sort((a, b) => {
-            let comparison = sortBy === 'priority' 
-                ? a.priority - b.priority 
-                : a.name.localeCompare(b.name);
-            return sortOrder === 'asc' ? comparison : -comparison;
-        });
-
-        if (groupBy === 'none') return [{ groupName: null, rules: sorted }];
-
-        const groups: Record<string, DisplayRule[]> = {};
-        sorted.forEach(rule => {
-            const cls = getCimClass(rule);
-            if (!groups[cls]) groups[cls] = [];
-            groups[cls].push(rule);
-        });
-
-        return Object.keys(groups).sort().map(name => ({ groupName: name, rules: groups[name] }));
-    }, [rules, groupBy, sortBy, sortOrder]);
-
-    const handleLogin = (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleLogin = (username: string, password: string) => {
         setIsAuthenticating(true);
         // Simple hardcoded auth for admin operations
-        if (authUsername === 'admin' && authPassword === 'admin') {
-            const token = window.btoa(`${authUsername}:${authPassword}`);
+        if (username === 'admin' && password === 'admin') {
+            const token = window.btoa(`${username}:${password}`);
             localStorage.setItem('adminAuth', token);
             setIsAuthenticated(true);
             setAuthError(null);
@@ -145,32 +122,13 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
 
     if (!isAuthenticated) {
         return (
-            <AnalysisWindow 
-                isOpen={true}
-                storageKey="display-rules-auth"
-                title="Display Rules Manager Access" 
-                onClose={onClose} 
+            <RuleAuthOverlay 
+                onClose={onClose}
+                onLogin={handleLogin}
+                error={authError}
+                isAuthenticating={isAuthenticating}
                 zIndex={zIndex}
-                initialWidth={400} 
-                initialHeight={350}
-            >
-                <Box p="xl">
-                    <Stack align="center" gap="md" py="xl">
-                        <Lock size={40} color="gray" strokeWidth={1.5} />
-                        <Text fw={600} size="lg">Restricted Access</Text>
-                        <Text size="sm" c="dimmed" ta="center">Authentication is required to modify network display rules.</Text>
-                        
-                        <form onSubmit={handleLogin} style={{ width: '100%' }}>
-                            <Stack gap="xs" mt="md">
-                                <TextInput label="Username" value={authUsername} onChange={(e) => setAuthUsername(e.currentTarget.value)} />
-                                <PasswordInput label="Password" value={authPassword} onChange={(e) => setAuthPassword(e.currentTarget.value)} />
-                                {authError && <Text c="red" size="xs">{authError}</Text>}
-                                <Button type="submit" fullWidth mt="md" loading={isAuthenticating}>Sign In</Button>
-                            </Stack>
-                        </form>
-                    </Stack>
-                </Box>
-            </AnalysisWindow>
+            />
         );
     }
 
@@ -201,143 +159,45 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                         />
                     ) : (
                         <Stack gap="md">
-                            {/* Profile Selection & Management */}
-                            <Group justify="space-between">
-                                <Group gap="xs">
-                                    <Select 
-                                        label="Display Profile"
-                                        placeholder="Select profile"
-                                        value={selectedConfigId?.toString()}
-                                        onChange={(v) => setSelectedConfigId(v ? parseInt(v) : null)}
-                                        data={configs.map(c => ({ value: c.id.toString(), label: `${c.name}${c.is_default ? ' (Default)' : ''}` }))}
-                                        style={{ width: rem(250) }}
-                                        comboboxProps={{ zIndex: 2000, withinPortal: true }}
-                                    />
-                                    
-                                    {selectedConfigId && (
-                                        <>
-                                            <Tooltip label={configs.find(c => c.id === selectedConfigId)?.is_default ? "Profile is Already Default" : "Set as Default Profile"}>
-                                                <ActionIcon 
-                                                    variant="light" 
-                                                    color="green" 
-                                                    size="lg" 
-                                                    mt="25px"
-                                                    disabled={!!configs.find(c => c.id === selectedConfigId)?.is_default}
-                                                    onClick={() => handleSetDefault(selectedConfigId)}
-                                                >
-                                                    <CheckCircle2 size={18} />
-                                                </ActionIcon>
-                                            </Tooltip>
-
-                                            <Tooltip label="Delete Current Profile">
-                                                <ActionIcon 
-                                                    variant="light" 
-                                                    color="red" 
-                                                    size="lg" 
-                                                    mt="25px"
-                                                    disabled={!!configs.find(c => c.id === selectedConfigId)?.is_default}
-                                                    onClick={() => {
-                                                        const config = configs.find(c => c.id === selectedConfigId);
-                                                        if (config) {
-                                                            setConfirmModal({
-                                                                opened: true,
-                                                                title: 'Delete Profile',
-                                                                message: `Are you sure you want to delete the profile "${config.name}" and all its rules? This action cannot be undone.`,
-                                                                onConfirm: () => deleteConfig(config.id),
-                                                                color: 'red'
-                                                            });
-                                                        }
-                                                    }}
-                                                >
-                                                    <Trash2 size={18} />
-                                                </ActionIcon>
-                                            </Tooltip>
-                                        </>
-                                    )}
-
-                                    <Menu shadow="md" width={180} zIndex={2000} withinPortal>
-                                        <Menu.Target>
-                                            <ActionIcon variant="light" size="lg" mt="25px"><MoreVertical size={18} /></ActionIcon>
-                                        </Menu.Target>
-                                        <Menu.Dropdown>
-                                            <Menu.Item leftSection={<Plus size={14} />} onClick={() => {
-                                                setInputModal({
-                                                    opened: true,
-                                                    title: 'New Profile',
-                                                    label: 'Profile Name',
-                                                    placeholder: 'e.g. Planning Scenarios',
-                                                    onSubmit: (name) => createConfig(name)
-                                                });
-                                            }}>New Profile</Menu.Item>
-                                            <Menu.Item 
-                                                leftSection={<FileUp size={14} />} 
-                                                onClick={() => document.getElementById('import-profile-input')?.click()}
-                                            >
-                                                Import Profile
-                                            </Menu.Item>
-
-                                            {selectedConfigId && (
-                                                <>
-                                                    <Menu.Item 
-                                                        leftSection={<Pencil size={14} />}
-                                                        onClick={() => {
-                                                            const config = configs.find(c => c.id === selectedConfigId);
-                                                            if (config) {
-                                                                setInputModal({
-                                                                    opened: true,
-                                                                    title: 'Rename Profile',
-                                                                    label: 'New Name',
-                                                                    initialValue: config.name,
-                                                                    placeholder: 'e.g. New Profile Name',
-                                                                    onSubmit: (name) => renameConfig(config.id, name)
-                                                                });
-                                                            }
-                                                        }}
-                                                    >
-                                                        Rename Profile
-                                                    </Menu.Item>
-                                                    <Menu.Item 
-                                                        leftSection={<FileDown size={14} />} 
-                                                        onClick={() => handleExportConfig(selectedConfigId)}
-                                                    >
-                                                        Export Profile
-                                                    </Menu.Item>
-                                                </>
-                                            )}
-                                        </Menu.Dropdown>
-                                    </Menu>
-
-                                    <input 
-                                        type="file" 
-                                        id="import-profile-input" 
-                                        style={{ display: 'none' }} 
-                                        accept=".json"
-                                        onChange={(e) => {
-                                            const file = e.target.files?.[0];
-                                            if (file) {
-                                                const reader = new FileReader();
-                                                reader.onload = (event) => {
-                                                    try {
-                                                        const data = JSON.parse(event.target?.result as string);
-                                                        handleImportConfig(data);
-                                                        setGeneralError(null);
-                                                    } catch (err) {
-                                                        setGeneralError("Invalid JSON file provided for import.");
-                                                    }
-                                                };
-                                                reader.readAsText(file);
-                                                e.target.value = '';
-                                            }
-                                        }}
-                                    />
-                                </Group>
-                                <Group mt="25px">
-                                    {generalError && <Text c="red" size="xs" mr="md" fw={500}>{generalError}</Text>}
-                                    <Button variant="light" color="blue" leftSection={<Plus size={16} />} onClick={handleAddRule}>
-                                        Add Rule
-                                    </Button>
-                                </Group>
-                            </Group>
+                            <ConfigToolbar 
+                                configs={configs}
+                                selectedConfigId={selectedConfigId}
+                                onSelectConfig={setSelectedConfigId}
+                                onSetDefault={handleSetDefault}
+                                onDeleteConfig={(config) => setConfirmModal({
+                                    opened: true,
+                                    title: 'Delete Profile',
+                                    message: `Are you sure you want to delete the profile "${config.name}" and all its rules? This action cannot be undone.`,
+                                    onConfirm: () => deleteConfig(config.id),
+                                    color: 'red'
+                                })}
+                                onCreateConfig={() => setInputModal({
+                                    opened: true,
+                                    title: 'New Profile',
+                                    label: 'Profile Name',
+                                    placeholder: 'e.g. Planning Scenarios',
+                                    onSubmit: (name) => createConfig(name)
+                                })}
+                                onRenameConfig={(config) => setInputModal({
+                                    opened: true,
+                                    title: 'Rename Profile',
+                                    label: 'New Name',
+                                    initialValue: config.name,
+                                    placeholder: 'e.g. New Profile Name',
+                                    onSubmit: (name) => renameConfig(config.id, name)
+                                })}
+                                onExportConfig={handleExportConfig}
+                                onImportConfig={(data) => {
+                                    try {
+                                        handleImportConfig(data);
+                                        setGeneralError(null);
+                                    } catch (err) {
+                                        setGeneralError("Invalid JSON file provided for import.");
+                                    }
+                                }}
+                                onAddRule={handleAddRule}
+                                generalError={generalError}
+                            />
 
                             {/* List Filters/Controls */}
                             <Paper withBorder p="xs" bg="rgba(255, 255, 255, 0.03)" style={{ borderColor: 'rgba(255, 255, 255, 0.1)' }}>
@@ -368,88 +228,19 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
                                 </Group>
                             </Paper>
 
-                            {/* Rules Table */}
-                            <Box style={{ overflowX: 'auto' }}>
-                                <Table verticalSpacing="xs">
-                                    <Table.Thead>
-                                        <Table.Tr>
-                                            <Table.Th style={{ width: rem(40) }}>Icon</Table.Th>
-                                            <Table.Th>Name</Table.Th>
-                                            <Table.Th>Priority</Table.Th>
-                                            <Table.Th>Status</Table.Th>
-                                            <Table.Th style={{ width: rem(120) }}>Actions</Table.Th>
-                                        </Table.Tr>
-                                    </Table.Thead>
-                                    <Table.Tbody>
-                                        {processedRules.map((group, gIdx) => (
-                                            <Fragment key={gIdx}>
-                                                {group.groupName && (
-                                                    <Table.Tr bg="rgba(255, 255, 255, 0.05)">
-                                                        <Table.Td colSpan={5} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                                                            <Text size="xs" fw={700} c="blue" tt="uppercase" lts="1px">{group.groupName}</Text>
-                                                        </Table.Td>
-                                                    </Table.Tr>
-                                                )}
-                                                {group.rules.map((rule) => (
-                                                    <Table.Tr 
-                                                        key={rule.id}
-                                                        onClick={() => setEditingRule(rule)}
-                                                        style={{ cursor: 'pointer', transition: 'background-color 0.15s ease' }}
-                                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'}
-                                                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                                                    >
-                                                        <Table.Td>
-                                                            <RuleIconPreview 
-                                                                icon={rule.config?.icon} 
-                                                                color={rule.config?.color_hex} 
-                                                                size={20}
-                                                            />
-                                                        </Table.Td>
-                                                        <Table.Td>
-                                                            <Text size="sm" fw={500}>{rule.name}</Text>
-                                                        </Table.Td>
-                                                        <Table.Td><Text size="xs">{rule.priority}</Text></Table.Td>
-                                                        <Table.Td>
-                                                            {isMobile ? (
-                                                                rule.enabled
-                                                                    ? <CheckCircle2 size={16} color="var(--mantine-color-green-5)" />
-                                                                    : <CircleDashed size={16} color="var(--mantine-color-gray-5)" />
-                                                            ) : (
-                                                                <Badge color={rule.enabled ? 'green' : 'gray'} size="xs" variant="dot">
-                                                                    {rule.enabled ? 'Active' : 'Disabled'}
-                                                                </Badge>
-                                                            )}
-                                                        </Table.Td>
-                                                        <Table.Td>
-                                                            <Group gap={8}>
-                                                                <ActionIcon variant="subtle" color="blue" size="sm" onClick={(e) => { e.stopPropagation(); setEditingRule(rule); }}><ListOrdered size={14} /></ActionIcon>
-                                                                <ActionIcon variant="subtle" color="blue" size="sm" onClick={(e) => { e.stopPropagation(); handleDuplicateRule(rule.id); }}><Copy size={14} /></ActionIcon>
-                                                                <ActionIcon 
-                                                                    variant="subtle" 
-                                                                    color="red" 
-                                                                    size="sm" 
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        setConfirmModal({
-                                                                            opened: true,
-                                                                            title: 'Delete Rule',
-                                                                            message: `Are you sure you want to delete the rule "${rule.name}"?`,
-                                                                            onConfirm: () => handleDeleteRule(rule.id),
-                                                                            color: 'red'
-                                                                        });
-                                                                    }}
-                                                                >
-                                                                    <Trash2 size={14} />
-                                                                </ActionIcon>
-                                                            </Group>
-                                                        </Table.Td>
-                                                    </Table.Tr>
-                                                ))}
-                                            </Fragment>
-                                        ))}
-                                    </Table.Tbody>
-                                </Table>
-                            </Box>
+                            <RuleTable 
+                                groups={processedRules}
+                                isMobile={isMobile}
+                                onEditRule={setEditingRule}
+                                onDuplicateRule={handleDuplicateRule}
+                                onDeleteRule={(rule) => setConfirmModal({
+                                    opened: true,
+                                    title: 'Delete Rule',
+                                    message: `Are you sure you want to delete the rule "${rule.name}"?`,
+                                    onConfirm: () => handleDeleteRule(rule.id),
+                                    color: 'red'
+                                })}
+                            />
                         </Stack>
                     )}
                 </Box>

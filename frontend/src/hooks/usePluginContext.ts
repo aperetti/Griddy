@@ -76,7 +76,9 @@ export function usePluginContext(deps: PluginContextDeps): PluginExecutionContex
         setNodeAverages: (averages: Record<string, number> | null) => deps.setNodeAverages(averages),
         setEdgeAverages: (averages: Record<string, number> | null) => deps.setEdgeAverages(averages),
         setVoltageScale: deps.setVoltageScale,
-        selectAndNavigateToNode: (ids, hint) => deps.selectAndNavigateToNode(ids, hint, false),
+        selectAndNavigateToNode: (ids: string | string[], hint?: string) => {
+            deps.selectAndNavigateToNode(ids, hint, false);
+        },
     }), [
         deps.selectedNodes, deps.selectedEdgeIds, deps.edges,
         deps.dateRange, deps.systemConfig,

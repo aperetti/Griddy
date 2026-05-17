@@ -10,11 +10,13 @@ from .cim_mapping import CimMapper
 
 logger = logging.getLogger(__name__)
 
+from src.grid.display_rule_repository import DisplayRuleRepository
+
 class DisplayRuleEngine:
     """Engine for classifying nodes based on admin-defined display rules."""
 
-    def __init__(self, admin_db_path: str):
-        self.admin_db_path = admin_db_path
+    def __init__(self, repository: DisplayRuleRepository):
+        self.repository = repository
         self._rules = []
         self._config_name = "None"
         self._engine = CimRuleEngine()
@@ -41,16 +43,10 @@ class DisplayRuleEngine:
         return {}
 
     def load_rules(self):
-        """Loads rules from the default configuration in the admin database."""
+        """Loads rules from the default configuration via the repository."""
         try:
-            # Open the database (writable for potential migrations or updates)
-            conn = sqlite3.connect(self.admin_db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            # Find default config
-            cursor.execute("SELECT id, name FROM display_configs WHERE is_default = 1 LIMIT 1")
-            config = cursor.fetchone()
+            active = self.repository.get_active_config_with_rules()
+            config = active.get('config')
             
             if not config:
                 logger.warning("No default display configuration found in admin database.")
@@ -58,25 +54,9 @@ class DisplayRuleEngine:
                 self._config_name = "None"
                 return
 
-            config_id = config['id']
             self._config_name = config['name']
+            self._rules = active.get('rules', [])
 
-            # Load rules for this config, ordered by priority (descending)
-            cursor.execute("""
-                SELECT * FROM display_config_rules 
-                WHERE config_id = ? AND enabled = 1
-                ORDER BY priority DESC
-            """, (config_id,))
-            
-            self._rules = []
-            for row in cursor.fetchall():
-                rule = dict(row)
-                # Parse conditions and config using robust helper
-                rule['match_conditions'] = self._ensure_dict(rule.get('match_conditions'))
-                rule['config'] = self._ensure_dict(rule.get('config'))
-                self._rules.append(rule)
-
-            conn.close()
             logger.info(f"Loaded {len(self._rules)} display rules from config '{self._config_name}'")
             self._classify_cache.clear()  # Invalidate bulk classification cache
         except Exception as e:

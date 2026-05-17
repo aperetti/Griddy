@@ -18,7 +18,7 @@ import { GlobalSettingsModal } from './features/analytics/components/GlobalSetti
 import { DisplayRulesManager } from './features/grid/components/DisplayRulesManager';
 import { OverlayControls } from './features/ui/OverlayControls';
 import { SystemSidebar } from './features/ui/SystemSidebar';
-import { AnalysisWindowLayer } from './features/analytics/components/AnalysisWindowLayer';
+import { AnalysisWindowLayer } from './shared/components/AnalysisWindowLayer';
 import { AnalysisToolbar } from './features/grid/components/AnalysisToolbar';
 import { AnalysisTray } from './features/analytics/components/AnalysisTray';
 import { SchemaProvider } from './features/grid/context/SchemaContext';

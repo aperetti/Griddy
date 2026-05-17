@@ -16,10 +16,12 @@
 9. Before writing any code, suggest a file structure that follows the Clean Architecture pattern, ensuring no single file handles more than one responsibility.
 10. **Performance Budgeting**: Every new API endpoint or complex analytical computation must be validated against a performance budget. Target latency for standard grid traversals is <200ms; complex analytical aggregations (e.g., consumption) should aim for <1s for 1-year windows.
 12. **Move Business Logic to "Model"** — In a Vertical Slice architecture, the model is where data structures and transformations live. Heavy data mapping (e.g., converting API responses into display formats) does not belong in `.tsx` files. New file: `src/features/{area}/model/{Name}.ts`. What goes here: pure functions, TypeScript interfaces.
-13. **Utilize the Context Pattern** — If prop-drilling occurs, wrap that section of the tree in a local Context. Folder: `src/features/{area}/context/{Function}Context.tsx`. This keeps components clean of state-passing logic.
-14. **Extract Logic into Custom Hooks** — If a component contains complex `useEffect` hooks, API calls, or state transitions, move them into a local hook within the feature folder.
-15. **Sub-component Decomposition** — Check if JSX can be broken into smaller, "dumb" presentational components.
-16. **Rule of 300** — If a component exceeds 300 lines, extract hooks. If it exceeds 500 lines, it is almost certainly handling too many UI responsibilities and needs sub-components.
+13. **Backend Repository Pattern** — All direct database interactions (SQL, Neo4j drivers) must be encapsulated in a Repository class. FastAPI routes must NEVER contain raw SQL.
+14. **Plugin Isolation** — Plugins must remain isolated. They should NEVER import directly from core feature slices. Shared UI components needed by both live in `src/shared/components`.
+15. **Utilize the Context Pattern** — If prop-drilling occurs, wrap that section of the tree in a local Context. Folder: `src/features/{area}/context/{Function}Context.tsx`.
+16. **Extract Logic into Custom Hooks** — If a component contains complex `useEffect` hooks, API calls, or state transitions, move them into a local hook within the feature folder.
+17. **Sub-component Decomposition** — Check if JSX can be broken into smaller, "dumb" presentational components.
+18. **Rule of 300** — If a component exceeds 300 lines, extract hooks. If it exceeds 500 lines, it is almost certainly handling too many UI responsibilities and needs sub-components.
 
 ## Observability & Performance
 21. **Observability-Driven Development (ODD)**: Leverage the Grafana LGTM stack (Loki, Tempo, Alloy) during development. Use traces to identify architectural "leaks" (e.g., unexpected N+1 queries to Neo4j or redundant DuckDB scans).

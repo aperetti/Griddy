@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo } from 'react';
 import { DiagnosticModal } from './DiagnosticModal';
-import { type AnalysisInstance } from '../../../hooks/useAnalyticsState';
-import type { PluginDefinition } from '../../../plugins';
+import { type AnalysisInstance } from '../../hooks/useAnalyticsState';
+import type { PluginDefinition } from '../../plugins/types';
 
 interface AnalysisWindowLayerProps {
   windows: AnalysisInstance[];

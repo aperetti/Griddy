@@ -1,7 +1,7 @@
 import React from 'react';
 import { Button, Text, Stack, Alert, LoadingOverlay, Box, Group, Badge, Paper } from '@mantine/core';
 import { AlertCircle, Zap, CheckCircle2, Activity } from 'lucide-react';
-import { AnalysisWindow } from '../../features/analytics/components/AnalysisWindow';
+import { AnalysisWindow } from '@plugin-sdk';
 
 export interface LoadHeatMapModalProps {
   isOpen: boolean;
