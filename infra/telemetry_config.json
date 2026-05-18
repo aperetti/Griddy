@@ -5,7 +5,8 @@
       "default_level": "DEBUG",
       "overrides": {
         "api.access": "INFO",
-        "src.analytics.routes": "DEBUG",
+        "src.grid.display_rule_engine": "INFO",
+        "src.grid.cypher_builder": "INFO",
         "src.grid.topology_routes": "INFO",
         "src.discovery.routes": "INFO",
         "src.shared.meter_adapters.duckdb_adapter": "DEBUG",

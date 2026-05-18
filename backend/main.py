@@ -63,13 +63,12 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(name)s | %(mes
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load the CIM-Graph FeederModels and start config watcher."""
-    from src.shared.cim_registry import CimModelRegistry
+    from src.shared.dependencies import registry
     from src.shared.database_setup import init_db
 
     # Initialize databases (topology + admin)
     init_db()
 
-    registry = CimModelRegistry.get_instance()
     registry.load_all()
 
     # Start the background config watcher

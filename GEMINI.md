@@ -24,7 +24,7 @@
 16. **Rule of 300** — If a component exceeds 300 lines, extract hooks. If it exceeds 500 lines, it is almost certainly handling too many UI responsibilities and needs sub-components.
 
 ## Observability & Performance
-21. **Observability-Driven Development (ODD)**: Leverage the Grafana LGTM stack (Loki, Tempo, Alloy) during development. Use traces to identify architectural "leaks" (e.g., unexpected N+1 queries to Neo4j or redundant DuckDB scans).
+21. **Observability-Driven Development (ODD)**: Leverage the Grafana LGTM stack (Loki, Tempo, Alloy) during development. Use traces to identify architectural "leaks" (e.g., unexpected N+1 queries to Neo4j or redundant DuckDB scans). **AI Agents must follow the [AI Observability Guide](docs/architecture/AI_OBSERVABILITY_GUIDE.md) to diagnose complex issues.**
 22. **Structured Logging**: All backend logs must be structured and include relevant context (e.g., `mrid`, `node_id`, `session_id`). Use Loki to correlate logs across the Backend and Admin Console.
 23. **Trace Propagation**: Ensure OpenTelemetry trace context is propagated through all service boundaries. Every significant analytical operation (e.g., phase propagation, load aggregation) must be wrapped in a named span.
 24. **Performance Validation**: Before finalizing a feature, verify its performance signature in Grafana. If a change increases baseline latency by >15%, it must be justified or optimized.

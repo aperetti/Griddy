@@ -26,6 +26,9 @@ logger = logging.getLogger(__name__)
 # CIM graph repository (Persistence layer for Neo4j)
 cim_repo = CimRepository()
 
+def get_neo4j_driver():
+    return cim_repo._get_driver()
+
 # CIM model registry (populated during FastAPI lifespan startup)
 registry = CimModelRegistry.get_instance(cim_repo)
 
@@ -39,7 +42,7 @@ display_engine = DisplayRuleEngine(display_rule_repo)
 graph_engine = TopologyEngine()
 
 # topology repository for mapping raw model data to UI response format
-topology_repo = TopologyRepository(registry, graph_engine)
+topology_repo = TopologyRepository(registry, graph_engine, display_engine)
 
 # topology service for orchestrating graph construction and caching
 topology_service = TopologyService(registry, graph_engine)

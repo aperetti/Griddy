@@ -40,13 +40,76 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
         return Array.from(mrids).sort().join(',');
     }, [rawNodes, rawEdges]);
 
+    // Step 1: Extract pre-classified rule matches from the raw topology data.
+    // This allows immediate rendering without waiting for Neo4j round-trips.
+    const initialRuleMatches = useMemo(() => {
+        const matches: Record<number, RuleMatch> = {};
+        
+        const processEntity = (entity: any, type: 'node' | 'edge') => {
+            if (entity.style && entity.style.rule_id) {
+                const rid = entity.style.rule_id;
+                if (!matches[rid]) {
+                    matches[rid] = {
+                        ruleId: rid,
+                        priority: entity.style.priority || 0,
+                        entityType: type,
+                        config: {
+                            visual_type: entity.style.visual_type,
+                            color_hex: entity.style.color_hex,
+                            size: entity.style.size,
+                            icon: entity.style.icon,
+                            label: entity.style.label,
+                            radial_offset: entity.style.radial_offset,
+                            cluster_enabled: entity.style.cluster_enabled,
+                            cluster_radius: entity.style.cluster_radius,
+                            cluster_max_zoom: entity.style.cluster_max_zoom,
+                            cluster_min_points: entity.style.cluster_min_points,
+                            min_zoom: entity.style.min_zoom,
+                            max_zoom: entity.style.max_zoom,
+                            rotate_to_edge: entity.style.rotate_to_edge,
+                            center_icon_enabled: entity.style.center_icon_enabled,
+                            center_icon_size: entity.style.center_icon_size,
+                            center_icon_rotate: entity.style.center_icon_rotate,
+                            line_weight: entity.style.line_weight,
+                            line_style: entity.style.line_style,
+                            svg_overrides: entity.style.svg_overrides || [],
+                        },
+                        matchingMrids: new Set<string>(),
+                        tooltipData: new Map<string, Record<string, any>>(),
+                        overridesData: []
+                    };
+                }
+                matches[rid].matchingMrids.add(entity.id);
+            }
+        };
+
+        rawNodes.forEach(n => processEntity(n, 'node'));
+        rawEdges.forEach(e => processEntity(e, 'edge'));
+
+        return Object.values(matches).sort((a, b) => b.priority - a.priority);
+    }, [rawNodes, rawEdges]);
+
     useEffect(() => {
         if (!activeMridsKey) {
             setRuleMatches([]);
             return;
         }
+        
+        // If we already have pre-classified matches, seed the state with them
+        if (initialRuleMatches.length > 0) {
+            setRuleMatches(initialRuleMatches);
+        }
 
-        const activeMrids = activeMridsKey.split(',');
+        const baseMrids = activeMridsKey.split(',');
+        // For Neo4j indexing, we provide BOTH the raw mRID (unprefixed) AND 
+        // the standard prefixed version (urn:uuid:...). This ensures Neo4j can 
+        // use the mRID index for a simple 'IN' check without slow string manipulation.
+        const activeMrids = [];
+        for (const mrid of baseMrids) {
+            activeMrids.push(mrid);
+            activeMrids.push(`urn:uuid:${mrid}`);
+        }
+
         let cancelled = false;
 
         const run = async () => {
@@ -89,14 +152,19 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
                             const tooltipData = new Map<string, Record<string, any>>();
                             for (const row of (data.rows || []) as any[]) {
                                 if (!row.mrid) continue;
-                                matchingMrids.add(row.mrid);
+                                
+                                // Normalize mRID: strip 'urn:uuid:' and uppercase to match frontend state
+                                const rawMrid = String(row.mrid);
+                                const normalizedMrid = rawMrid.replace(/^urn:uuid:/i, '').toUpperCase();
+                                
+                                matchingMrids.add(normalizedMrid);
                                 const extras: Record<string, any> = {};
                                 for (const [k, v] of Object.entries(row)) {
                                     if (k !== 'mrid' && k.startsWith('tp_') && v != null) {
                                         extras[k.slice(3)] = v;
                                     }
                                 }
-                                if (Object.keys(extras).length > 0) tooltipData.set(row.mrid, extras);
+                                if (Object.keys(extras).length > 0) tooltipData.set(normalizedMrid, extras);
                             }
                             if (matchingMrids.size === 0) return null;
 
