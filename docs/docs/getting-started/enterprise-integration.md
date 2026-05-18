@@ -35,15 +35,16 @@ Griddy's **AMI Data Adapter** architecture allows you to query your existing dat
 
 ---
 
-## 3. Organizational Customization (Display Rules & Profiles)
+## 3. Dynamic Visualization (Display Rules & Profiles)
 
-A utility has diverse teams with different analytical needs. Griddy uses **Display Rules and Profiles** to serve these personas from a single deployment.
+Large utilities have diverse operational needs that require different perspectives on the same grid data. Griddy uses a centralized **Rule Editor** and **Display Profiles** to manage this visual complexity.
 
-*   **Planning Engineers**: Focus on long-term trends, load-flow, and capacity. They use a "Planning Profile" that styles the grid by loading intensity and highlights assets exceeding 80% capacity.
-*   **Outage Operators**: Focus on real-time health. They use an "Operations Profile" that hides secondary conductors and highlights active alarms and open reclosers.
-*   **Field Crews**: Use a "Mobile Optimized Profile" with high-contrast styling and large touch targets for asset location.
+### Centralized Styling Management:
+*   **The Rule Editor**: Admins use the editor to create complex, graph-based styling logic (e.g., "Color all transformers with active alarms red" or "Highlight conductors exceeding 80% capacity").
+*   **Profiles**: Rules are grouped into named profiles. A user can switch between these profiles to instantly re-style the entire map for a specific analytical task or operational scenario.
+*   **Live Propagation**: Changes made in the Admin Console propagate to every connected dashboard instantly, ensuring that all engineers are working with a consistent and up-to-date visual standard.
 
-**Enterprise Value**: The **Admin Console** allows centralized management of these rules. An admin can update a styling rule (e.g., "Color all transformers with active alarms red") and the change propagates to every user instantly.
+**Enterprise Value**: This eliminates the need for individual teams to manage their own local styling configurations. It ensures a single, authoritative "visual dictionary" for the digital twin across the entire organization.
 
 ---
 
@@ -63,5 +64,5 @@ While the base system includes a local SQLite user store, enterprise implementat
 
 1.  **Sync Topology**: GIS exports CIM; Griddy updates its property graph.
 2.  **Connect AMI**: MDMS feeds the Data Lake; Griddy's adapter queries it on-the-fly.
-3.  **Define Rules**: Admins set up Display Profiles for each department.
+3.  **Define Rules**: Admins set up Display Profiles to standardize grid visualization.
 4.  **Analyze**: Engineers log in via SSO, select their feeder, and perform deep analytical dives using geospatial and graph-based tools.
