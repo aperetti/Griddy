@@ -14,7 +14,7 @@ class CimRepository:
         # Configuration read from environment
         self.url = os.getenv("CIMG_URL")
         self.username = os.getenv("CIMG_USERNAME", "neo4j")
-        self.password = os.getenv("CIMG_PASSWORD", "password123")
+        self.password = os.getenv("CIMG_PASSWORD", "")
         self.database = os.getenv("CIMG_DATABASE", "neo4j")
 
     def _get_driver(self):
@@ -99,7 +99,7 @@ class CimRepository:
 
     def search_global(self, search_query: str, class_name: Optional[str] = None) -> List[Dict[str, Any]]:
         """Performs a global search across all feeders in Neo4j."""
-        label_clause = f"AND any(lbl IN labels(n) WHERE toLower(lbl) CONTAINS toLower('{class_name}'))" if class_name else ""
+        label_clause = "AND any(lbl IN labels(n) WHERE toLower(lbl) CONTAINS toLower($class_name))" if class_name else ""
         cypher = f"""
         MATCH (n:Resource)
         WHERE toLower(n.`IdentifiedObject.name`) CONTAINS toLower($query) {label_clause}
@@ -116,7 +116,7 @@ class CimRepository:
         
         results = []
         with driver.session(database=self.database) as session:
-            for record in session.run(cypher, {"query": search_query}):
+            for record in session.run(cypher, {"query": search_query, "class_name": class_name}):
                 mid = record["model_id"] or ""
                 results.append({
                     "id": record["id"] or "",
