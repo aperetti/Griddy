@@ -7,6 +7,7 @@ import { dataRoutes } from './features/data/routes.js';
 import { configRoutes } from './features/config/routes.js';
 import { usersRoutes } from './features/users/routes.js';
 import { pluginsRoutes } from './features/plugins/routes.js';
+import { extensionsRoutes } from './features/extensions/routes.js';
 import { setupTelemetryWatcher } from './shared/telemetry.js';
 
 // Setup error handlers early
@@ -61,3 +62,4 @@ const start = async () => {
 };
 
 start();
+();

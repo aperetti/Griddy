@@ -1,3 +1,14 @@
+# Stage 1: Build Plugin UI
+FROM node:22-slim AS plugin-builder
+WORKDIR /build
+COPY frontend/package*.json ./
+RUN npm install
+COPY frontend/ ./
+# We need to copy the backend/plugins dir structure so vite can output there
+COPY backend/plugins ./backend/plugins
+RUN npm run build:plugins
+
+# Stage 2: Final Backend
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -6,6 +17,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
+    unzip \
     libfreetype6-dev \
     libfontconfig1 \
     fontconfig \
@@ -25,8 +37,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend source
 COPY backend/ .
 
-# Copy the CIM model from the parent directory if it's there (orchestrated by compose/build context)
-# Alternatively, we expect it to be in /app/IEEE8500.xml
+# Copy pre-compiled plugin UI from stage 1
+COPY --from=plugin-builder /build/backend/plugins/ /app/plugins/
 
 # Ensure entrypoint is executable and has LF line endings
 RUN sed -i 's/\r$//' docker-entrypoint.sh scripts/bootstrap.sh && chmod +x docker-entrypoint.sh scripts/bootstrap.sh

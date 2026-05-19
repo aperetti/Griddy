@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Stack, Title, Paper, Group, Text, Switch, Badge, Alert } from '@mantine/core';
-import { AlertCircle } from 'lucide-react';
-import { pluginsApi } from '../../api';
+import { Stack, Title, Paper, Group, Text, Switch, Badge, Alert, Button, FileButton, Modal, Select, ActionIcon, Tooltip } from '@mantine/core';
+import { AlertCircle, Plus, Upload, CheckCircle2 } from 'lucide-react';
+import { pluginsApi, extensionsApi } from '../../api';
 
 interface PluginEntry {
   name: string;
@@ -13,16 +13,16 @@ interface PluginEntry {
 export function PluginsPanel() {
   const [plugins, setPlugins] = useState<PluginEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [toggling, setToggling] = useState<Set<string>>(new Set());
+  
+  // Install Modal State
+  const [installModalOpen, setInstallModalOpen] = useState(false);
+  const [installType, setInstallType] = useState<string | null>('plugin');
+  const [isInstalling, setIsInstalling] = useState(false);
 
   const fetchPlugins = async () => {
-    try {
-      const data = await pluginsApi.getRegistry();
-      setPlugins(data);
-      setError(null);
-    } catch {
-      setError('Could not reach main backend. Ensure it is running.');
-    }
+...
   };
 
   useEffect(() => {
@@ -30,24 +30,41 @@ export function PluginsPanel() {
   }, []);
 
   const handleToggle = async (name: string, enabled: boolean) => {
-    setToggling(prev => new Set(prev).add(name));
+...
+  };
+
+  const handleInstall = async (file: File | null) => {
+    if (!file || !installType) return;
+    
+    setIsInstalling(true);
+    setError(null);
+    setSuccess(null);
+    
     try {
-      await pluginsApi.setEnabled(name, enabled);
-      setPlugins(prev => prev.map(p => p.name === name ? { ...p, enabled } : p));
-    } catch {
-      setError(`Failed to update plugin "${name}".`);
+      await extensionsApi.install(file, installType as 'plugin' | 'adapter');
+      setSuccess(`Successfully installed ${installType}: ${file.name}`);
+      setInstallModalOpen(false);
+      fetchPlugins();
+    } catch (err: any) {
+      setError(`Installation failed: ${err.response?.data?.details || err.message}`);
     } finally {
-      setToggling(prev => {
-        const next = new Set(prev);
-        next.delete(name);
-        return next;
-      });
+      setIsInstalling(false);
     }
   };
 
   return (
     <Stack gap="md">
-      <Title order={4}>Plugin Management</Title>
+      <Group justify="space-between">
+        <Title order={4}>Extension Management</Title>
+        <Button 
+          variant="light" 
+          leftSection={<Plus size={16} />} 
+          size="xs"
+          onClick={() => setInstallModalOpen(true)}
+        >
+          Install Extension
+        </Button>
+      </Group>
 
       {error && (
         <Alert icon={<AlertCircle size={16} />} color="red" variant="light">
@@ -55,58 +72,60 @@ export function PluginsPanel() {
         </Alert>
       )}
 
+      {success && (
+        <Alert icon={<CheckCircle2 size={16} />} color="green" variant="light" withCloseButton onClose={() => setSuccess(null)}>
+          {success}
+        </Alert>
+      )}
+
       <Paper p="md">
         {plugins.length === 0 && !error && (
-          <Text c="dimmed" size="sm">No plugins discovered.</Text>
-        )}
-        <Stack gap="xs">
-          {plugins.map(plugin => (
-            <Group key={plugin.name} justify="space-between" py="xs" style={{ borderBottom: '1px solid var(--mantine-color-dark-5)', alignItems: 'flex-start' }}>
-              <div style={{ flex: 1 }}>
-                <Group gap="sm" mb={4}>
-                  <Text size="sm" fw={500} style={{ textTransform: 'capitalize' }}>
-                    {plugin.name.replace(/_/g, ' ')}
-                  </Text>
-                  <Badge
-                    size="xs"
-                    variant="dot"
-                    color={plugin.enabled ? 'green' : 'gray'}
-                  >
-                    {plugin.enabled ? 'enabled' : 'disabled'}
-                  </Badge>
-                </Group>
-                
-                {plugin.description && (
-                  <Text size="xs" c="dimmed" mb={4}>
-                    {plugin.description}
-                  </Text>
-                )}
-                
-                {plugin.permissions && plugin.permissions.length > 0 && (
-                  <Group gap={4} mt={6}>
-                    <Text size="xs" c="dimmed" fw={500}>Permissions:</Text>
-                    {plugin.permissions.map(perm => (
-                      <Badge key={perm} size="xs" variant="outline" color="violet">{perm}</Badge>
-                    ))}
-                  </Group>
-                )}
-              </div>
-              <Switch
-                mt={2}
-                checked={plugin.enabled}
-                disabled={toggling.has(plugin.name)}
-                onChange={e => handleToggle(plugin.name, e.currentTarget.checked)}
-                color="blue"
-              />
-            </Group>
-          ))}
-        </Stack>
+...
       </Paper>
 
 
       <Text size="xs" c="dimmed">
         Changes take effect within ~5 seconds. No server restart required.
       </Text>
+
+      <Modal 
+        opened={installModalOpen} 
+        onClose={() => setInstallModalOpen(false)} 
+        title="Install Extension"
+        centered
+      >
+        <Stack gap="md">
+          <Text size="sm">Upload a ZIP package containing the extension code.</Text>
+          
+          <Select 
+            label="Extension Type"
+            placeholder="Select type"
+            data={[
+              { value: 'plugin', label: 'Plugin (Frontend + Backend)' },
+              { value: 'adapter', label: 'AMI Data Adapter (Python)' }
+            ]}
+            value={installType}
+            onChange={setInstallType}
+          />
+
+          <FileButton onChange={handleInstall} accept="application/zip">
+            {(props) => (
+              <Button 
+                {...props} 
+                fullWidth 
+                leftSection={<Upload size={16} />}
+                loading={isInstalling}
+              >
+                Upload & Install
+              </Button>
+            )}
+          </FileButton>
+
+          <Text size="xs" c="dimmed">
+            ZIP packages for plugins must contain a <code>manifest.json</code> and a <code>ui/index.js</code> module. Adapters should contain a Python module.
+          </Text>
+        </Stack>
+      </Modal>
     </Stack>
   );
 }

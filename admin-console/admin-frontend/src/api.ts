@@ -64,6 +64,17 @@ export const pluginsApi = {
     api.put(`/plugins/${name}/enabled`, { enabled }).then(res => res.data),
 };
 
+export const extensionsApi = {
+  install: (file: File, type: 'plugin' | 'adapter') => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('type', type);
+    return api.post('/extensions/install', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    }).then(res => res.data);
+  }
+};
+
 export const usersApi = {
   get: () => api.get('/users').then(res => res.data),
   set: (username: string, password?: string) => api.post('/users', { username, password }).then(res => res.data),

@@ -1,56 +1,40 @@
 /**
- * Plugin registry — discovers plugins at build time but downloads code only
- * for plugins that are explicitly enabled in the backend.
+ * Plugin registry — dynamically loads plugin code at runtime from the backend.
  *
- * Vite code-splits each plugin into its own JS chunk via the lazy glob.
- * Disabled plugin chunks are never fetched by the browser.
+ * Supports both built-in plugins and dynamically uploaded extensions.
+ * Plugins must be pre-compiled into standard ES Modules.
  *
  * Usage (called once at app startup):
  *   import { initPluginRegistry } from './plugins';
  *   const registry = await initPluginRegistry(['consumption', 'voltage']);
  */
 import type { PluginDefinition } from './types';
-import type { SdkPluginDefinition } from './sdk';
 import { adaptPlugin } from './adapter';
 
 /**
- * Lazy import map — keys are relative paths, values are async loaders.
- * Vite emits each entry as a separate JS chunk but does NOT fetch them
- * until the loader function is called.
- */
-const _loaders = import.meta.glob<{ default: SdkPluginDefinition }>(
-    './*/index.ts',
-    { eager: false },
-);
-
-/** Extract the plugin name from a glob path like './consumption/index.ts'. */
-function _nameFromPath(path: string): string {
-    return path.replace('./', '').replace('/index.ts', '');
-}
-
-/**
  * Load only the plugins whose names appear in `enabledNames`.
- * Returns a new Map ready for use as the plugin registry.
+ * Each plugin is fetched as a standalone ES module from the backend's static route.
  */
 export async function initPluginRegistry(
     enabledNames: string[],
 ): Promise<Map<string, PluginDefinition>> {
-    const enabled = new Set(enabledNames);
     const registry = new Map<string, PluginDefinition>();
 
     await Promise.all(
-        Object.entries(_loaders)
-            .filter(([path]) => enabled.has(_nameFromPath(path)))
-            .map(async ([path, load]) => {
-                try {
-                    const mod = await load();
-                    if (mod.default?.type) {
-                        registry.set(mod.default.type, adaptPlugin(mod.default));
-                    }
-                } catch (err) {
-                    console.error(`[plugins] Failed to load plugin at ${path}:`, err);
+        enabledNames.map(async (name) => {
+            try {
+                // Dynamic import with vite-ignore to allow runtime resolution
+                // The unified assets route serves both built-in and external plugins
+                const mod = await import(/* @vite-ignore */ `/api/plugins/assets/${name}/ui/index.js`);
+                
+                if (mod.default?.type) {
+                    registry.set(mod.default.type, adaptPlugin(mod.default));
+                    console.info(`[plugins] Loaded extension: ${name}`);
                 }
-            }),
+            } catch (err) {
+                console.error(`[plugins] Failed to load plugin '${name}':`, err);
+            }
+        }),
     );
 
     return registry;
