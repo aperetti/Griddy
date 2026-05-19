@@ -7,7 +7,12 @@ import { promisify } from 'util';
 import multipart from '@fastify/multipart';
 
 const execAsync = promisify(exec);
-// ...
+
+const CONFIG_DIR = '/data/config';
+const PLUGINS_TARGET = path.join(CONFIG_DIR, 'plugins');
+const ADAPTERS_TARGET = path.join(CONFIG_DIR, 'adapters');
+const SAFE_EXTRACT_SCRIPT = '/app/scripts/safe_extract.py';
+
 export async function extensionsRoutes(fastify: FastifyInstance) {
   // Register multipart support for this route group
   await fastify.register(multipart, {
@@ -44,10 +49,15 @@ export async function extensionsRoutes(fastify: FastifyInstance) {
       // 1. Save ZIP to temp
       await pipeline(data.file, fs.createWriteStream(tempPath));
 
-      // 2. Extract ZIP
-      // BusyBox unzip -o overwrites existing files.
-      // We expect the ZIP to contain a directory (for plugins) or a .py file (for adapters).
-      await execAsync(`unzip -o "${tempPath}" -d "${targetBase}"`);
+      // 2. Extract ZIP Safely using Python helper
+      // This script validates paths (prevents ZIP Slip) and whitelists file extensions.
+      // We assume python3 is available in the admin-backend image.
+      const cmd = `python3 ${SAFE_EXTRACT_SCRIPT} "${tempPath}" "${targetBase}" "${type}"`;
+      const { stdout, stderr } = await execAsync(cmd);
+
+      if (stdout.includes('ERROR:')) {
+        throw new Error(stdout.split('ERROR:')[1].trim());
+      }
 
       // 3. Cleanup
       if (fs.existsSync(tempPath)) {
