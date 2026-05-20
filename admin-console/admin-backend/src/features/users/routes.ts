@@ -1,6 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import { getAdminDb } from '../../shared/database.js';
 import crypto from 'crypto';
+import util from 'util';
+
+const pbkdf2Async = util.promisify(crypto.pbkdf2);
 
 export async function usersRoutes(fastify: FastifyInstance) {
   // List all users
@@ -20,7 +23,8 @@ export async function usersRoutes(fastify: FastifyInstance) {
     // Replicate Python's: os.urandom(16)
     const salt = crypto.randomBytes(16);
     // Replicate Python's: hashlib.pbkdf2_hmac('sha256', pwd, salt, 100000).hex()
-    const passwordHash = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256').toString('hex');
+    const derivedKey = await pbkdf2Async(password, salt, 100000, 32, 'sha256');
+    const passwordHash = derivedKey.toString('hex');
 
     const existing = await db.get('SELECT id FROM users WHERE username = ?', username);
     if (existing) {
