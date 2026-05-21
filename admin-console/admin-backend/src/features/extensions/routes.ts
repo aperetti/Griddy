@@ -26,7 +26,7 @@ export async function extensionsRoutes(fastify: FastifyInstance) {
     if (!fs.existsSync(PLUGINS_TARGET)) fs.mkdirSync(PLUGINS_TARGET, { recursive: true });
     if (!fs.existsSync(ADAPTERS_TARGET)) fs.mkdirSync(ADAPTERS_TARGET, { recursive: true });
   } catch (err) {
-    fastify.log.warn('Failed to create extension directories, might be read-only volume:', err);
+    fastify.log.warn({ err }, 'Failed to create extension directories, might be read-only volume');
   }
 
   fastify.post('/install', async (request, reply) => {
