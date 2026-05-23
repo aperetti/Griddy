@@ -7,3 +7,8 @@
 **Vulnerability:** A fallback default password was hardcoded to "password123" for Neo4j connections, and a Cypher injection vulnerability existed due to f-string interpolation of user input (`class_name`) in `backend/src/shared/cim/repository.py`.
 **Learning:** Hardcoded credentials should never be used, even as a default fallback, as they can lead to unauthorized access in misconfigured environments. Furthermore, dynamic query construction must always use parameterized inputs to prevent injection attacks, especially in graph databases like Neo4j.
 **Prevention:** Fallback passwords should be empty strings or dynamically generated if appropriate, and query variables should be passed securely via parameter bindings (e.g. `$class_name` in Cypher).
+
+## 2024-05-24 - Command Injection via child_process.exec
+**Vulnerability:** A command injection vulnerability existed in `admin-console/admin-backend/src/features/extensions/routes.ts` where `data.filename` (user-controlled) was interpolated directly into a shell command executed via `child_process.exec`.
+**Learning:** Using `child_process.exec` with user-supplied input allows attackers to execute arbitrary shell commands if the input contains shell metacharacters (e.g. `;`, `|`, `&&`).
+**Prevention:** Always use safe execution methods like `child_process.execFile` (or `spawn`) rather than `child_process.exec` to prevent shell metacharacter interpretation and command injection vulnerabilities. Arguments should be passed in an array instead of concatenating them into a single command string.
