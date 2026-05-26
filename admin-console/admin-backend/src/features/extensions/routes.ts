@@ -2,11 +2,8 @@ import { FastifyInstance } from 'fastify';
 import path from 'path';
 import fs from 'fs';
 import { pipeline } from 'stream/promises';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import multipart from '@fastify/multipart';
-
-const execAsync = promisify(exec);
+import { runCommand } from '../../shared/shell.js';
 
 const CONFIG_DIR = '/data/config';
 const PLUGINS_TARGET = path.join(CONFIG_DIR, 'plugins');
@@ -43,7 +40,8 @@ export async function extensionsRoutes(fastify: FastifyInstance) {
     }
 
     const targetBase = type === 'plugin' ? PLUGINS_TARGET : ADAPTERS_TARGET;
-    const tempPath = path.join('/tmp', data.filename);
+    const safeFilename = path.basename(data.filename);
+    const tempPath = path.join('/tmp', safeFilename);
 
     try {
       // 1. Save ZIP to temp
@@ -52,8 +50,7 @@ export async function extensionsRoutes(fastify: FastifyInstance) {
       // 2. Extract ZIP Safely using Python helper
       // This script validates paths (prevents ZIP Slip) and whitelists file extensions.
       // We assume python3 is available in the admin-backend image.
-      const cmd = `python3 ${SAFE_EXTRACT_SCRIPT} "${tempPath}" "${targetBase}" "${type}"`;
-      const { stdout, stderr } = await execAsync(cmd);
+      const { stdout, stderr } = await runCommand('python3', [SAFE_EXTRACT_SCRIPT, tempPath, targetBase, type]);
 
       if (stdout.includes('ERROR:')) {
         throw new Error(stdout.split('ERROR:')[1].trim());
