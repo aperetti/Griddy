@@ -115,17 +115,13 @@ class DuckDBMeterDataRepository(IMeterDataRepository):
         t0 = time.perf_counter()
         files = self._get_parquet_range_files(start_time, end_time)
         source = f"read_parquet({files})"
-        st_lit, et_lit = start_time.replace("'", "''"), end_time.replace("'", "''")
         node_table = self._get_node_table(node_ids)
         
         with self._get_connection() as conn:
             conn.register("node_table", node_table)
             try:
-                query = f"SELECT COUNT(*) FROM {source} r INNER JOIN node_table n ON r.node_id_int = n.node_id_int WHERE r.timestamp >= '{st_lit}'::TIMESTAMP AND r.timestamp <= '{et_lit}'::TIMESTAMP"
-                if logger.isEnabledFor(logging.DEBUG):
-                    explain = conn.execute(f"EXPLAIN ANALYZE {query}").fetchall()
-                    logger.debug("EXPLAIN ANALYZE estimate:\n%s", explain[0][1])
-                res = conn.execute(query).fetchone()[0]
+                query = f"SELECT COUNT(*) FROM {source} r INNER JOIN node_table n ON r.node_id_int = n.node_id_int WHERE r.timestamp >= ?::TIMESTAMP AND r.timestamp <= ?::TIMESTAMP"
+                res = conn.execute(query, [start_time, end_time]).fetchone()[0]
             finally:
                 conn.unregister("node_table")
         
@@ -137,7 +133,6 @@ class DuckDBMeterDataRepository(IMeterDataRepository):
         t_total_start = time.perf_counter()
         files = self._get_parquet_range_files(start_time, end_time)
         source = f"read_parquet({files})"
-        st_lit, et_lit = start_time.replace("'", "''"), end_time.replace("'", "''")
         node_table = self._get_node_table(node_ids)
 
         # Load weather into a Python dict before issuing the query. This drops
@@ -155,15 +150,12 @@ class DuckDBMeterDataRepository(IMeterDataRepository):
                         SUM(COALESCE(r.kwh_rcv, 0))
                     FROM {source} r
                     INNER JOIN node_table n ON r.node_id_int = n.node_id_int
-                    WHERE r.timestamp >= '{st_lit}'::TIMESTAMP AND r.timestamp <= '{et_lit}'::TIMESTAMP
+                    WHERE r.timestamp >= ?::TIMESTAMP AND r.timestamp <= ?::TIMESTAMP
                     GROUP BY 1 ORDER BY 1 ASC
                 """
-                if logger.isEnabledFor(logging.DEBUG):
-                    explain = conn.execute(f"EXPLAIN ANALYZE {query}").fetchall()
-                    logger.debug("EXPLAIN ANALYZE get_consumption:\n%s", explain[0][1])
 
                 t0 = time.perf_counter()
-                results = conn.execute(query).fetchall()
+                results = conn.execute(query, [start_time, end_time]).fetchall()
                 t_query = (time.perf_counter() - t0) * 1000
             finally:
                 conn.unregister("node_table")
@@ -194,7 +186,6 @@ class DuckDBMeterDataRepository(IMeterDataRepository):
         t_total_start = time.perf_counter()
         files = self._get_parquet_range_files(start_time, end_time)
         source = f"read_parquet({files})"
-        st_lit, et_lit = start_time.replace("'", "''"), end_time.replace("'", "''")
         node_table = self._get_node_table(node_ids)
         
         with self._get_connection() as conn:
@@ -202,7 +193,7 @@ class DuckDBMeterDataRepository(IMeterDataRepository):
             tmp_data = f"tmp_vdata_{int(time.time() * 1000)}"
             try:
                 t0 = time.perf_counter()
-                conn.execute(f"CREATE TEMP TABLE {tmp_data} AS SELECT r.timestamp, r.voltage_a, r.voltage_b, r.voltage_c, r.kwh_dlv FROM {source} r INNER JOIN node_table n ON r.node_id_int = n.node_id_int WHERE r.timestamp >= '{st_lit}'::TIMESTAMP AND r.timestamp <= '{et_lit}'::TIMESTAMP")
+                conn.execute(f"CREATE TEMP TABLE {tmp_data} AS SELECT r.timestamp, r.voltage_a, r.voltage_b, r.voltage_c, r.kwh_dlv FROM {source} r INNER JOIN node_table n ON r.node_id_int = n.node_id_int WHERE r.timestamp >= ?::TIMESTAMP AND r.timestamp <= ?::TIMESTAMP", [start_time, end_time])
                 t_scan = (time.perf_counter() - t0) * 1000
                 
                 t1 = time.perf_counter()
@@ -235,17 +226,16 @@ class DuckDBMeterDataRepository(IMeterDataRepository):
         t0 = time.perf_counter()
         files = self._get_parquet_range_files(start_time, end_time)
         source = f"read_parquet({files})"
-        st_lit, et_lit = start_time.replace("'", "''"), end_time.replace("'", "''")
         with self._get_connection() as conn:
             if node_filter:
                 node_table = self._get_node_table(node_filter)
                 conn.register("node_table", node_table)
                 try:
-                    res = conn.execute(f"SELECT COUNT(*) FROM {source} r INNER JOIN node_table n ON r.node_id_int = n.node_id_int WHERE r.timestamp >= '{st_lit}'::TIMESTAMP AND r.timestamp <= '{et_lit}'::TIMESTAMP").fetchone()[0]
+                    res = conn.execute(f"SELECT COUNT(*) FROM {source} r INNER JOIN node_table n ON r.node_id_int = n.node_id_int WHERE r.timestamp >= ?::TIMESTAMP AND r.timestamp <= ?::TIMESTAMP", [start_time, end_time]).fetchone()[0]
                 finally:
                     conn.unregister("node_table")
             else:
-                res = conn.execute(f"SELECT COUNT(*) FROM {source} WHERE timestamp >= '{st_lit}'::TIMESTAMP AND timestamp <= '{et_lit}'::TIMESTAMP").fetchone()[0]
+                res = conn.execute(f"SELECT COUNT(*) FROM {source} WHERE timestamp >= ?::TIMESTAMP AND timestamp <= ?::TIMESTAMP", [start_time, end_time]).fetchone()[0]
         return {"estimated_rows": int(res)}
 
     def get_map_voltage(self, start_time: str, end_time: str, agg: str, node_filter: Optional[List[str]] = None) -> List[MapAggregationPoint]:
@@ -253,13 +243,12 @@ class DuckDBMeterDataRepository(IMeterDataRepository):
         t0 = time.perf_counter()
         files = self._get_parquet_range_files(start_time, end_time)
         source = f"read_parquet({files})"
-        st_lit, et_lit = start_time.replace("'", "''"), end_time.replace("'", "''")
         agg_func = {"mean": "AVG", "min": "MIN", "max": "MAX", "median": "MEDIAN"}.get(agg, "AVG")
         node_table = self._get_node_table(node_filter)
         with self._get_connection() as conn:
             conn.register("node_table", node_table)
             try:
-                results = conn.execute(f"SELECT r.node_id, {agg_func}(COALESCE(voltage_a, voltage_b, voltage_c)) FROM {source} r INNER JOIN node_table n ON r.node_id_int = n.node_id_int WHERE r.timestamp >= '{st_lit}'::TIMESTAMP AND r.timestamp <= '{et_lit}'::TIMESTAMP GROUP BY 1").fetchall()
+                results = conn.execute(f"SELECT r.node_id, {agg_func}(COALESCE(voltage_a, voltage_b, voltage_c)) FROM {source} r INNER JOIN node_table n ON r.node_id_int = n.node_id_int WHERE r.timestamp >= ?::TIMESTAMP AND r.timestamp <= ?::TIMESTAMP GROUP BY 1", [start_time, end_time]).fetchall()
             finally:
                 conn.unregister("node_table")
         logger.debug("get_map_voltage took %.2fms", (time.perf_counter() - t0) * 1000)
@@ -273,13 +262,12 @@ class DuckDBMeterDataRepository(IMeterDataRepository):
         t0 = time.perf_counter()
         files = self._get_parquet_range_files(start_time, end_time)
         source = f"read_parquet({files})"
-        st_lit, et_lit = start_time.replace("'", "''"), end_time.replace("'", "''")
         agg_func = {"mean": "AVG", "min": "MIN", "max": "MAX", "median": "MEDIAN"}.get(agg, "AVG")
         node_table = self._get_node_table(node_filter)
         with self._get_connection() as conn:
             conn.register("node_table", node_table)
             try:
-                results = conn.execute(f"SELECT r.node_id, {agg_func}(COALESCE(kwh_dlv, 0)) FROM {source} r INNER JOIN node_table n ON r.node_id_int = n.node_id_int WHERE r.timestamp >= '{st_lit}'::TIMESTAMP AND r.timestamp <= '{et_lit}'::TIMESTAMP GROUP BY 1").fetchall()
+                results = conn.execute(f"SELECT r.node_id, {agg_func}(COALESCE(kwh_dlv, 0)) FROM {source} r INNER JOIN node_table n ON r.node_id_int = n.node_id_int WHERE r.timestamp >= ?::TIMESTAMP AND r.timestamp <= ?::TIMESTAMP GROUP BY 1", [start_time, end_time]).fetchall()
             finally:
                 conn.unregister("node_table")
         logger.debug("get_map_edge_load took %.2fms", (time.perf_counter() - t0) * 1000)
@@ -290,12 +278,11 @@ class DuckDBMeterDataRepository(IMeterDataRepository):
         t0 = time.perf_counter()
         files = self._get_parquet_range_files(start_time, end_time)
         source = f"read_parquet({files})"
-        st_lit, et_lit = start_time.replace("'", "''"), end_time.replace("'", "''")
         node_table = self._get_node_table(node_ids)
         with self._get_connection() as conn:
             conn.register("node_table", node_table)
             try:
-                results = conn.execute(f"SELECT r.timestamp, SUM(COALESCE(current_a, 0)), SUM(COALESCE(current_b, 0)), SUM(COALESCE(current_c, 0)), SUM(COALESCE(kwh_dlv, 0)) FROM {source} r INNER JOIN node_table n ON r.node_id_int = n.node_id_int WHERE r.timestamp >= '{st_lit}'::TIMESTAMP AND r.timestamp <= '{et_lit}'::TIMESTAMP GROUP BY 1").fetchall()
+                results = conn.execute(f"SELECT r.timestamp, SUM(COALESCE(current_a, 0)), SUM(COALESCE(current_b, 0)), SUM(COALESCE(current_c, 0)), SUM(COALESCE(kwh_dlv, 0)) FROM {source} r INNER JOIN node_table n ON r.node_id_int = n.node_id_int WHERE r.timestamp >= ?::TIMESTAMP AND r.timestamp <= ?::TIMESTAMP GROUP BY 1", [start_time, end_time]).fetchall()
             finally:
                 conn.unregister("node_table")
         logger.debug("get_phase_balancing took %.2fms", (time.perf_counter() - t0) * 1000)
