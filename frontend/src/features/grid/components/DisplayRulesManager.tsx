@@ -21,6 +21,9 @@ import { RuleTable } from './display-rules/RuleTable';
 // Model Logic
 import { processRules } from '../model/rules';
 
+// API
+import { fetchDisplayConfigs } from '../../../shared/api/displayRules';
+
 interface DisplayRulesManagerProps {
     opened: boolean;
     onClose: () => void;
@@ -91,18 +94,22 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
         processRules(rules, groupBy, sortBy, sortOrder),
     [rules, groupBy, sortBy, sortOrder]);
 
-    const handleLogin = (username: string, password: string) => {
+    const handleLogin = async (username: string, password: string) => {
         setIsAuthenticating(true);
-        // Simple hardcoded auth for admin operations
-        if (username === 'admin' && password === 'admin') {
-            const token = window.btoa(`${username}:${password}`);
-            localStorage.setItem('adminAuth', token);
+        const token = window.btoa(`${username}:${password}`);
+        localStorage.setItem('adminAuth', token);
+
+        try {
+            // Securely verify credentials against the backend API
+            await fetchDisplayConfigs();
             setIsAuthenticated(true);
             setAuthError(null);
-        } else {
+        } catch (err) {
+            localStorage.removeItem('adminAuth');
             setAuthError('Invalid credentials');
+        } finally {
+            setIsAuthenticating(false);
         }
-        setIsAuthenticating(false);
     };
 
     const handleAddRule = () => {

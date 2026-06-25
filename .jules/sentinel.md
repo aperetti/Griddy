@@ -12,3 +12,8 @@
 **Vulnerability:** The extensions installation endpoint used unsanitized `data.filename` directly in an `exec` command leading to command injection, and could also be used to construct a `tempPath` allowing path traversal to overwrite arbitrary files outside `/tmp`.
 **Learning:** File uploads are inherently dangerous because all attributes (like `filename`) are entirely user-controlled. Using string interpolation with `exec` on unvalidated file names creates an immediate Remote Code Execution (RCE) vector.
 **Prevention:** Always sanitize uploaded file names using `path.basename()` before appending to directory paths. Instead of using shell-evaluating functions like `child_process.exec`, always use safer alternatives like `child_process.execFile` (or the existing `runCommand` helper) that accept arguments as an array rather than a single evaluated string.
+
+## 2026-06-25 - Frontend Client-Side Authentication Bypass
+**Vulnerability:** The frontend `DisplayRulesManager` component used insecure client-side authentication by hardcoding the default credentials (`username === 'admin' && password === 'admin'`) and trusting a locally generated Base64 token without server validation. An attacker could trivially bypass the login screen.
+**Learning:** Client-side authentication checks in JavaScript can always be bypassed by users because they execute within the browser environment that the user controls.
+**Prevention:** Always rely on backend server validation. Authenticate by making an API call to a protected endpoint (e.g., `fetchDisplayConfigs()`) and checking for HTTP 200 vs 401, only considering the user authenticated if the backend explicitly accepts the credentials.
