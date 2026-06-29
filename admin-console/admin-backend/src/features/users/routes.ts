@@ -2,8 +2,11 @@ import { FastifyInstance } from 'fastify';
 import { getAdminDb } from '../../shared/database.js';
 import crypto from 'crypto';
 import util from 'util';
+import { adminAuthHook } from '../../shared/auth.js';
 
 export async function usersRoutes(fastify: FastifyInstance) {
+  fastify.addHook('preHandler', adminAuthHook);
+
   // List all users
   fastify.get('/', async () => {
     const db = await getAdminDb();
