@@ -32,20 +32,26 @@ await fastify.register(cors, {
   origin: '*' // Adjust for production
 });
 
-// Register routes (slices)
-await fastify.register(dataRoutes, { prefix: '/api/data' });
-await fastify.register(configRoutes, { prefix: '/api/display-rules' });
-await fastify.register(usersRoutes, { prefix: '/api/users' });
-await fastify.register(pluginsRoutes, { prefix: '/api/plugins' });
+import { adminAuthHook } from './shared/auth.js';
 
-// Dynamic Telemetry Management
-fastify.post('/admin/log-level', async (request, reply) => {
-  const { level } = request.body as { level: string };
-  if (level) {
-    fastify.log.level = level.toLowerCase();
-    return { status: 'updated', level: fastify.log.level };
-  }
-  return reply.status(400).send({ error: 'Level is required' });
+// Register protected routes (slices)
+await fastify.register(async (apiContext) => {
+  apiContext.addHook('preHandler', adminAuthHook);
+
+  await apiContext.register(dataRoutes, { prefix: '/api/data' });
+  await apiContext.register(configRoutes, { prefix: '/api/display-rules' });
+  await apiContext.register(usersRoutes, { prefix: '/api/users' });
+  await apiContext.register(pluginsRoutes, { prefix: '/api/plugins' });
+
+  // Dynamic Telemetry Management
+  apiContext.post('/admin/log-level', async (request, reply) => {
+    const { level } = request.body as { level: string };
+    if (level) {
+      apiContext.log.level = level.toLowerCase();
+      return { status: 'updated', level: apiContext.log.level };
+    }
+    return reply.status(400).send({ error: 'Level is required' });
+  });
 });
 
 fastify.get('/ping', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
