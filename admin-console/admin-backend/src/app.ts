@@ -9,6 +9,7 @@ import { usersRoutes } from './features/users/routes.js';
 import { pluginsRoutes } from './features/plugins/routes.js';
 import { extensionsRoutes } from './features/extensions/routes.js';
 import { setupTelemetryWatcher } from './shared/telemetry.js';
+import { adminAuthHook } from './shared/auth.js';
 
 // Setup error handlers early
 process.on('unhandledRejection', (reason, promise) => {
@@ -32,20 +33,24 @@ await fastify.register(cors, {
   origin: '*' // Adjust for production
 });
 
-// Register routes (slices)
-await fastify.register(dataRoutes, { prefix: '/api/data' });
-await fastify.register(configRoutes, { prefix: '/api/display-rules' });
-await fastify.register(usersRoutes, { prefix: '/api/users' });
-await fastify.register(pluginsRoutes, { prefix: '/api/plugins' });
+// Register authenticated routes
+await fastify.register(async (apiContext) => {
+  apiContext.addHook('preHandler', adminAuthHook);
 
-// Dynamic Telemetry Management
-fastify.post('/admin/log-level', async (request, reply) => {
-  const { level } = request.body as { level: string };
-  if (level) {
-    fastify.log.level = level.toLowerCase();
-    return { status: 'updated', level: fastify.log.level };
-  }
-  return reply.status(400).send({ error: 'Level is required' });
+  await apiContext.register(dataRoutes, { prefix: '/api/data' });
+  await apiContext.register(configRoutes, { prefix: '/api/display-rules' });
+  await apiContext.register(usersRoutes, { prefix: '/api/users' });
+  await apiContext.register(pluginsRoutes, { prefix: '/api/plugins' });
+
+  // Dynamic Telemetry Management
+  apiContext.post('/admin/log-level', async (request, reply) => {
+    const { level } = request.body as { level: string };
+    if (level) {
+      apiContext.log.level = level.toLowerCase();
+      return { status: 'updated', level: apiContext.log.level };
+    }
+    return reply.status(400).send({ error: 'Level is required' });
+  });
 });
 
 fastify.get('/ping', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
