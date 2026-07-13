@@ -4,6 +4,15 @@ const api = axios.create({
   baseURL: import.meta.env.VITE_ADMIN_API_URL || '/api',
 });
 
+// Add interceptor to include basic auth token from localStorage
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('adminAuth');
+  if (token) {
+    config.headers['Authorization'] = `Basic ${token}`;
+  }
+  return config;
+});
+
 export const dataApi = {
   upload: (file: File) => {
     const formData = new FormData();
