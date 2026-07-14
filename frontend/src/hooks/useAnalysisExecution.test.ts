@@ -24,6 +24,8 @@ function makeCtx(overrides: Partial<PluginExecutionContext> = {}): PluginExecuti
         setAnalysisWindows: vi.fn(),
         bringWindowToFront: vi.fn(),
         updateWindow: vi.fn(),
+        openAnalysisWindow: vi.fn().mockReturnValue('win1'),
+        updateWindowProps: vi.fn(),
         dateRange: { start: '2024-01-01T00:00:00', end: '2024-01-07T23:59:59' },
         systemConfig: {},
         addHighlightedNodes: vi.fn(),

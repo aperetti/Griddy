@@ -8,6 +8,7 @@ import {
 import { AnalysisWindow } from '../../../shared/components/AnalysisWindow';
 
 import { useDisplayRules } from '../hooks/useDisplayRules';
+import { fetchDisplayConfigs } from '../../../shared/api';
 import { RuleEditor } from './display-rules/RuleEditor';
 import { SvgLiveEditor } from './display-rules/SvgLiveEditor';
 import { ConfirmationModal } from './display-rules/ConfirmationModal';
@@ -91,18 +92,23 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
         processRules(rules, groupBy, sortBy, sortOrder),
     [rules, groupBy, sortBy, sortOrder]);
 
-    const handleLogin = (username: string, password: string) => {
+    const handleLogin = async (username: string, password: string) => {
         setIsAuthenticating(true);
-        // Simple hardcoded auth for admin operations
-        if (username === 'admin' && password === 'admin') {
+        try {
             const token = window.btoa(`${username}:${password}`);
             localStorage.setItem('adminAuth', token);
+
+            // Verify credentials by attempting an authenticated request
+            await fetchDisplayConfigs();
+
             setIsAuthenticated(true);
             setAuthError(null);
-        } else {
+        } catch (err) {
+            localStorage.removeItem('adminAuth');
             setAuthError('Invalid credentials');
+        } finally {
+            setIsAuthenticating(false);
         }
-        setIsAuthenticating(false);
     };
 
     const handleAddRule = () => {
