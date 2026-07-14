@@ -104,7 +104,7 @@ export function useRuleClassification(rawNodes: Node[], rawEdges: Edge[]) {
         // For Neo4j indexing, we provide BOTH the raw mRID (unprefixed) AND 
         // the standard prefixed version (urn:uuid:...). This ensures Neo4j can 
         // use the mRID index for a simple 'IN' check without slow string manipulation.
-        const activeMrids = [];
+        const activeMrids: string[] = [];
         for (const mrid of baseMrids) {
             activeMrids.push(mrid);
             activeMrids.push(`urn:uuid:${mrid}`);
