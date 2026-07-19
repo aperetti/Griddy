@@ -17,3 +17,8 @@
 **Vulnerability:** The admin console backend API endpoints lacked authentication, allowing unauthenticated configuration changes and data ingestion. Additionally, implementing basic auth using synchronous `crypto.pbkdf2Sync` or simple string comparisons poses DoS and timing attack vulnerabilities.
 **Learning:** Admin endpoints must always be secured (e.g. using `fastify.register` scoped authentication hooks). When validating cryptographic materials like passwords, using an asynchronous derivation function prevents blocking the main event loop, and using `crypto.timingSafeEqual` prevents timing attacks (though it requires equal buffer lengths to avoid crashes).
 **Prevention:** Wrap all protected administrative routes in a secure `preHandler` hook. Use `util.promisify(crypto.pbkdf2)` for password hashing within the hook, and ensure that buffers are of equal length before comparing them using `crypto.timingSafeEqual`.
+
+## 2026-07-19 - DuckDB SQL Injection Vulnerability via f-strings
+**Vulnerability:** User-provided inputs (`start_time` and `end_time`) were directly interpolated into DuckDB SQL queries via f-strings (e.g., `f"... WHERE r.timestamp >= '{st_lit}' ..."`) in `DuckDBMeterDataRepository`, which could lead to SQL injection vulnerabilities.
+**Learning:** String replacement (like `start_time.replace("'", "''")`) is not a robust method for preventing SQL injection, and f-string concatenation for query building is a known anti-pattern in the shared adapter.
+**Prevention:** Always construct DuckDB SQL queries using proper parameterized inputs with `?` placeholders (e.g., `conn.execute(..., [start_time, end_time])`) rather than directly interpolating untrusted variables, including inside `EXPLAIN ANALYZE` or `CREATE TEMP TABLE`.
