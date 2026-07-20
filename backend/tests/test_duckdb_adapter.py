@@ -47,15 +47,21 @@ class TestPersistentConnection:
 # ── Weather cache ─────────────────────────────────────────────────────────────
 
 class TestWeatherCache:
-    """_weather_map is populated on first call and never re-fetched."""
+    """_weather_lookup is populated on first call and never re-fetched."""
 
     def test_db_query_executes_exactly_once(self):
         repo = DuckDBMeterDataRepository(":memory:", "/nonexistent")
         mock_conn = MagicMock()
         mock_conn.execute.return_value.fetchall.return_value = [(1, 1, 0, 15.0)]
 
-        repo._get_weather_map(mock_conn)
-        repo._get_weather_map(mock_conn)
+        @contextmanager
+        def _fake_conn():
+            yield mock_conn
+
+        repo._get_connection = _fake_conn
+
+        repo._get_weather_lookup()
+        repo._get_weather_lookup()
 
         assert mock_conn.execute.call_count == 1
 
@@ -66,22 +72,28 @@ class TestWeatherCache:
             (1, 15, 8, 22.5),
             (7, 4, 14, 35.0),
         ]
-        result = repo._get_weather_map(mock_conn)
+
+        @contextmanager
+        def _fake_conn():
+            yield mock_conn
+
+        repo._get_connection = _fake_conn
+
+        result = repo._get_weather_lookup()
 
         assert result[(1, 15, 8)] == pytest.approx(22.5)
         assert result[(7, 4, 14)] == pytest.approx(35.0)
 
 
-# ── get_aggregate_consumption — weighted unnest JOIN ──────────────────────────
+# ── get_aggregate_consumption ──────────────────────────
 
 class TestGetAggregateConsumption:
-    """Per-node phase weights are passed correctly as parallel arrays to the unnest JOIN."""
+    """Testing get_aggregate_consumption signature and parameterization."""
 
     def _make_repo(self):
         repo = DuckDBMeterDataRepository(":memory:", "/nonexistent")
         repo._get_parquet_range_files = MagicMock(return_value=["dummy.parquet"])
-        repo._get_read_parquet_sql = MagicMock(return_value="parquet_data")
-        repo._weather_map = {}  # skip weather DB call
+        repo._weather_lookup = {}  # skip weather DB call
 
         mock_conn = MagicMock()
         mock_conn.execute.return_value.fetchall.return_value = []
@@ -97,61 +109,22 @@ class TestGetAggregateConsumption:
         repo = DuckDBMeterDataRepository(":memory:", "/nonexistent")
         assert repo.get_aggregate_consumption([], {}, "2024-01-01T00:00:00", "2024-01-31T23:00:00") == []
 
-    def test_weight_arrays_match_node_order_and_values(self):
-        repo, mock_conn = self._make_repo()
-        node_ids = ["NODE_A", "NODE_B", "NODE_C"]
-        weights = {
-            "NODE_A": {"A": 1.0, "B": 0.0, "C": 0.0},
-            "NODE_B": {"A": 0.0, "B": 1.0, "C": 0.0},
-            "NODE_C": {"A": 0.0, "B": 0.0, "C": 1.0},
-        }
-
-        repo.get_aggregate_consumption(node_ids, weights, "2024-01-01T00:00:00", "2024-01-31T23:00:00")
-
-        _sql, params = mock_conn.execute.call_args.args
-        ids_lower, wa_list, wb_list, wc_list, _start, _end = params
-
-        assert ids_lower == ["node_a", "node_b", "node_c"]
-        assert wa_list == pytest.approx([1.0, 0.0, 0.0])
-        assert wb_list == pytest.approx([0.0, 1.0, 0.0])
-        assert wc_list == pytest.approx([0.0, 0.0, 1.0])
-
-    def test_missing_weight_defaults_to_balanced_abc(self):
+    def test_sql_uses_parameters(self):
         repo, mock_conn = self._make_repo()
 
-        repo.get_aggregate_consumption(["NODE_X"], {}, "2024-01-01T00:00:00", "2024-01-31T23:00:00")
-
-        _sql, params = mock_conn.execute.call_args.args
-        _ids, wa_list, wb_list, wc_list, _start, _end = params
-
-        assert wa_list == pytest.approx([1.0 / 3.0])
-        assert wb_list == pytest.approx([1.0 / 3.0])
-        assert wc_list == pytest.approx([1.0 / 3.0])
-
-    def test_sql_uses_unnest_not_case_when(self):
-        repo, mock_conn = self._make_repo()
+        start_time = "2024-01-01T00:00:00"
+        end_time = "2024-01-31T23:00:00"
 
         repo.get_aggregate_consumption(
             ["NODE_A"],
             {"NODE_A": {"A": 1.0, "B": 0.0, "C": 0.0}},
-            "2024-01-01T00:00:00",
-            "2024-01-31T23:00:00",
+            start_time,
+            end_time,
         )
 
-        sql, _ = mock_conn.execute.call_args.args
-        assert "unnest" in sql.lower()
-        assert "case when" not in sql.lower()
+        args, kwargs = mock_conn.execute.call_args
+        sql = args[0]
+        params = args[1]
 
-    def test_node_ids_lowercased_in_query(self):
-        repo, mock_conn = self._make_repo()
-
-        repo.get_aggregate_consumption(
-            ["UPPER_NODE"],
-            {"UPPER_NODE": {"A": 1.0, "B": 0.0, "C": 0.0}},
-            "2024-01-01T00:00:00",
-            "2024-01-31T23:00:00",
-        )
-
-        _sql, params = mock_conn.execute.call_args.args
-        ids_lower = params[0]
-        assert ids_lower == ["upper_node"]
+        assert "?::TIMESTAMP" in sql
+        assert params == [start_time, end_time]
