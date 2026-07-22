@@ -7,6 +7,7 @@ import {
 } from '@mantine/core';
 import { AnalysisWindow } from '../../../shared/components/AnalysisWindow';
 
+import { ADMIN_API_BASE } from '../../../shared/api';
 import { useDisplayRules } from '../hooks/useDisplayRules';
 import { RuleEditor } from './display-rules/RuleEditor';
 import { SvgLiveEditor } from './display-rules/SvgLiveEditor';
@@ -91,16 +92,24 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
         processRules(rules, groupBy, sortBy, sortOrder),
     [rules, groupBy, sortBy, sortOrder]);
 
-    const handleLogin = (username: string, password: string) => {
+    const handleLogin = async (username: string, password: string) => {
         setIsAuthenticating(true);
-        // Simple hardcoded auth for admin operations
-        if (username === 'admin' && password === 'admin') {
+        try {
             const token = window.btoa(`${username}:${password}`);
-            localStorage.setItem('adminAuth', token);
-            setIsAuthenticated(true);
-            setAuthError(null);
-        } else {
-            setAuthError('Invalid credentials');
+            // Verify credentials against the backend before trusting them
+            const response = await fetch(`${ADMIN_API_BASE}/display-rules/configs`, {
+                headers: { 'Authorization': `Basic ${token}` }
+            });
+
+            if (response.ok) {
+                localStorage.setItem('adminAuth', token);
+                setIsAuthenticated(true);
+                setAuthError(null);
+            } else {
+                setAuthError('Invalid credentials');
+            }
+        } catch (err) {
+            setAuthError('Failed to connect to authentication server');
         }
         setIsAuthenticating(false);
     };
