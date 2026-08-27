@@ -91,18 +91,29 @@ export const DisplayRulesManager: React.FC<DisplayRulesManagerProps> = ({
         processRules(rules, groupBy, sortBy, sortOrder),
     [rules, groupBy, sortBy, sortOrder]);
 
-    const handleLogin = (username: string, password: string) => {
+    const handleLogin = async (username: string, password: string) => {
         setIsAuthenticating(true);
-        // Simple hardcoded auth for admin operations
-        if (username === 'admin' && password === 'admin') {
-            const token = window.btoa(`${username}:${password}`);
-            localStorage.setItem('adminAuth', token);
-            setIsAuthenticated(true);
-            setAuthError(null);
-        } else {
-            setAuthError('Invalid credentials');
+        const token = window.btoa(`${username}:${password}`);
+
+        try {
+            // Verify credentials by making an authenticated API call
+            const { ADMIN_API_BASE } = await import('../../../shared/api');
+            const res = await fetch(`${ADMIN_API_BASE}/display-rules/configs`, {
+                headers: { 'Authorization': `Basic ${token}` }
+            });
+
+            if (res.ok) {
+                localStorage.setItem('adminAuth', token);
+                setIsAuthenticated(true);
+                setAuthError(null);
+            } else {
+                setAuthError('Invalid credentials');
+            }
+        } catch (err) {
+            setAuthError('Network error during authentication');
+        } finally {
+            setIsAuthenticating(false);
         }
-        setIsAuthenticating(false);
     };
 
     const handleAddRule = () => {
